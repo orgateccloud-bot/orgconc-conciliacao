@@ -31,7 +31,7 @@ class Conciliacao(Base):
     __tablename__ = "conciliacoes"
 
     id:                   Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    cliente_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id"))
+    cliente_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="SET NULL"))
     report_id:            Mapped[str]          = mapped_column(Text, unique=True, nullable=False)
     modo:                 Mapped[str]          = mapped_column(String(20), nullable=False)
     total_transacoes:     Mapped[int]          = mapped_column(Integer, default=0)
@@ -51,7 +51,7 @@ class Transacao(Base):
 
     id:               Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     conciliacao_id:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("conciliacoes.id"))
-    cliente_id:       Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id"))
+    cliente_id:       Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="SET NULL"))
     data_lancamento:  Mapped[date]         = mapped_column(Date, nullable=False)
     valor:            Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False)
     memo:             Mapped[str | None]   = mapped_column(Text)
@@ -84,7 +84,7 @@ class FsrsMemoria(Base):
     __tablename__ = "fsrs_memorias"
 
     id:               Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    cliente_id:       Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False)
+    cliente_id:       Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
     pattern_key:      Mapped[str]        = mapped_column(Text, nullable=False)
     pattern_exemplo:  Mapped[str | None] = mapped_column(Text)
     categoria:        Mapped[str]        = mapped_column(Text, nullable=False)

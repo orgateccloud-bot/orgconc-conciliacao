@@ -92,6 +92,8 @@ SYSTEM_PROMPT = (
 
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        log.warning("ANTHROPIC_API_KEY nao configurada — /conciliar/ofx (sem simular) nao funcionara")
     if DB_DISPONIVEL:
         log.info("Banco configurado: %s", _DB_URL.split("@")[-1] if "@" in _DB_URL else "ok")
     else:
@@ -130,12 +132,29 @@ def auth(authorization: Optional[str] = Header(None)) -> None:
 
 # ── Modelos Pydantic ──────────────────────────────────────────────────────
 
+def _validar_cnpj(cnpj: str) -> bool:
+    digits = re.sub(r"\D", "", cnpj)
+    if len(digits) != 14 or len(set(digits)) == 1:
+        return False
+    def _calc(d, pesos):
+        s = sum(int(d[i]) * pesos[i] for i in range(len(pesos)))
+        r = s % 11
+        return 0 if r < 2 else 11 - r
+    p1 = [5,4,3,2,9,8,7,6,5,4,3,2]
+    p2 = [6,5,4,3,2,9,8,7,6,5,4,3,2]
+    return int(digits[12]) == _calc(digits, p1) and int(digits[13]) == _calc(digits, p2)
+
+
 class ClienteCreate(BaseModel):
     nome: str
     cnpj: Optional[str] = None
     email: Optional[str] = None
     telefone: Optional[str] = None
     plano: str = "basico"
+
+    def model_post_init(self, __context) -> None:
+        if self.cnpj and not _validar_cnpj(self.cnpj):
+            raise ValueError(f"CNPJ inválido: {self.cnpj}")
 
 class ClienteUpdate(BaseModel):
     nome: Optional[str] = None
@@ -164,27 +183,26 @@ async def _salvar_no_banco(
         datas = sorted({t["data"] for e in extratos for t in e["transacoes"] if t.get("data")})
         cid = _uuid.UUID(cliente_id) if cliente_id else None
         async with SessionLocal() as db:
-            conc = models.Conciliacao(
-                cliente_id=cid,
-                report_id=report_id,
-                modo=modo,
-                total_transacoes=sum(e["qtd"] for e in extratos),
-                total_anomalias=len(anomalias),
-                valor_total_credito=total_cred,
-                valor_total_debito=total_deb,
-                periodo_inicio=date.fromisoformat(datas[0]) if datas else None,
-                periodo_fim=date.fromisoformat(datas[-1]) if datas else None,
-            )
-            db.add(conc)
-            await db.flush()
-            anomalias_set = {
-                (a.get("conta", ""), round(abs(a.get("valor", 0)), 2))
-                for a in anomalias
-            }
-            for e in extratos:
-                for t in e["transacoes"]:
-                    eh_anomalia = (e.get("conta", ""), round(abs(t["valor"]), 2)) in anomalias_set
-                    tx = models.Transacao(
+            async with db.begin():
+                conc = models.Conciliacao(
+                    cliente_id=cid,
+                    report_id=report_id,
+                    modo=modo,
+                    total_transacoes=sum(e["qtd"] for e in extratos),
+                    total_anomalias=len(anomalias),
+                    valor_total_credito=total_cred,
+                    valor_total_debito=total_deb,
+                    periodo_inicio=date.fromisoformat(datas[0]) if datas else None,
+                    periodo_fim=date.fromisoformat(datas[-1]) if datas else None,
+                )
+                db.add(conc)
+                await db.flush()
+                anomalias_set = {
+                    (a.get("conta", ""), round(abs(a.get("valor", 0)), 2))
+                    for a in anomalias
+                }
+                txs = [
+                    models.Transacao(
                         conciliacao_id=conc.id,
                         cliente_id=cid,
                         data_lancamento=date.fromisoformat(t["data"]) if t.get("data") else date.today(),
@@ -193,11 +211,12 @@ async def _salvar_no_banco(
                         categoria=_classificar(t.get("memo", ""), t.get("nome", "")),
                         banco=e.get("conta"),
                         tipo=t.get("tipo"),
-                        eh_anomalia=eh_anomalia,
+                        eh_anomalia=(e.get("conta", ""), round(abs(t["valor"]), 2)) in anomalias_set,
                     )
-                    db.add(tx)
-            await db.commit()
-            log.info("Conciliacao %s salva no banco (%d transacoes)", report_id, sum(e["qtd"] for e in extratos))
+                    for e in extratos for t in e["transacoes"]
+                ]
+                db.add_all(txs)
+            log.info("Conciliacao %s salva no banco (%d transacoes)", report_id, len(txs))
     except Exception:
         log.exception("Falha ao salvar no banco (conciliacao %s) — JSON preservado", report_id)
 
@@ -438,10 +457,38 @@ def _render_html(relatorio_md: str) -> str:
     font-size: 10.5px;
     letter-spacing: 0.5px;
   }}
-  @media print {{ body {{ background: white; }} .wrap {{ box-shadow: none; }} }}
+  @media print {{ body {{ background: white; }} .wrap {{ box-shadow: none; }} .shimmer {{ display: none; }} }}
+
+  /* Camada branca oscilante */
+  @keyframes oscila {{
+    0%   {{ transform: translateX(-120%) skewX(-18deg); opacity: 0; }}
+    15%  {{ opacity: 1; }}
+    85%  {{ opacity: 1; }}
+    100% {{ transform: translateX(220%) skewX(-18deg); opacity: 0; }}
+  }}
+  .shimmer {{
+    position: fixed;
+    top: 0; left: 0;
+    width: 35%; height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255,255,255,0.055) 40%,
+      rgba(255,255,255,0.11) 50%,
+      rgba(255,255,255,0.055) 60%,
+      transparent 100%
+    );
+    animation: oscila 7s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    pointer-events: none;
+    z-index: 9999;
+  }}
+  @media (prefers-reduced-motion: reduce) {{
+    .shimmer {{ display: none; }}
+  }}
 </style>
 </head>
 <body>
+  <div class="shimmer" aria-hidden="true"></div>
   <div class="wrap">
     <div class="hd">
       {logo_html}
@@ -1580,7 +1627,8 @@ async def health():
 # ── Clientes ──────────────────────────────────────────────────────────────
 
 @app.post("/clientes", dependencies=[Depends(auth)], status_code=201, tags=["clientes"])
-async def criar_cliente(payload: ClienteCreate):
+@limiter.limit("20/minute")
+async def criar_cliente(request: Request, payload: ClienteCreate):
     """Cadastra um novo cliente."""
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado — adicione DATABASE_URL ao .env")
@@ -1597,7 +1645,8 @@ async def criar_cliente(payload: ClienteCreate):
 
 
 @app.get("/clientes", dependencies=[Depends(auth)], tags=["clientes"])
-async def listar_clientes(apenas_ativos: bool = True):
+@limiter.limit("30/minute")
+async def listar_clientes(request: Request, apenas_ativos: bool = True):
     """Lista todos os clientes."""
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
@@ -1611,7 +1660,8 @@ async def listar_clientes(apenas_ativos: bool = True):
 
 
 @app.get("/clientes/{cliente_id}", dependencies=[Depends(auth)], tags=["clientes"])
-async def buscar_cliente(cliente_id: str):
+@limiter.limit("30/minute")
+async def buscar_cliente(request: Request, cliente_id: str):
     """Busca um cliente pelo ID."""
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
@@ -1633,7 +1683,8 @@ async def buscar_cliente(cliente_id: str):
 
 
 @app.patch("/clientes/{cliente_id}", dependencies=[Depends(auth)], tags=["clientes"])
-async def atualizar_cliente(cliente_id: str, payload: ClienteUpdate):
+@limiter.limit("20/minute")
+async def atualizar_cliente(request: Request, cliente_id: str, payload: ClienteUpdate):
     """Atualiza dados de um cliente."""
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")

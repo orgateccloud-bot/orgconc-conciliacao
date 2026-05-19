@@ -32,14 +32,19 @@ async def listar_clientes(db: AsyncSession, apenas_ativos: bool = True) -> list[
     return list(resultado.scalars().all())
 
 
+_CAMPOS_EDITAVEIS = {"nome", "email", "telefone", "plano", "ativo"}
+
+
 async def atualizar_cliente(db: AsyncSession, cliente_id: uuid.UUID,
                             **campos) -> Cliente | None:
+    campos_validos = {k: v for k, v in campos.items() if k in _CAMPOS_EDITAVEIS}
+    if not campos_validos:
+        return await buscar_cliente(db, cliente_id)
     cliente = await buscar_cliente(db, cliente_id)
     if not cliente:
         return None
-    for campo, valor in campos.items():
-        if hasattr(cliente, campo):
-            setattr(cliente, campo, valor)
+    for campo, valor in campos_validos.items():
+        setattr(cliente, campo, valor)
     await db.commit()
     await db.refresh(cliente)
     return cliente

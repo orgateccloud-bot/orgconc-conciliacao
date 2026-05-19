@@ -85,6 +85,9 @@ CREATE INDEX IF NOT EXISTS idx_transacoes_cliente      ON transacoes(cliente_id)
 CREATE INDEX IF NOT EXISTS idx_transacoes_data         ON transacoes(data_lancamento);
 CREATE INDEX IF NOT EXISTS idx_ml_predicoes_transacao  ON ml_predicoes(transacao_id);
 CREATE INDEX IF NOT EXISTS idx_fsrs_cliente_revisao    ON fsrs_memorias(cliente_id, proxima_revisao);
+CREATE INDEX IF NOT EXISTS idx_transacoes_eh_anomalia  ON transacoes(eh_anomalia) WHERE eh_anomalia = true;
+CREATE INDEX IF NOT EXISTS idx_clientes_atualizado_em  ON clientes(atualizado_em);
+CREATE INDEX IF NOT EXISTS idx_conciliacoes_criado_em  ON conciliacoes(criado_em);
 
 -- ── Trigger: atualiza atualizado_em automaticamente ───────────────────────
 CREATE OR REPLACE FUNCTION set_atualizado_em()

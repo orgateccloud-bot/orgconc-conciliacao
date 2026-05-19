@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
     :root {
@@ -308,6 +309,34 @@
       display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
     }
 
+    /* FOCUS — acessibilidade teclado */
+    :focus-visible {
+      outline: 2px solid var(--blue-3);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    /* TABULAR NUMS — métricas sem tremer ao atualizar */
+    .metric .vl { font-variant-numeric: tabular-nums; }
+
+    /* TABELA RESPONSIVA no relatório */
+    #relatorio table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* CURSOR consistente */
+    .btn, .drop, .sev-chip { cursor: pointer; }
+    .btn:disabled { cursor: not-allowed; }
+
+    /* ARIA LIVE — status region */
+    #status[role="alert"] { }
+
+    /* REDUCED MOTION — respeita preferência do sistema */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
     /* PDF mode: simplified colors so PDF doesn't lose contrast */
     .pdf-mode { background: #ffffff !important; }
     .pdf-mode #relatorio { background: #ffffff !important; border-color: #d0d7de !important; color: #1f2328 !important; padding: 32px !important; }
@@ -331,7 +360,7 @@
         <div class="tg">Contabilidade & Auditoria</div>
       </div>
       <div class="spacer"></div>
-      <span class="nav-tag">OrgAudi 1.0</span>
+      <span class="nav-tag">OrgAudi v0.3</span>
     </div>
 
     <div class="hero">
@@ -351,11 +380,11 @@
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
         </div>
-        <div class="drop-text">Arraste 1 ou 2 arquivos, ou clique para selecionar</div>
-        <div class="drop-hint">Formatos: <strong>.ofx</strong> · <strong>.pdf</strong> · <strong>.xml</strong> · até 2 contas do mesmo titular</div>
+        <div class="drop-text">Arraste até 50 arquivos, ou clique para selecionar</div>
+        <div class="drop-hint">Formatos: <strong>.ofx</strong> · <strong>.pdf</strong> · <strong>.xml</strong> · múltiplas contas e períodos</div>
       </div>
 
-      <div class="file-list" id="file-list">
+      <div class="file-list" id="file-list" aria-live="polite" aria-label="Arquivos selecionados">
         <div class="file-item empty">Nenhum arquivo selecionado</div>
       </div>
 
@@ -369,7 +398,7 @@
           Conciliar com Claude
         </button>
       </div>
-      <div id="status" class="status"></div>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
     </div>
 
     <div id="saida">
@@ -377,24 +406,30 @@
 
       <div class="card" id="anom-wrap" style="display:none">
         <div class="anom-hd">
-          <h2>⚠️ Anomalias Detectadas</h2>
+          <h2>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--warn);vertical-align:-2px;margin-right:6px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Anomalias Detectadas
+          </h2>
           <div class="sev-chips" id="sev-chips"></div>
         </div>
         <div class="anom-grid" id="anom-grid"></div>
       </div>
 
       <div class="report-header">
-        <h2>📑 Relatório Completo</h2>
+        <h2>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;color:var(--blue-3)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Relatório Completo
+        </h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-ghost" onclick="baixar('html')" id="btn-html">
+          <button class="btn btn-ghost" onclick="baixar('html')" id="btn-html" aria-label="Baixar relatório HTML">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             HTML
           </button>
-          <button class="btn" style="background:linear-gradient(135deg,#0d6e3a,#1f9d3f);color:white;border-color:rgba(34,197,94,0.5);" onclick="baixar('xlsx')" id="btn-xlsx">
+          <button class="btn" style="background:linear-gradient(135deg,#0d6e3a,#1f9d3f);color:white;border-color:rgba(34,197,94,0.5);" onclick="baixar('xlsx')" id="btn-xlsx" aria-label="Baixar planilha XLSX">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
             XLSX
           </button>
-          <button class="btn btn-pdf" onclick="gerarPDF()" id="btn-pdf">
+          <button class="btn btn-pdf" onclick="gerarPDF()" id="btn-pdf" aria-label="Gerar PDF do relatório">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             PDF
           </button>
@@ -431,6 +466,8 @@
       atualizarLista();
     });
 
+    const EXTS_VALIDAS = new Set([".ofx", ".pdf", ".xml"]);
+
     function atualizarLista() {
       const fs = document.getElementById("files").files;
       const list = document.getElementById("file-list");
@@ -438,12 +475,25 @@
         list.innerHTML = '<div class="file-item empty">Nenhum arquivo selecionado</div>';
         return;
       }
+      for (const f of fs) {
+        const ext = f.name.slice(f.name.lastIndexOf(".")).toLowerCase();
+        if (!EXTS_VALIDAS.has(ext)) {
+          setStatus(`Arquivo "${f.name}" não suportado. Use .ofx, .pdf ou .xml.`, "err");
+          document.getElementById("files").value = "";
+          list.innerHTML = '<div class="file-item empty">Nenhum arquivo selecionado</div>';
+          return;
+        }
+      }
+      if (fs.length > 50) {
+        setStatus("Máximo de 50 arquivos por vez.", "err");
+        return;
+      }
       list.innerHTML = "";
       for (const f of fs) {
         const kb = (f.size / 1024).toFixed(1);
         list.insertAdjacentHTML("beforeend", `
           <div class="file-item">
-            <span class="ico">📄</span>
+            <span class="ico" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
             <span class="name">${f.name}</span>
             <span class="size">${kb} KB</span>
           </div>`);
@@ -490,7 +540,7 @@
 
     async function enviar(simular) {
       const files = document.getElementById("files").files;
-      if (!files.length || files.length > 2) { setStatus("Selecione 1 ou 2 arquivos OFX.", "err"); return; }
+      if (!files.length || files.length > 50) { setStatus("Selecione entre 1 e 50 arquivos.", "err"); return; }
 
       const btns = document.querySelectorAll(".btn");
       btns.forEach(b => b.disabled = true);
@@ -534,7 +584,7 @@
 
         lastReportId = data.report_id || null;
         renderAnomalias(data.anomalias || []);
-        document.getElementById("relatorio").innerHTML = marked.parse(data.relatorio_md || "");
+        document.getElementById("relatorio").innerHTML = DOMPurify.sanitize(marked.parse(data.relatorio_md || ""));
         document.getElementById("saida").style.display = "block";
         setStatus(`Concluído em ${dt}s.`, "ok");
         window.scrollTo({ top: document.getElementById("saida").offsetTop - 20, behavior: "smooth" });
