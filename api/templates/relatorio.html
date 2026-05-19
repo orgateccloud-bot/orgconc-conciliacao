@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>ORGATEC - Relatorio de Conciliacao Bancaria</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #ffffff; }
+  body {
+    font-family: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #1a202c;
+    line-height: 1.65;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; background: #ffffff; }
+
+  .hd {
+    background: linear-gradient(135deg, #0a3a7a 0%, #1e6fd9 60%, #4dc8ff 100%);
+    color: white;
+    padding: 32px 44px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hd::after {
+    content: "";
+    position: absolute;
+    right: -120px; top: -120px;
+    width: 360px; height: 360px;
+    background: radial-gradient(circle, rgba(255,255,255,0.15), transparent 65%);
+    pointer-events: none;
+  }
+  .hd .brand .nm {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .hd .brand .tg {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    opacity: 0.92;
+    margin-top: 3px;
+  }
+  .hd .spacer { flex: 1; }
+  .hd .meta {
+    text-align: right;
+    font-size: 11px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 10px;
+    padding: 10px 16px;
+    backdrop-filter: blur(8px);
+    position: relative; z-index: 1;
+  }
+  .hd .meta .ttl {
+    font-weight: 700;
+    letter-spacing: 1.8px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    opacity: 0.95;
+  }
+  .hd .meta .dt { font-size: 12.5px; margin-top: 3px; font-weight: 600; }
+
+  .content { padding: 36px 44px 16px; background: #ffffff; }
+
+  h1 {
+    font-size: 24px;
+    color: #0a3a7a;
+    border-bottom: 3px solid #1e6fd9;
+    padding-bottom: 10px;
+    margin-bottom: 18px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+  }
+  h2 {
+    font-size: 17px;
+    color: #1e6fd9;
+    margin-top: 28px;
+    margin-bottom: 10px;
+    font-weight: 700;
+    padding-left: 12px;
+    border-left: 3px solid #4dc8ff;
+  }
+  h3 {
+    font-size: 14px;
+    color: #0a3a7a;
+    margin-top: 18px;
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+  p { margin-bottom: 10px; color: #2d3748; }
+  ul, ol { padding-left: 22px; margin-bottom: 12px; }
+  li { margin-bottom: 5px; color: #2d3748; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 14px 0;
+    font-size: 12.5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td { border: 1px solid #e2e8f0; padding: 9px 12px; text-align: left; }
+  th {
+    background: linear-gradient(180deg, #0a3a7a, #1e6fd9);
+    color: white;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+  }
+  td { color: #2d3748; background: #ffffff; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  tr:hover td { background: #eff6ff; }
+
+  code {
+    background: #eff6ff;
+    color: #1e6fd9;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-weight: 500;
+  }
+  strong { color: #0a3a7a; font-weight: 700; }
+  em { color: #4a5568; }
+
+  .ft {
+    background: #f7fafc;
+    border-top: 1px solid #e2e8f0;
+    padding: 16px 44px;
+    color: #718096;
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ft .pill {
+    background: #eff6ff;
+    color: #1e6fd9;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 10.5px;
+    letter-spacing: 0.5px;
+  }
+  @media print { body { background: white; } .wrap { box-shadow: none; } .shimmer { display: none; } }
+
+  @keyframes oscila {
+    0%   { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
+    15%  { opacity: 1; }
+    85%  { opacity: 1; }
+    100% { transform: translateX(220%) skewX(-18deg); opacity: 0; }
+  }
+  .shimmer {
+    position: fixed;
+    top: 0; left: 0;
+    width: 35%; height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255,255,255,0.055) 40%,
+      rgba(255,255,255,0.11) 50%,
+      rgba(255,255,255,0.055) 60%,
+      transparent 100%
+    );
+    animation: oscila 7s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    pointer-events: none;
+    z-index: 9999;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .shimmer { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="shimmer" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="hd">
+      {% if logo_data_uri %}
+      <img src="{{ logo_data_uri }}" alt="ORGATEC" style="width:64px;height:64px;filter:drop-shadow(0 0 14px rgba(255,255,255,0.4));">
+      {% endif %}
+      <div class="brand">
+        <div class="nm">ORGATEC</div>
+        <div class="tg">Contabilidade &amp; Auditoria</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="meta">
+        <div class="ttl">Relatório de Conciliação</div>
+        <div class="dt">{{ agora }}</div>
+      </div>
+    </div>
+    <div class="content">{{ body|safe }}</div>
+    <div class="ft">
+      <div>© ORGATEC Contabilidade e Auditoria · orgatec.cloud@gmail.com</div>
+      <div><span class="pill">OrgAudi 1.0</span></div>
+    </div>
+  </div>
+</body>
+</html>
