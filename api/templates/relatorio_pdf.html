@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<title>ORGATEC — Conciliação {{ report_id }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --navy: #0F172A; --blue: #0052FF; --blue-soft: #4D7CFF; --sky: #0EA5E9;
+    --aurora-1: #DBEAFE; --aurora-2: #BFDBFE;
+    --green: #16A34A; --red: #DC2626; --orange: #D97706;
+    --border: #E2E8F0;
+  }
+  @page {
+    size: A4;
+    margin: 15mm 18mm 18mm 18mm;
+  }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none !important; }
+    .page-break { page-break-before: always; }
+  }
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 11pt;
+    color: #1a202c;
+    line-height: 1.6;
+    background:
+      radial-gradient(at 15% 8%, var(--aurora-2) 0%, transparent 45%),
+      radial-gradient(at 85% 90%, #E0E7FF 0%, transparent 45%),
+      #F0F7FF;
+  }
+
+  .print-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: var(--navy); color: #fff;
+    padding: 10px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+  }
+  .print-bar h2 { font-size: 14px; font-weight: 700; }
+  .print-bar p  { font-size: 11px; opacity: .7; }
+  .btn-pdf {
+    background: linear-gradient(135deg, var(--blue), var(--sky)); color: #fff;
+    border: none; padding: 9px 20px;
+    border-radius: 6px; font-size: 13px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; gap: 8px;
+    font-family: inherit;
+    box-shadow: 0 4px 12px rgba(0,82,255,.3);
+  }
+  .btn-pdf:hover { opacity: .9; }
+
+  .wrap {
+    max-width: 800px; margin: 56px auto 40px;
+    background: rgba(255,255,255,.86);
+    border: 1px solid rgba(186,230,253,.6);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(15,23,42,.10);
+    overflow: hidden;
+  }
+
+  .hd {
+    background: linear-gradient(135deg, var(--navy) 0%, #0B1B3D 45%, var(--blue) 100%);
+    color: #fff;
+    padding: 24px 32px;
+    display: flex; align-items: center; gap: 16px;
+    border-radius: 16px 16px 0 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .hd::after {
+    content: ""; position: absolute;
+    right: -100px; top: -100px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(77,124,255,.5), transparent 65%);
+    pointer-events: none;
+  }
+  .hd > * { position: relative; z-index: 1; }
+  .logo { width: 48px; height: 48px; }
+  .hd-brand h1 { font-size: 20pt; font-weight: 700; font-family: 'Calistoga', serif; }
+  .hd-brand p  { font-size: 9pt; opacity: .85; text-transform: uppercase; letter-spacing: .12em; }
+  .hd-spacer { flex: 1; }
+  .hd-meta { text-align: right; font-size: 9pt; }
+  .hd-meta strong { font-size: 10pt; }
+
+  .body-inner { padding: 24px 32px; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-bottom: 24px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .kpi { background: rgba(255,255,255,.85); padding: 14px 16px; }
+  .kpi-label {
+    font-size: 8pt; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .08em;
+    color: #64748B; margin-bottom: 4px;
+  }
+  .kpi-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18pt; font-weight: 700; color: var(--navy);
+  }
+  .kpi-value.blue   { color: var(--blue); }
+  .kpi-value.green  { color: var(--green); }
+  .kpi-value.red    { color: var(--red); }
+  .kpi-sub { font-size: 8pt; color: #94A3B8; margin-top: 2px; }
+
+  .section-title {
+    font-size: 12pt; font-weight: 700;
+    color: var(--navy); margin: 24px 0 10px;
+    padding-bottom: 6px; border-bottom: 2px solid var(--border);
+  }
+  .anom-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 24px; border-radius: 8px; overflow: hidden; }
+  .anom-table th {
+    background: linear-gradient(180deg, var(--navy), #0B1B3D); color: #fff;
+    padding: 7px 10px; text-align: left; font-weight: 600;
+  }
+  .anom-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .anom-table tr:nth-child(even) td { background: #F8FAFC; }
+  .sev-critico { color: var(--red);    font-weight: 700; }
+  .sev-alerta  { color: var(--orange); font-weight: 700; }
+  .sev-atencao { color: #CA8A04;       font-weight: 700; }
+
+  .report-md h1 { font-size: 16pt; color: var(--navy); margin: 20px 0 8px; font-weight: 700; font-family: 'Calistoga', serif; }
+  .report-md h2 {
+    font-size: 12pt; color: var(--blue); font-weight: 700;
+    margin: 18px 0 8px;
+    padding-left: 10px; border-left: 3px solid var(--sky);
+  }
+  .report-md h3 { font-size: 11pt; color: var(--navy); font-weight: 600; margin: 14px 0 6px; }
+  .report-md p  { margin-bottom: 8px; }
+  .report-md ul, .report-md ol { padding-left: 18px; margin-bottom: 8px; }
+  .report-md li { margin-bottom: 3px; }
+  .report-md table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 12px; }
+  .report-md th { background: var(--navy); color: #fff; padding: 7px 10px; text-align: left; }
+  .report-md td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .report-md tr:nth-child(even) td { background: #F8FAFC; }
+  .report-md code {
+    font-family: 'JetBrains Mono', monospace; font-size: 8.5pt;
+    background: #F1F5F9; padding: 1px 5px; border-radius: 3px; color: var(--blue);
+  }
+  .report-md strong { font-weight: 700; }
+
+  .ft {
+    margin-top: 32px; padding: 14px 0;
+    border-top: 1px solid var(--border);
+    font-size: 8.5pt; color: #94A3B8;
+    display: flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  <div>
+    <h2>Relatório de Conciliação — ORGATEC</h2>
+    <p>Gerado em {{ agora }} · ID: {{ report_id }}</p>
+  </div>
+  <button class="btn-pdf" onclick="window.print()">
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+    </svg>
+    Salvar como PDF
+  </button>
+</div>
+
+<div class="wrap">
+  <div class="hd">
+    {% if logo_data_uri %}
+    <img src="{{ logo_data_uri }}" alt="ORGATEC" class="logo">
+    {% endif %}
+    <div class="hd-brand">
+      <h1>ORGATEC</h1>
+      <p>Contabilidade &amp; Auditoria</p>
+    </div>
+    <div class="hd-spacer"></div>
+    <div class="hd-meta">
+      <strong>Relatório de Conciliação</strong><br/>
+      {{ agora }}<br/>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:8pt;opacity:.6">{{ report_id }}</span>
+    </div>
+  </div>
+
+  <div class="body-inner">
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Transações</div>
+        <div class="kpi-value blue">{{ total_tx }}</div>
+        <div class="kpi-sub">{{ n_contas }} conta(s)</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Créditos</div>
+        <div class="kpi-value green">R$ {{ "{:,.0f}".format(total_cred) }}</div>
+        <div class="kpi-sub">entradas</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Débitos</div>
+        <div class="kpi-value red">R$ {{ "{:,.0f}".format(total_deb_abs) }}</div>
+        <div class="kpi-sub">saídas</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Anomalias</div>
+        <div class="kpi-value {% if n_anom %}red{% else %}green{% endif %}">{{ n_anom }}</div>
+        <div class="kpi-sub">🔴 {{ n_crit }} · 🟠 {{ n_alerta }} · 🟡 {{ n_atenc }}</div>
+      </div>
+    </div>
+
+    {% if anomalias %}
+    <div class="section-title">Anomalias Detectadas ({{ n_anom }})</div>
+    <table class="anom-table">
+      <thead>
+        <tr><th>Severidade</th><th>Tipo</th><th>Título / Conta</th><th>Valor</th><th>Detalhe</th></tr>
+      </thead>
+      <tbody>
+        {% for a in anomalias %}
+        <tr>
+          <td class="sev-{{ a.severidade }}">
+            {% if a.severidade == "critico" %}🔴 CRÍTICO
+            {% elif a.severidade == "alerta" %}🟠 ALERTA
+            {% else %}🟡 ATENÇÃO{% endif %}
+          </td>
+          <td>{{ a.tipo or "" }}</td>
+          <td><strong>{{ a.titulo or "" }}</strong><br/><small>{{ a.conta or "" }}</small></td>
+          <td>{% if a.valor %}R$ {{ "{:,.2f}".format(a.valor) }}{% else %}—{% endif %}</td>
+          <td>{{ a.detalhe or "" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <div class="section-title">Análise Detalhada</div>
+    <div class="report-md">{{ body|safe }}</div>
+
+    <div class="ft">
+      <span>© ORGATEC Contabilidade e Auditoria · orgatec.cloud@gmail.com</span>
+      <span>Gerado em {{ agora }}</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  if (new URLSearchParams(location.search).get('auto') === '1') {
+    window.addEventListener('load', () => setTimeout(() => window.print(), 600));
+  }
+</script>
+</body>
+</html>

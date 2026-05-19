@@ -7,54 +7,501 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
+          integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+          crossorigin="anonymous"></script>
   <style>
-    /* ── Reset & Tokens ─────────────────────────────────────────── */
+    /* ── Reset & Tokens (Aurora Blue) ────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
+    :root, [data-theme="light"] {
       --navy:    #0F172A;
       --navy70:  rgba(15,23,42,.7);
-      --blue:    #0369A1;
-      --blue10:  #E0F2FE;
-      --blue20:  #BAE6FD;
+
+      /* Azul flamejante (gradiente principal) */
+      --blue:        #0052FF;
+      --blue-soft:   #4D7CFF;
+      --sky:         #0EA5E9;
+      --aurora-1:    #93C5FD;  /* blob mais claro */
+      --aurora-2:    #60A5FA;
+      --aurora-3:    #3B82F6;
+      --blue10:      #DBEAFE;
+      --blue20:      #BFDBFE;
+
       --green:   #16A34A;
       --green10: #DCFCE7;
       --purple:  #7C3AED;
       --purple10:#EDE9FE;
+      --cyan:    #06B6D4;
+      --cyan10:  #CFFAFE;
       --red:     #DC2626;
       --red10:   #FEE2E2;
       --orange:  #D97706;
       --orange10:#FEF3C7;
-      --bg:      #F8FAFC;
-      --surface: #FFFFFF;
-      --border:  #E2E8F0;
-      --text:    #0F172A;
-      --muted:   #64748B;
+
+      /* Superfícies — translúcidas para glass */
+      --bg:          #F0F7FF;
+      --bg-mesh:     radial-gradient(at 20% 10%, #DBEAFE 0%, transparent 50%),
+                     radial-gradient(at 80% 80%, #E0E7FF 0%, transparent 50%),
+                     radial-gradient(at 50% 50%, #F0F9FF 0%, transparent 60%);
+      --surface:     rgba(255,255,255,.72);
+      --surface-solid: #FFFFFF;
+      --border:      rgba(186,230,253,.5);
+      --border-solid: #E2E8F0;
+      --text:        #0F172A;
+      --muted:       #64748B;
+
       --sidebar-w: 240px;
-      --radius:  8px;
-      --shadow:  0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
-      --shadow-lg: 0 4px 16px rgba(0,0,0,.12);
+      --radius:    14px;
+      --radius-sm: 10px;
+      --shadow:    0 4px 20px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.04);
+      --shadow-lg: 0 18px 50px rgba(15,23,42,.10), 0 4px 14px rgba(15,23,42,.05);
+      --shadow-glow: 0 0 40px rgba(77,124,255,.20);
+
+      /* Glassmorphism tokens (Aurora Glass) */
+      --glass-bg:      rgba(255,255,255,.42);
+      --glass-bg-2:    rgba(255,255,255,.28);
+      --glass-border:  rgba(255,255,255,.50);
+      --glass-blur:    blur(24px) saturate(180%);
+      --glass-blur-lg: blur(36px) saturate(200%);
+      --glass-shadow:  0 8px 32px rgba(15,23,42,.10),
+                       0 2px 8px rgba(30,111,217,.08),
+                       inset 0 1px 0 rgba(255,255,255,.65),
+                       inset 0 -1px 0 rgba(15,23,42,.04);
+      --glass-shadow-hover:
+                       0 18px 50px rgba(15,23,42,.16),
+                       0 4px 14px rgba(30,111,217,.18),
+                       inset 0 1px 0 rgba(255,255,255,.75),
+                       inset 0 -1px 0 rgba(15,23,42,.04);
+      --glass-edge:    linear-gradient(135deg, rgba(255,255,255,.60) 0%, rgba(255,255,255,.10) 50%, rgba(255,255,255,.45) 100%);
+
+      --easing:    cubic-bezier(0.16, 1, 0.3, 1);
     }
+
+    /* ── Dark theme tokens ─────────────────────────────────────────── */
+    [data-theme="dark"] {
+      --navy:    #e6edf7;
+      --navy70:  rgba(230,237,247,.7);
+
+      --blue:        #4D7CFF;
+      --blue-soft:   #6FA0FF;
+      --sky:         #38BDF8;
+      --aurora-1:    #1e3a8a;
+      --aurora-2:    #1e40af;
+      --aurora-3:    #1d4ed8;
+      --blue10:      #1e293b;
+      --blue20:      #243049;
+
+      --green:   #34D399;
+      --green10: #064e3b;
+      --purple:  #A78BFA;
+      --purple10:#312e81;
+      --cyan:    #22D3EE;
+      --cyan10:  #164e63;
+      --red:     #F87171;
+      --red10:   #7f1d1d;
+      --orange:  #FBBF24;
+      --orange10:#78350f;
+
+      --bg:          #0b1220;
+      --bg-mesh:     radial-gradient(at 20% 10%, #15203a 0%, transparent 55%),
+                     radial-gradient(at 80% 80%, #1a2238 0%, transparent 55%),
+                     radial-gradient(at 50% 50%, #0e1729 0%, transparent 65%);
+      --surface:     rgba(20,28,48,.72);
+      --surface-solid: #111a30;
+      --border:      rgba(96,165,250,.18);
+      --border-solid: #1f2b4d;
+      --text:        #e6edf7;
+      --muted:       #94a3b8;
+
+      --shadow:      0 4px 20px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.35);
+      --shadow-lg:   0 18px 50px rgba(0,0,0,.55), 0 4px 14px rgba(0,0,0,.40);
+      --shadow-glow: 0 0 40px rgba(96,165,250,.30);
+
+      /* Glassmorphism tokens dark */
+      --glass-bg:      rgba(20,30,55,.45);
+      --glass-bg-2:    rgba(20,30,55,.30);
+      --glass-border:  rgba(96,165,250,.22);
+      --glass-shadow:  0 8px 32px rgba(0,0,0,.45),
+                       0 2px 8px rgba(96,165,250,.10),
+                       inset 0 1px 0 rgba(255,255,255,.06),
+                       inset 0 -1px 0 rgba(0,0,0,.30);
+      --glass-shadow-hover:
+                       0 18px 50px rgba(0,0,0,.55),
+                       0 6px 18px rgba(96,165,250,.25),
+                       inset 0 1px 0 rgba(255,255,255,.10),
+                       inset 0 -1px 0 rgba(0,0,0,.30);
+      --glass-edge:    linear-gradient(135deg, rgba(150,200,255,.30) 0%, rgba(150,200,255,.04) 50%, rgba(150,200,255,.20) 100%);
+    }
+
+    /* Transição suave de tema */
+    body, .card, .topbar, .sidebar, .mode-card, .btn, input, select, textarea {
+      transition: background-color .25s var(--easing), color .25s var(--easing), border-color .25s var(--easing);
+    }
+
+    /* Toggle de tema */
+    .theme-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      width: 38px; height: 38px;
+      border-radius: 12px;
+      border: 1px solid var(--border-solid);
+      background: var(--surface-solid);
+      color: var(--text);
+      cursor: pointer;
+      justify-content: center;
+      transition: all .2s var(--easing);
+    }
+    .theme-toggle:hover {
+      border-color: var(--blue);
+      box-shadow: var(--shadow-glow);
+      transform: translateY(-1px);
+    }
+    .theme-toggle .sun-ico { display: none; }
+    .theme-toggle .moon-ico { display: block; }
+    [data-theme="dark"] .theme-toggle .sun-ico { display: block; }
+    [data-theme="dark"] .theme-toggle .moon-ico { display: none; }
+
+    /* ── Charts grid (auditoria moderna multi-camada) ──────────────── */
+    .audit-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 20px 0;
+    }
+    .audit-grid .chart-card.span-2 { grid-column: 1 / -1; }
+    @media (max-width: 880px) {
+      .audit-grid { grid-template-columns: 1fr; }
+    }
+    .chart-card {
+      background: var(--surface);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+    .chart-card::before {
+      content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+      background: linear-gradient(90deg, var(--blue), var(--sky), transparent);
+      opacity: .6;
+    }
+    .chart-card h3 {
+      font-size: 12px; letter-spacing: 1.6px; text-transform: uppercase;
+      color: var(--muted); font-weight: 700; margin-bottom: 14px;
+    }
+    .chart-canvas-wrap {
+      position: relative;
+      height: 260px;
+    }
+    .chart-card.tall .chart-canvas-wrap { height: 320px; }
+
+    /* Ranking de risco (lista vertical) */
+    #ranking-risco {
+      height: 260px;
+      overflow-y: auto;
+      padding: 4px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .risco-item {
+      display: grid;
+      grid-template-columns: 26px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface-solid);
+      transition: all .15s var(--easing);
+    }
+    .risco-item:hover { transform: translateX(2px); border-color: var(--blue); }
+    .risco-pos {
+      display: flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; border-radius: 6px;
+      font-size: 11px; font-weight: 800;
+      background: linear-gradient(135deg, var(--blue), var(--sky));
+      color: white;
+    }
+    .risco-info { display: flex; flex-direction: column; min-width: 0; }
+    .risco-tit { font-size: 12.5px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .risco-sub { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+    .risco-val { font-size: 13px; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+    .risco-val.critico { color: var(--red); }
+    .risco-val.alerta  { color: var(--orange); }
+    .risco-val.atencao { color: #ca8a04; }
+    [data-theme="dark"] .risco-val.atencao { color: #fbbf24; }
+    .risco-item .sev-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      display: inline-block; margin-right: 6px;
+      vertical-align: middle;
+    }
+    .risco-item .sev-dot.critico { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .risco-item .sev-dot.alerta  { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+    .risco-item .sev-dot.atencao { background: #eab308; box-shadow: 0 0 8px #eab308; }
+    .risco-empty {
+      display: flex; align-items: center; justify-content: center; height: 100%;
+      color: var(--green); font-weight: 600; gap: 8px;
+    }
+
+    /* ── Aurora Glassmorphism (Layer Pro) ─────────────────────────── */
+    /* Cards principais: vidro com borda iridescente + reflexo superior */
+    .card,
+    .chart-card,
+    .audit-layer,
+    .kpi-card,
+    .topbar,
+    .mode-card,
+    #ranking-risco .risco-item,
+    .theme-toggle,
+    .modal {
+      background: var(--glass-bg) !important;
+      backdrop-filter: var(--glass-blur) !important;
+      -webkit-backdrop-filter: var(--glass-blur) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-shadow) !important;
+      position: relative;
+    }
+    .card:hover,
+    .chart-card:hover,
+    .audit-layer:hover,
+    .kpi-card:hover {
+      box-shadow: var(--glass-shadow-hover) !important;
+      transform: translateY(-2px);
+    }
+
+    /* Borda iridescente animada (edge highlight) */
+    .chart-card::after,
+    .audit-layer::after,
+    .card.glass-edge::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: var(--glass-edge);
+      -webkit-mask: linear-gradient(#000, #000) content-box, linear-gradient(#000, #000);
+      -webkit-mask-composite: xor;
+              mask-composite: exclude;
+      pointer-events: none;
+      opacity: .75;
+    }
+
+    /* Reforça a topbar como vidro flutuante */
+    .topbar {
+      backdrop-filter: var(--glass-blur-lg) !important;
+      -webkit-backdrop-filter: var(--glass-blur-lg) !important;
+      border-radius: 0 !important;
+      border-bottom: 1px solid var(--glass-border) !important;
+      border-top: none !important;
+      border-left: none !important;
+      border-right: none !important;
+    }
+
+    /* Sidebar glass */
+    .sidebar {
+      background: var(--glass-bg-2) !important;
+      backdrop-filter: var(--glass-blur-lg) !important;
+      -webkit-backdrop-filter: var(--glass-blur-lg) !important;
+      border-right: 1px solid var(--glass-border) !important;
+    }
+
+    /* Mode cards: glass + glow no selecionado */
+    .mode-card {
+      backdrop-filter: var(--glass-blur) !important;
+      -webkit-backdrop-filter: var(--glass-blur) !important;
+      transition: transform .25s var(--easing), box-shadow .25s var(--easing), border-color .25s var(--easing) !important;
+    }
+    .mode-card.selected {
+      box-shadow: var(--glass-shadow-hover),
+                  0 0 0 2px rgba(77,124,255,.45),
+                  0 0 40px rgba(77,124,255,.35) !important;
+    }
+
+    /* Botões com glass quando outline */
+    .btn-outline {
+      background: var(--glass-bg-2) !important;
+      backdrop-filter: blur(12px) saturate(160%) !important;
+      -webkit-backdrop-filter: blur(12px) saturate(160%) !important;
+      border: 1px solid var(--glass-border) !important;
+    }
+
+    /* Modal: glass mais forte com véu de fundo */
+    .modal-backdrop {
+      backdrop-filter: blur(8px) saturate(140%) !important;
+      -webkit-backdrop-filter: blur(8px) saturate(140%) !important;
+    }
+    .modal {
+      backdrop-filter: var(--glass-blur-lg) !important;
+      -webkit-backdrop-filter: var(--glass-blur-lg) !important;
+    }
+
+    /* Ranking de risco: items com vidro */
+    #ranking-risco .risco-item {
+      backdrop-filter: blur(16px) saturate(170%) !important;
+      -webkit-backdrop-filter: blur(16px) saturate(170%) !important;
+    }
+
+    /* KPI cards: glass + barra superior aurora */
+    .kpi-card {
+      backdrop-filter: var(--glass-blur) !important;
+      -webkit-backdrop-filter: var(--glass-blur) !important;
+      overflow: hidden;
+    }
+    .kpi-card::before {
+      content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+      background: linear-gradient(90deg, var(--blue), var(--sky), transparent);
+      opacity: .8;
+    }
+
+    /* Steps e file-item também recebem hint de glass */
+    .step,
+    .file-item {
+      background: var(--glass-bg-2);
+      backdrop-filter: blur(12px) saturate(150%);
+      -webkit-backdrop-filter: blur(12px) saturate(150%);
+      border: 1px solid var(--glass-border);
+    }
+
+    /* Aurora background blobs ficam visíveis através do vidro:
+       intensifica sua opacidade para que reflitam nos painéis */
+    .aurora-blob { opacity: .65 !important; }
+    [data-theme="dark"] .aurora-blob { opacity: .35 !important; }
+
+    /* Anti-alias para texto sobre vidro */
+    .card, .chart-card, .audit-layer, .kpi-card, .topbar, .mode-card {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Fallback: se backdrop-filter nao for suportado, fundo solido */
+    @supports not (backdrop-filter: blur(1px)) {
+      .card, .chart-card, .audit-layer, .topbar, .sidebar, .mode-card, .kpi-card {
+        background: var(--surface-solid) !important;
+      }
+    }
+
+    /* Audit overview KPIs (camada superior) */
+    .audit-layers {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    @media (max-width: 880px) {
+      .audit-layers { grid-template-columns: repeat(2, 1fr); }
+    }
+    .audit-layer {
+      position: relative;
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: var(--surface);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .audit-layer::after {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+      background: linear-gradient(180deg, var(--blue), var(--sky));
+    }
+    .audit-layer.l-critico::after  { background: linear-gradient(180deg, #ef4444, #f97316); }
+    .audit-layer.l-alerta::after   { background: linear-gradient(180deg, #f59e0b, #fbbf24); }
+    .audit-layer.l-ok::after       { background: linear-gradient(180deg, #10b981, #34d399); }
+    .audit-layer .lbl { font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .audit-layer .val { font-size: 26px; font-weight: 800; color: var(--text); margin-top: 4px; }
+    .audit-layer .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
     html { font-size: 16px; }
     body {
       font-family: 'Inter', sans-serif;
       background: var(--bg);
+      background-image: var(--bg-mesh);
+      background-attachment: fixed;
       color: var(--text);
       line-height: 1.6;
       min-height: 100dvh;
       display: flex;
+      position: relative;
+      overflow-x: hidden;
     }
+
+    /* ── Aurora background (blobs oscilando) ──────────────────────── */
+    .aurora {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .aurora-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: .55;
+      will-change: transform;
+    }
+    .aurora-blob.b1 {
+      width: 520px; height: 520px;
+      background: radial-gradient(circle, var(--aurora-3), transparent 60%);
+      top: -120px; left: -80px;
+      animation: aurora-float-1 22s ease-in-out infinite;
+    }
+    .aurora-blob.b2 {
+      width: 460px; height: 460px;
+      background: radial-gradient(circle, var(--sky), transparent 60%);
+      top: 30%; right: -100px;
+      animation: aurora-float-2 28s ease-in-out infinite;
+      opacity: .42;
+    }
+    .aurora-blob.b3 {
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, var(--aurora-1), transparent 60%);
+      bottom: -180px; left: 35%;
+      animation: aurora-float-3 32s ease-in-out infinite;
+      opacity: .50;
+    }
+    @keyframes aurora-float-1 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33%      { transform: translate(120px, 60px) scale(1.1); }
+      66%      { transform: translate(40px, 180px) scale(.92); }
+    }
+    @keyframes aurora-float-2 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      40%      { transform: translate(-140px, 80px) scale(1.15); }
+      75%      { transform: translate(-60px, -120px) scale(.88); }
+    }
+    @keyframes aurora-float-3 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      35%      { transform: translate(-100px, -80px) scale(1.08); }
+      70%      { transform: translate(80px, -40px) scale(.95); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .aurora-blob { animation: none; }
+    }
+
+    /* Sidebar e main precisam ficar acima da aurora */
+    .sidebar, .main { position: relative; z-index: 1; }
 
     /* ── Sidebar ────────────────────────────────────────────────── */
     .sidebar {
       position: fixed;
       inset: 0 auto 0 0;
       width: var(--sidebar-w);
-      background: var(--navy);
+      background: linear-gradient(180deg, #0F172A 0%, #0B1B3D 60%, #0A2456 100%);
+      box-shadow: 4px 0 30px rgba(15,23,42,.18), inset -1px 0 0 rgba(77,124,255,.12);
       display: flex;
       flex-direction: column;
       z-index: 100;
       overflow-y: auto;
+    }
+    .sidebar::after {
+      content: "";
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      width: 1px;
+      background: linear-gradient(180deg, transparent, rgba(77,124,255,.35), transparent);
+      pointer-events: none;
     }
     .sidebar-logo {
       padding: 20px 20px 16px;
@@ -129,8 +576,10 @@
       min-height: 100dvh;
     }
     .topbar {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,.65);
+      backdrop-filter: blur(18px) saturate(180%);
+      -webkit-backdrop-filter: blur(18px) saturate(180%);
+      border-bottom: 1px solid rgba(186,230,253,.45);
       padding: 0 32px;
       height: 56px;
       display: flex;
@@ -160,12 +609,18 @@
     .section { display: none; }
     .section.active { display: block; }
 
-    /* ── Cards base ─────────────────────────────────────────────── */
+    /* ── Cards base (glassmorphism) ─────────────────────────────── */
     .card {
       background: var(--surface);
+      backdrop-filter: blur(18px) saturate(180%);
+      -webkit-backdrop-filter: blur(18px) saturate(180%);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
+      transition: box-shadow .3s var(--easing), transform .3s var(--easing);
+    }
+    .card:hover {
+      box-shadow: var(--shadow-lg);
     }
     .card-header {
       padding: 16px 20px 12px;
@@ -223,69 +678,175 @@
     /* ── Mode cards ─────────────────────────────────────────────── */
     .mode-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 14px;
       margin-bottom: 24px;
     }
+    @media (max-width: 1100px) {
+      .mode-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .mode-grid { grid-template-columns: 1fr; }
+    }
+    /* ── Mode cards (futurista) ─────────────────────────────────── */
     .mode-card {
-      border: 2px solid var(--border);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 18px 16px;
+      padding: 22px 18px 18px;
       cursor: pointer;
-      transition: border-color .15s, box-shadow .15s, transform .1s;
-      background: var(--surface);
+      transition: transform .25s var(--easing), box-shadow .25s var(--easing), border-color .25s;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.92) 0%, rgba(248,252,255,.78) 100%);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
       position: relative;
       overflow: hidden;
       user-select: none;
+      box-shadow:
+        0 1px 0 rgba(255,255,255,.6) inset,
+        0 2px 6px rgba(15,23,42,.04);
     }
-    .mode-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+    /* Linha de gradient no topo (running glow) */
     .mode-card::before {
       content: '';
       position: absolute;
       top: 0; left: 0; right: 0;
-      height: 3px;
+      height: 2px;
+      opacity: .85;
+      transition: opacity .25s;
     }
-    .mode-card.green::before  { background: var(--green); }
-    .mode-card.blue::before   { background: var(--blue); }
-    .mode-card.purple::before { background: var(--purple); }
-    .mode-card.selected.green  { border-color: var(--green);  box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
-    .mode-card.selected.blue   { border-color: var(--blue);   box-shadow: 0 0 0 3px rgba(3,105,161,.15); }
-    .mode-card.selected.purple { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+    /* Glow ambiente atras do card (visivel no hover/selected) */
+    .mode-card::after {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: var(--radius);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .35s var(--easing);
+      background: radial-gradient(circle at 30% 0%, currentColor 0%, transparent 60%);
+      filter: blur(14px);
+    }
+    .mode-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 18px 40px rgba(15,23,42,.12), 0 4px 12px rgba(15,23,42,.06);
+    }
+    .mode-card:hover::after { opacity: .18; }
+    .mode-card:hover::before { opacity: 1; }
+
+    .mode-card.green   { color: var(--green); }
+    .mode-card.cyan    { color: var(--cyan); }
+    .mode-card.blue    { color: var(--blue); }
+    .mode-card.purple  { color: var(--purple); }
+    .mode-card.green::before  { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+    .mode-card.cyan::before   { background: linear-gradient(90deg, transparent, var(--cyan), #67E8F9, transparent); }
+    .mode-card.blue::before   { background: linear-gradient(90deg, transparent, var(--blue), var(--sky), transparent); }
+    .mode-card.purple::before { background: linear-gradient(90deg, transparent, var(--purple), #C084FC, transparent); }
+
+    .mode-card.selected {
+      border-color: transparent;
+      transform: translateY(-2px);
+    }
+    .mode-card.selected::after { opacity: .28; }
+    .mode-card.selected::before { height: 3px; opacity: 1; }
+    .mode-card.selected.green  { box-shadow: 0 0 0 1.5px var(--green),  0 12px 30px rgba(22,163,74,.18), 0 0 30px rgba(22,163,74,.15); }
+    .mode-card.selected.cyan   { box-shadow: 0 0 0 1.5px var(--cyan),   0 12px 30px rgba(6,182,212,.22),  0 0 30px rgba(103,232,249,.25); }
+    .mode-card.selected.blue   { box-shadow: 0 0 0 1.5px var(--blue),   0 12px 30px rgba(0,82,255,.22),  0 0 30px rgba(77,124,255,.25); }
+    .mode-card.selected.purple { box-shadow: 0 0 0 1.5px var(--purple), 0 12px 30px rgba(124,58,237,.20),0 0 30px rgba(124,58,237,.20); }
+
+    /* Icone — hexagon-ish com gradient + glow */
     .mode-icon {
-      width: 36px; height: 36px;
-      border-radius: 8px;
+      width: 44px; height: 44px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.2rem;
-      margin-bottom: 10px;
+      margin-bottom: 14px;
+      position: relative;
+      border-radius: 12px;
+      color: #fff;
     }
-    .mode-icon.green  { background: var(--green10); }
-    .mode-icon.blue   { background: var(--blue10); }
-    .mode-icon.purple { background: var(--purple10); }
-    .mode-card h3 { font-size: .9rem; font-weight: 700; margin-bottom: 4px; }
-    .mode-card p  { font-size: .78rem; color: var(--muted); line-height: 1.45; }
+    .mode-icon svg { width: 22px; height: 22px; stroke-width: 1.75; position: relative; z-index: 1; }
+    .mode-icon::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(135deg, currentColor 0%, transparent 100%);
+      opacity: .9;
+    }
+    .mode-icon::after {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: inherit;
+      background: currentColor;
+      filter: blur(14px);
+      opacity: .25;
+      z-index: -1;
+      transition: opacity .25s;
+    }
+    .mode-card:hover .mode-icon::after { opacity: .4; }
+    .mode-icon.green  { color: var(--green); }
+    .mode-icon.cyan   { color: var(--cyan); }
+    .mode-icon.blue   { color: var(--blue); }
+    .mode-icon.purple { color: var(--purple); }
+
+    .mode-card h3 {
+      font-size: .95rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+      color: var(--navy);
+    }
+    .mode-card p  {
+      font-size: .8rem;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 4px;
+    }
     .mode-badge {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       font-size: .65rem;
-      font-weight: 600;
-      padding: 2px 7px;
-      border-radius: 20px;
-      margin-top: 8px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      margin-top: 10px;
       text-transform: uppercase;
-      letter-spacing: .05em;
+      letter-spacing: .08em;
+      border: 1px solid;
     }
-    .mode-badge.green  { background: var(--green10);  color: var(--green); }
-    .mode-badge.blue   { background: var(--blue10);   color: var(--blue); }
-    .mode-badge.purple { background: var(--purple10); color: var(--purple); }
+    .mode-badge::before {
+      content: '';
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: .4; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mode-badge::before { animation: none; }
+    }
+    .mode-badge.green  { background: rgba(22,163,74,.10);  color: var(--green);  border-color: rgba(22,163,74,.30); }
+    .mode-badge.cyan   { background: rgba(6,182,212,.10);  color: var(--cyan);   border-color: rgba(6,182,212,.30); }
+    .mode-badge.blue   { background: rgba(0,82,255,.10);   color: var(--blue);   border-color: rgba(0,82,255,.30); }
+    .mode-badge.purple { background: rgba(124,58,237,.10); color: var(--purple); border-color: rgba(124,58,237,.30); }
+
     .check-icon {
       position: absolute;
-      top: 10px; right: 10px;
-      width: 20px; height: 20px;
+      top: 12px; right: 12px;
+      width: 22px; height: 22px;
       border-radius: 50%;
       display: none; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 3px rgba(255,255,255,.85), 0 2px 8px rgba(0,0,0,.15);
     }
-    .mode-card.selected.green  .check-icon { display: flex; background: var(--green); }
-    .mode-card.selected.blue   .check-icon { display: flex; background: var(--blue); }
-    .mode-card.selected.purple .check-icon { display: flex; background: var(--purple); }
+    .mode-card.selected.green  .check-icon { display: flex; background: var(--green);  }
+    .mode-card.selected.cyan   .check-icon { display: flex; background: linear-gradient(135deg, var(--cyan), #67E8F9); }
+    .mode-card.selected.blue   .check-icon { display: flex; background: linear-gradient(135deg, var(--blue), var(--sky)); }
+    .mode-card.selected.purple .check-icon { display: flex; background: linear-gradient(135deg, var(--purple), #C084FC); }
 
     /* ── Upload zone ────────────────────────────────────────────── */
     .upload-zone {
@@ -356,8 +917,33 @@
     }
     .btn:active { transform: scale(.98); }
     .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-    .btn-primary { background: var(--blue); color: #fff; }
-    .btn-primary:hover:not(:disabled) { opacity: .9; box-shadow: 0 2px 8px rgba(3,105,161,.3); }
+    .btn:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+    .nav-item:focus-visible,
+    .mode-card:focus-visible,
+    .upload-zone:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+    a:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--blue) 0%, var(--blue-soft) 50%, var(--sky) 100%);
+      background-size: 200% 100%;
+      background-position: 0% 50%;
+      color: #fff;
+      box-shadow: 0 6px 18px rgba(0,82,255,.28), inset 0 1px 0 rgba(255,255,255,.2);
+      transition: background-position .6s var(--easing), box-shadow .25s var(--easing), transform .1s;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background-position: 100% 50%;
+      box-shadow: 0 10px 28px rgba(0,82,255,.38), 0 0 24px rgba(77,124,255,.35), inset 0 1px 0 rgba(255,255,255,.25);
+    }
     .btn-green  { background: var(--green);  color: #fff; }
     .btn-purple { background: var(--purple); color: #fff; }
     .btn-outline {
@@ -764,6 +1350,13 @@
 </head>
 <body>
 
+<!-- ── Aurora background (camadas oscilando) ──────────────────── -->
+<div class="aurora" aria-hidden="true">
+  <div class="aurora-blob b1"></div>
+  <div class="aurora-blob b2"></div>
+  <div class="aurora-blob b3"></div>
+</div>
+
 <!-- ── Sidebar ──────────────────────────────────────────────────── -->
 <aside class="sidebar" role="navigation" aria-label="Menu principal">
   <div class="sidebar-logo">
@@ -805,7 +1398,7 @@
     </a>
   </nav>
   <div class="sidebar-footer">
-    <div class="version-badge">v0.3.0</div>
+    <div class="version-badge">v0.4.0</div>
   </div>
 </aside>
 
@@ -815,6 +1408,15 @@
     <span class="topbar-title" id="topbar-title">Conciliação Bancária</span>
     <div class="topbar-actions">
       <span class="badge-db" id="db-badge" aria-live="polite">DB: verificando…</span>
+      <button class="theme-toggle" id="btn-theme" onclick="toggleTema()" aria-label="Alternar tema escuro/claro" title="Tema (Ctrl+Shift+D)">
+        <svg class="moon-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+        <svg class="sun-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -861,10 +1463,38 @@
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
-            <div class="mode-icon green" aria-hidden="true">🐍</div>
+            <div class="mode-icon green" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+                <rect x="9" y="9" width="6" height="6"/>
+                <path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/>
+              </svg>
+            </div>
             <h3>Python Heurístico</h3>
             <p>Análise local rápida com regras contábeis brasileiras. Sem custo de API, ideal para triagem.</p>
             <span class="mode-badge green">Gratuito · Rápido</span>
+          </div>
+
+          <!-- Haiku 4.5 (basico, rapido e barato) -->
+          <div class="mode-card cyan" role="radio" aria-checked="false" tabindex="0"
+               data-mode="haiku" onclick="selecionarModo(this)" onkeydown="teclaCard(event,this)">
+            <div class="check-icon" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="mode-icon cyan" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                <!-- head profile (right-facing) -->
+                <path d="M17 4.5c-4.4 0-7.5 3.2-7.5 7 0 1.8.6 3.3 1.6 4.5-.9.9-1.8 2.4-1.8 4 0 1.1.7 1.5 1.4 1.5h2.3M15 21.5l.8-2.5h2"/>
+                <!-- small neural burst — 4 rays (Haiku) -->
+                <circle cx="14.5" cy="10" r="1.6" fill="currentColor" stroke="none"/>
+                <path d="M14.5 6.5v-1.8M14.5 13.5v-.5M11 10h-1.5M19.5 10H18M12.3 7.8l-1.1-1.1M17.7 7.8l1.1-1.1"/>
+              </svg>
+            </div>
+            <h3>Claude Haiku 4.5</h3>
+            <p>Modelo Anthropic mais rápido e econômico. Ideal para triagem de grande volume.</p>
+            <span class="mode-badge cyan">Básico · Veloz</span>
           </div>
 
           <!-- Sonnet 4.6 -->
@@ -875,7 +1505,15 @@
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
-            <div class="mode-icon blue" aria-hidden="true">✨</div>
+            <div class="mode-icon blue" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                <!-- head profile -->
+                <path d="M17 4.5c-4.4 0-7.5 3.2-7.5 7 0 1.8.6 3.3 1.6 4.5-.9.9-1.8 2.4-1.8 4 0 1.1.7 1.5 1.4 1.5h2.3M15 21.5l.8-2.5h2"/>
+                <!-- medium neural burst — 8 rays (Sonnet) -->
+                <circle cx="14.5" cy="10" r="1.7" fill="currentColor" stroke="none"/>
+                <path d="M14.5 6.2v-1.8M14.5 15.8v-1.8M10.4 10H8.6M20.4 10H18.6M11.6 7.1l-1.3-1.3M18.7 14.2l-1.3-1.3M11.6 12.9l-1.3 1.3M18.7 5.8l-1.3 1.3"/>
+              </svg>
+            </div>
             <h3>Claude Sonnet 4.6</h3>
             <p>Modelo principal da Anthropic. Análise profunda com linguagem natural e contexto contábil.</p>
             <span class="mode-badge blue">Recomendado</span>
@@ -889,7 +1527,15 @@
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
-            <div class="mode-icon purple" aria-hidden="true">🔬</div>
+            <div class="mode-icon purple" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                <!-- head profile (Opus = burst mais denso, 12 rays) -->
+                <path d="M17 4.5c-4.4 0-7.5 3.2-7.5 7 0 1.8.6 3.3 1.6 4.5-.9.9-1.8 2.4-1.8 4 0 1.1.7 1.5 1.4 1.5h2.3M15 21.5l.8-2.5h2"/>
+                <!-- dense neural burst — 12 rays (Multi/Opus) -->
+                <circle cx="14.5" cy="10" r="1.8" fill="currentColor" stroke="none"/>
+                <path d="M14.5 5.8v-2M14.5 16.2v-2M9.8 10H7.8M21.2 10H19.2M11.2 6.7l-1.4-1.4M19.2 14.7l-1.4-1.4M11.2 13.3l-1.4 1.4M19.2 5.3l-1.4 1.4M13 6.2l-.7-1.9M17.7 13.5l.7 1.9M13 13.8l-.7 1.9M17.7 6.5l.7-1.9"/>
+              </svg>
+            </div>
             <h3>Multi-Modelo</h3>
             <p>Opus 4.7 + Sonnet 4.6 + Haiku 4.5 em paralelo com síntese de consenso. Máxima confiança.</p>
             <span class="mode-badge purple">Alta Confiança</span>
@@ -975,6 +1621,45 @@
 
       <!-- Export bar -->
       <div class="export-bar" id="export-bar"></div>
+
+      <!-- Auditoria multi-camada: visões agregadas (Aurora Audit Layer) -->
+      <div class="section-title" style="margin-top:24px">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        Visão de Auditoria · Camadas Analíticas
+      </div>
+      <div class="audit-layers" id="audit-layers"></div>
+      <div class="audit-grid">
+        <div class="chart-card">
+          <h3>Distribuição por Categoria</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-categorias"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Anomalias por Severidade</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-anomalias"></canvas></div>
+        </div>
+        <div class="chart-card tall span-2">
+          <h3>Fluxo de Caixa Diário · Crédito vs Débito</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-fluxo"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Top Contrapartes · Volume Movimentado</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-contrapartes"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Radar de Conformidade</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-radar"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Movimentação por Dia da Semana</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-semana"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Top 5 Anomalias · Risco Financeiro</h3>
+          <div class="chart-canvas-wrap" id="ranking-risco"></div>
+        </div>
+      </div>
 
       <hr class="divider" />
 
@@ -1122,473 +1807,6 @@
 <!-- ── Toast container ─────────────────────────────────────────── -->
 <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
-<script>
-/* ── Estado ──────────────────────────────────────────────────────── */
-const API = '';  // mesmo origin
-let _modo = 'llm';
-let _arquivos = [];
-let _reportId = null;
-let _historicoRelatorios = [];
-
-/* ── Navegação ──────────────────────────────────────────────────── */
-document.querySelectorAll('.nav-item[data-section]').forEach(btn => {
-  btn.addEventListener('click', () => navegar(btn.dataset.section));
-});
-
-function navegar(secao) {
-  document.querySelectorAll('.nav-item').forEach(b => {
-    b.classList.toggle('active', b.dataset.section === secao);
-    b.setAttribute('aria-current', b.dataset.section === secao ? 'page' : 'false');
-  });
-  document.querySelectorAll('.section').forEach(s => {
-    s.classList.toggle('active', s.id === 'section-' + secao);
-  });
-  const titulos = { conciliacao: 'Conciliação Bancária', clientes: 'Clientes', relatorios: 'Histórico de Relatórios' };
-  document.getElementById('topbar-title').textContent = titulos[secao] || secao;
-  if (secao === 'clientes') carregarClientes();
-}
-
-/* ── Steps ──────────────────────────────────────────────────────── */
-function atualizarSteps() {
-  const temArquivos = _arquivos.length > 0;
-  const s1 = document.getElementById('step-1');
-  const s2 = document.getElementById('step-2');
-  const s3 = document.getElementById('step-3');
-  s1.className = 'step done';
-  s2.className = temArquivos ? 'step done' : 'step active';
-  s3.className = temArquivos ? 'step active' : 'step';
-}
-
-/* ── Modo ───────────────────────────────────────────────────────── */
-function selecionarModo(el) {
-  document.querySelectorAll('.mode-card').forEach(c => {
-    c.classList.remove('selected');
-    c.setAttribute('aria-checked', 'false');
-  });
-  el.classList.add('selected');
-  el.setAttribute('aria-checked', 'true');
-  _modo = el.dataset.mode;
-  atualizarBotaoCTA();
-}
-
-function teclaCard(e, el) {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selecionarModo(el); }
-}
-
-/* ── Upload ─────────────────────────────────────────────────────── */
-function dragOver(e) {
-  e.preventDefault();
-  document.getElementById('upload-zone').classList.add('drag-over');
-}
-function dragLeave() {
-  document.getElementById('upload-zone').classList.remove('drag-over');
-}
-function drop(e) {
-  e.preventDefault();
-  dragLeave();
-  arquivosSelecionados(e.dataTransfer.files);
-}
-function arquivosSelecionados(fileList) {
-  const aceitos = ['.ofx', '.pdf', '.xml'];
-  Array.from(fileList).forEach(f => {
-    const ext = '.' + f.name.split('.').pop().toLowerCase();
-    if (!aceitos.includes(ext)) { toast(`Arquivo ignorado: ${f.name} (formato não suportado)`, 'error'); return; }
-    if (_arquivos.find(a => a.name === f.name)) return;
-    _arquivos.push(f);
-  });
-  renderFileList();
-  atualizarSteps();
-  atualizarBotaoCTA();
-}
-
-function renderFileList() {
-  const lista = document.getElementById('file-list');
-  lista.innerHTML = _arquivos.map((f, i) => `
-    <div class="file-item">
-      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-      <span class="file-item-name">${esc(f.name)}</span>
-      <span class="file-item-size">${formatBytes(f.size)}</span>
-      <button class="file-remove" onclick="removerArquivo(${i})" aria-label="Remover ${esc(f.name)}">✕</button>
-    </div>`).join('');
-}
-
-function removerArquivo(i) {
-  _arquivos.splice(i, 1);
-  renderFileList();
-  atualizarSteps();
-  atualizarBotaoCTA();
-}
-
-function atualizarBotaoCTA() {
-  const btn = document.getElementById('btn-conciliar');
-  const desc = document.getElementById('cta-desc');
-  const temArquivos = _arquivos.length > 0;
-  btn.disabled = !temArquivos;
-  const nomes = { simulacao: 'Python Heurístico', llm: 'Claude Sonnet 4.6', multi: 'Multi-Modelo (3 modelos)' };
-  const cores = { simulacao: 'btn-green', llm: 'btn-primary', multi: 'btn-purple' };
-  btn.className = `btn ${cores[_modo] || 'btn-primary'} btn-lg`;
-  if (temArquivos) {
-    desc.textContent = `${_arquivos.length} arquivo(s) · Modo: ${nomes[_modo]}`;
-  } else {
-    desc.textContent = 'Selecione arquivos para continuar';
-  }
-}
-
-/* ── Conciliação ────────────────────────────────────────────────── */
-async function iniciarConciliacao() {
-  if (!_arquivos.length) return;
-
-  // Esconde forms, mostra loading
-  document.getElementById('card-mode').classList.add('hidden');
-  document.getElementById('card-upload').classList.add('hidden');
-  document.getElementById('card-cta').classList.add('hidden');
-  document.getElementById('result-panel').classList.remove('active');
-  document.getElementById('result-panel').style.display = 'none';
-
-  const loading = document.getElementById('loading-panel');
-  loading.classList.add('active');
-
-  // Ajusta dots para o modo
-  const isMulti = _modo === 'multi';
-  const isSim   = _modo === 'simulacao';
-  ['dot-opus','dot-sonnet-multi','dot-haiku'].forEach(id => {
-    document.getElementById(id).classList.toggle('hidden', !isMulti);
-  });
-  document.getElementById('dot-single').classList.toggle('hidden', isMulti);
-  document.getElementById('loading-title').textContent =
-    isMulti ? 'Consultando 3 modelos em paralelo…' :
-    isSim   ? 'Analisando com heurísticas locais…' :
-              'Analisando com Claude Sonnet 4.6…';
-  document.getElementById('loading-sub').textContent =
-    isMulti ? 'Opus 4.7 + Sonnet 4.6 + Haiku 4.5 gerando análises independentes' :
-    isSim   ? 'Aplicando regras contábeis brasileiras' :
-              'Claude está lendo e cruzando as transações';
-
-  // Reinicia a barra de progresso
-  const bar = document.getElementById('loading-bar-fill');
-  bar.style.animation = 'none';
-  bar.offsetHeight; // reflow
-  bar.style.animation = '';
-
-  const fd = new FormData();
-  _arquivos.forEach(f => fd.append('arquivos', f));
-
-  let url = `${API}/conciliar/ofx`;
-  const params = new URLSearchParams();
-  if (_modo === 'simulacao') params.set('simular', 'true');
-  if (_modo === 'multi')     params.set('multi_modelo', 'true');
-  if (params.toString()) url += '?' + params;
-
-  try {
-    const resp = await fetch(url, { method: 'POST', body: fd });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
-      const msg = typeof err.detail === 'object' ? JSON.stringify(err.detail) : String(err.detail);
-      throw new Error(msg);
-    }
-    const data = await resp.json();
-    bar.style.width = '100%';
-    setTimeout(() => renderResultado(data), 300);
-  } catch(err) {
-    loading.classList.remove('active');
-    document.getElementById('card-mode').classList.remove('hidden');
-    document.getElementById('card-upload').classList.remove('hidden');
-    document.getElementById('card-cta').classList.remove('hidden');
-    toast('Erro: ' + err.message, 'error');
-  }
-}
-
-function renderResultado(data) {
-  const loading = document.getElementById('loading-panel');
-  loading.classList.remove('active');
-
-  _reportId = data.report_id;
-  _historicoRelatorios.push({ id: _reportId, modo: data.modo, ts: new Date() });
-  atualizarHistorico();
-
-  // KPIs
-  const totalTx  = data.extratos?.reduce((s, e) => s + e.qtd, 0) ?? 0;
-  const totalAnom = data.anomalias?.length ?? 0;
-  const modo = { simulacao_local: 'Python Local', claude_llm: 'Sonnet 4.6', multi_modelo: 'Multi-Modelo' }[data.modo] || data.modo;
-  const scoreConsenso = data.score_consenso != null ? (data.score_consenso * 100).toFixed(0) + '%' : '—';
-
-  document.getElementById('kpi-grid').innerHTML = `
-    <div class="kpi-card">
-      <div class="kpi-label">Transações</div>
-      <div class="kpi-value blue">${totalTx}</div>
-      <div class="kpi-sub">${data.extratos?.length ?? 0} conta(s)</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Anomalias</div>
-      <div class="kpi-value ${totalAnom > 0 ? 'kpi-value' : 'green'}" style="${totalAnom>0?'color:var(--red)':''}">${totalAnom}</div>
-      <div class="kpi-sub">${totalAnom === 0 ? 'Nenhuma detectada' : 'Ver detalhes abaixo'}</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Modo</div>
-      <div class="kpi-value" style="font-size:1.1rem;font-family:'Inter',sans-serif;font-weight:700">${modo}</div>
-      <div class="kpi-sub">${data.stop_reason ?? (data.score_consenso != null ? 'Consenso calculado' : 'Concluído')}</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Score Consenso</div>
-      <div class="kpi-value ${data.score_consenso != null ? 'purple' : 'text-muted'}">${scoreConsenso}</div>
-      <div class="kpi-sub">${data.score_consenso != null ? `${data.modelos?.length ?? 0} modelos` : 'Modo único'}</div>
-    </div>`;
-
-  // Export bar
-  document.getElementById('export-bar').innerHTML = `
-    <a class="btn btn-outline btn-sm" href="${API}/export/html/${_reportId}" target="_blank" rel="noopener"
-       aria-label="Baixar relatório HTML">
-      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-      Baixar HTML
-    </a>
-    <a class="btn btn-outline btn-sm" href="${API}/export/xlsx/${_reportId}" target="_blank" rel="noopener"
-       aria-label="Baixar planilha XLSX">
-      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-      </svg>
-      Baixar XLSX
-    </a>`;
-
-  // Anomalias
-  const anomalias = data.anomalias ?? [];
-  const secAnom = document.getElementById('anomalias-section');
-  if (anomalias.length > 0) {
-    const html = anomalias.map(a => `
-      <div class="anomalia-item ${a.severidade}">
-        <span class="sev-badge ${a.severidade}">${a.severidade}</span>
-        <div class="anomalia-content">
-          <div class="anomalia-title">${esc(a.titulo)}</div>
-          <div class="anomalia-detail">${esc(a.conta)} — ${esc(a.detalhe)}</div>
-        </div>
-        <span class="anomalia-valor">${a.valor != null ? 'R$ ' + a.valor.toLocaleString('pt-BR',{minimumFractionDigits:2}) : ''}</span>
-      </div>`).join('');
-    secAnom.innerHTML = `
-      <div class="section-title">
-        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-        Anomalias Detectadas (${anomalias.length})
-      </div>
-      <div class="anomalia-list" role="list" aria-label="Anomalias detectadas">${html}</div>`;
-  } else {
-    secAnom.innerHTML = `<div style="display:flex;align-items:center;gap:8px;color:var(--green);font-weight:600;margin-bottom:20px">
-      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-      Nenhuma anomalia detectada
-    </div>`;
-  }
-
-  // Relatório principal
-  const relHtml = data.relatorio_html || (data.relatorio_md ? marked.parse(data.relatorio_md) : '');
-  document.getElementById('report-html').innerHTML = relHtml || '<p class="text-muted">Relatório não disponível.</p>';
-
-  // Relatórios individuais (multi-model)
-  const relInd = data.relatorios_individuais;
-  const secInd = document.getElementById('individual-section');
-  if (relInd && Object.keys(relInd).length > 0) {
-    secInd.classList.remove('hidden');
-    const items = Object.entries(relInd).map(([label, texto], i) => `
-      <div class="accordion-item">
-        <button class="accordion-btn" aria-expanded="${i===0}" onclick="toggleAccordion(this)">
-          <span>${esc(label)}</span>
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        <div class="accordion-content report-body ${i===0?'open':''}">${marked.parse(texto)}</div>
-      </div>`).join('');
-    document.getElementById('individual-accordion').innerHTML = items;
-  } else {
-    secInd.classList.add('hidden');
-  }
-
-  const panel = document.getElementById('result-panel');
-  panel.style.display = 'block';
-  panel.classList.add('active');
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  toast('Conciliação concluída com sucesso!', 'success');
-}
-
-function novaAnalise() {
-  _arquivos = [];
-  _reportId = null;
-  renderFileList();
-  atualizarSteps();
-  atualizarBotaoCTA();
-  document.getElementById('result-panel').style.display = 'none';
-  document.getElementById('result-panel').classList.remove('active');
-  document.getElementById('card-mode').classList.remove('hidden');
-  document.getElementById('card-upload').classList.remove('hidden');
-  document.getElementById('card-cta').classList.remove('hidden');
-  document.getElementById('file-input').value = '';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function toggleAccordion(btn) {
-  const expanded = btn.getAttribute('aria-expanded') === 'true';
-  btn.setAttribute('aria-expanded', !expanded);
-  btn.nextElementSibling.classList.toggle('open', !expanded);
-}
-
-/* ── Clientes ───────────────────────────────────────────────────── */
-async function carregarClientes() {
-  const tbody = document.getElementById('clientes-tbody');
-  tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:24px">Carregando…</td></tr>';
-  try {
-    const r = await fetch(`${API}/clientes`);
-    if (!r.ok) throw new Error(r.statusText);
-    const lista = await r.json();
-    if (!lista.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:32px">Nenhum cliente cadastrado.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = lista.map(c => `
-      <tr>
-        <td><strong>${esc(c.nome)}</strong></td>
-        <td style="font-family:'JetBrains Mono',monospace;font-size:.8rem">${c.cnpj ? formatCNPJ(c.cnpj) : '—'}</td>
-        <td>${c.email ? esc(c.email) : '—'}</td>
-        <td><span class="plano-badge ${c.plano}">${c.plano}</span></td>
-        <td><span class="status-dot ${c.ativo ? 'ativo' : ''}">${c.ativo ? 'Ativo' : 'Inativo'}</span></td>
-      </tr>`).join('');
-  } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--red)">${esc(e.message)}</td></tr>`;
-  }
-}
-
-function abrirModalCliente() {
-  document.getElementById('modal-cliente').classList.add('open');
-  document.getElementById('inp-nome').focus();
-}
-function fecharModal() {
-  document.getElementById('modal-cliente').classList.remove('open');
-  document.getElementById('form-cliente').reset();
-  document.querySelectorAll('.error').forEach(e => e.style.display = 'none');
-}
-
-document.getElementById('modal-cliente').addEventListener('keydown', e => {
-  if (e.key === 'Escape') fecharModal();
-});
-
-async function submitCliente(e) {
-  e.preventDefault();
-  const nome  = document.getElementById('inp-nome').value.trim();
-  const cnpj  = document.getElementById('inp-cnpj').value.trim();
-  const email = document.getElementById('inp-email').value.trim();
-  const tel   = document.getElementById('inp-tel').value.trim();
-  const plano = document.getElementById('inp-plano').value;
-
-  let ok = true;
-  const errNome = document.getElementById('err-nome');
-  const errCnpj = document.getElementById('err-cnpj');
-  errNome.style.display = 'none';
-  errCnpj.style.display = 'none';
-
-  if (!nome) { errNome.style.display = 'block'; ok = false; document.getElementById('inp-nome').focus(); }
-
-  if (!ok) return;
-
-  const btn = document.getElementById('btn-salvar-cliente');
-  btn.disabled = true; btn.textContent = 'Salvando…';
-
-  const body = { nome, plano };
-  if (cnpj)  body.cnpj  = cnpj.replace(/\D/g, '');
-  if (email) body.email = email;
-  if (tel)   body.telefone = tel;
-
-  try {
-    const r = await fetch(`${API}/clientes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      if (r.status === 409) { errCnpj.textContent = 'CNPJ já cadastrado.'; errCnpj.style.display = 'block'; }
-      else if (r.status === 422) {
-        const detail = err.detail?.[0]?.msg || 'Dados inválidos.';
-        if (detail.toLowerCase().includes('cnpj')) { errCnpj.textContent = detail; errCnpj.style.display = 'block'; }
-        else toast('Erro de validação: ' + detail, 'error');
-      } else throw new Error(err.detail || r.statusText);
-      return;
-    }
-    fecharModal();
-    toast('Cliente cadastrado com sucesso!', 'success');
-    carregarClientes();
-  } catch(err) {
-    toast('Erro: ' + err.message, 'error');
-  } finally {
-    btn.disabled = false; btn.textContent = 'Cadastrar';
-  }
-}
-
-/* ── Histórico ──────────────────────────────────────────────────── */
-function atualizarHistorico() {
-  const container = document.getElementById('relatorios-lista');
-  if (!_historicoRelatorios.length) return;
-  const modos = { simulacao_local: 'Python Local', claude_llm: 'Sonnet 4.6', multi_modelo: 'Multi-Modelo' };
-  container.innerHTML = _historicoRelatorios.slice().reverse().map(r => `
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
-        <div>
-          <strong style="font-size:.9rem">${r.id}</strong>
-          <div style="font-size:.78rem;color:var(--muted);margin-top:2px">
-            ${modos[r.modo] || r.modo} · ${r.ts.toLocaleTimeString('pt-BR')}
-          </div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <a class="btn btn-outline btn-sm" href="${API}/export/html/${r.id}" target="_blank" rel="noopener">HTML</a>
-          <a class="btn btn-outline btn-sm" href="${API}/export/xlsx/${r.id}" target="_blank" rel="noopener">XLSX</a>
-        </div>
-      </div>
-    </div>`).join('');
-}
-
-/* ── Health check ───────────────────────────────────────────────── */
-async function verificarHealth() {
-  const badge = document.getElementById('db-badge');
-  try {
-    const r = await fetch(`${API}/health`);
-    const d = await r.json();
-    badge.textContent = d.banco_dados === 'ok' ? 'DB: online' : 'DB: ' + d.banco_dados;
-    badge.className = 'badge-db ' + (d.banco_dados === 'ok' ? '' : 'offline');
-  } catch {
-    badge.textContent = 'DB: erro';
-    badge.className = 'badge-db offline';
-  }
-}
-
-/* ── Utilitários ────────────────────────────────────────────────── */
-function formatBytes(b) {
-  if (b < 1024) return b + ' B';
-  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
-  return (b/1024/1024).toFixed(1) + ' MB';
-}
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function formatCNPJ(s) {
-  const d = s.replace(/\D/g,'');
-  if (d.length !== 14) return s;
-  return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
-}
-
-function toast(msg, type = 'info') {
-  const c = document.getElementById('toast-container');
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.setAttribute('role', 'alert');
-  el.innerHTML = `<span>${esc(msg)}</span>`;
-  c.appendChild(el);
-  setTimeout(() => el.remove(), 4500);
-}
-
-/* ── Init ───────────────────────────────────────────────────────── */
-verificarHealth();
-</script>
+<script src="/ui/js/app.js" defer></script>
 </body>
 </html>

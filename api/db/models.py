@@ -4,7 +4,7 @@ from datetime import datetime, date, timezone
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-from sqlalchemy import String, Boolean, Integer, Float, Date, Numeric, ForeignKey, Text
+from sqlalchemy import String, Boolean, Integer, Date, Numeric, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS
 TIMESTAMPTZ = _TS(timezone=True)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -66,36 +66,3 @@ class Transacao(Base):
     criado_em:        Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
 
     conciliacao: Mapped["Conciliacao | None"] = relationship(back_populates="transacoes")
-    predicoes:   Mapped[list["MlPredicao"]]   = relationship(back_populates="transacao")
-
-
-class MlPredicao(Base):
-    __tablename__ = "ml_predicoes"
-
-    id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    transacao_id:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("transacoes.id"))
-    modelo:         Mapped[str]          = mapped_column(Text, nullable=False)
-    predicao:       Mapped[str]          = mapped_column(Text, nullable=False)
-    confianca:      Mapped[float]        = mapped_column(Float, nullable=False)
-    confirmado_por: Mapped[str | None]   = mapped_column(Text)
-    correto:        Mapped[bool | None]  = mapped_column(Boolean)
-    criado_em:      Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
-
-    transacao: Mapped["Transacao | None"] = relationship(back_populates="predicoes")
-
-
-class FsrsMemoria(Base):
-    __tablename__ = "fsrs_memorias"
-
-    id:               Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    cliente_id:       Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
-    pattern_key:      Mapped[str]        = mapped_column(Text, nullable=False)
-    pattern_exemplo:  Mapped[str | None] = mapped_column(Text)
-    categoria:        Mapped[str]        = mapped_column(Text, nullable=False)
-    estabilidade:     Mapped[float]      = mapped_column(Float, default=1.0)
-    dificuldade:      Mapped[float]      = mapped_column(Float, default=0.3)
-    proxima_revisao:  Mapped[date]       = mapped_column(Date, nullable=False)
-    repeticoes:       Mapped[int]        = mapped_column(Integer, default=0)
-    lapsos:           Mapped[int]        = mapped_column(Integer, default=0)
-    criado_em:        Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
-    atualizado_em:    Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
