@@ -59,6 +59,23 @@
       --shadow-lg: 0 18px 50px rgba(15,23,42,.10), 0 4px 14px rgba(15,23,42,.05);
       --shadow-glow: 0 0 40px rgba(77,124,255,.20);
 
+      /* Glassmorphism tokens (Aurora Glass) */
+      --glass-bg:      rgba(255,255,255,.42);
+      --glass-bg-2:    rgba(255,255,255,.28);
+      --glass-border:  rgba(255,255,255,.50);
+      --glass-blur:    blur(24px) saturate(180%);
+      --glass-blur-lg: blur(36px) saturate(200%);
+      --glass-shadow:  0 8px 32px rgba(15,23,42,.10),
+                       0 2px 8px rgba(30,111,217,.08),
+                       inset 0 1px 0 rgba(255,255,255,.65),
+                       inset 0 -1px 0 rgba(15,23,42,.04);
+      --glass-shadow-hover:
+                       0 18px 50px rgba(15,23,42,.16),
+                       0 4px 14px rgba(30,111,217,.18),
+                       inset 0 1px 0 rgba(255,255,255,.75),
+                       inset 0 -1px 0 rgba(15,23,42,.04);
+      --glass-edge:    linear-gradient(135deg, rgba(255,255,255,.60) 0%, rgba(255,255,255,.10) 50%, rgba(255,255,255,.45) 100%);
+
       --easing:    cubic-bezier(0.16, 1, 0.3, 1);
     }
 
@@ -101,6 +118,21 @@
       --shadow:      0 4px 20px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.35);
       --shadow-lg:   0 18px 50px rgba(0,0,0,.55), 0 4px 14px rgba(0,0,0,.40);
       --shadow-glow: 0 0 40px rgba(96,165,250,.30);
+
+      /* Glassmorphism tokens dark */
+      --glass-bg:      rgba(20,30,55,.45);
+      --glass-bg-2:    rgba(20,30,55,.30);
+      --glass-border:  rgba(96,165,250,.22);
+      --glass-shadow:  0 8px 32px rgba(0,0,0,.45),
+                       0 2px 8px rgba(96,165,250,.10),
+                       inset 0 1px 0 rgba(255,255,255,.06),
+                       inset 0 -1px 0 rgba(0,0,0,.30);
+      --glass-shadow-hover:
+                       0 18px 50px rgba(0,0,0,.55),
+                       0 6px 18px rgba(96,165,250,.25),
+                       inset 0 1px 0 rgba(255,255,255,.10),
+                       inset 0 -1px 0 rgba(0,0,0,.30);
+      --glass-edge:    linear-gradient(135deg, rgba(150,200,255,.30) 0%, rgba(150,200,255,.04) 50%, rgba(150,200,255,.20) 100%);
     }
 
     /* Transição suave de tema */
@@ -211,6 +243,143 @@
     .risco-empty {
       display: flex; align-items: center; justify-content: center; height: 100%;
       color: var(--green); font-weight: 600; gap: 8px;
+    }
+
+    /* ── Aurora Glassmorphism (Layer Pro) ─────────────────────────── */
+    /* Cards principais: vidro com borda iridescente + reflexo superior */
+    .card,
+    .chart-card,
+    .audit-layer,
+    .kpi-card,
+    .topbar,
+    .mode-card,
+    #ranking-risco .risco-item,
+    .theme-toggle,
+    .modal {
+      background: var(--glass-bg) !important;
+      backdrop-filter: var(--glass-blur) !important;
+      -webkit-backdrop-filter: var(--glass-blur) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-shadow) !important;
+      position: relative;
+    }
+    .card:hover,
+    .chart-card:hover,
+    .audit-layer:hover,
+    .kpi-card:hover {
+      box-shadow: var(--glass-shadow-hover) !important;
+      transform: translateY(-2px);
+    }
+
+    /* Borda iridescente animada (edge highlight) */
+    .chart-card::after,
+    .audit-layer::after,
+    .card.glass-edge::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: var(--glass-edge);
+      -webkit-mask: linear-gradient(#000, #000) content-box, linear-gradient(#000, #000);
+      -webkit-mask-composite: xor;
+              mask-composite: exclude;
+      pointer-events: none;
+      opacity: .75;
+    }
+
+    /* Reforça a topbar como vidro flutuante */
+    .topbar {
+      backdrop-filter: var(--glass-blur-lg) !important;
+      -webkit-backdrop-filter: var(--glass-blur-lg) !important;
+      border-radius: 0 !important;
+      border-bottom: 1px solid var(--glass-border) !important;
+      border-top: none !important;
+      border-left: none !important;
+      border-right: none !important;
+    }
+
+    /* Sidebar glass */
+    .sidebar {
+      background: var(--glass-bg-2) !important;
+      backdrop-filter: var(--glass-blur-lg) !important;
+      -webkit-backdrop-filter: var(--glass-blur-lg) !important;
+      border-right: 1px solid var(--glass-border) !important;
+    }
+
+    /* Mode cards: glass + glow no selecionado */
+    .mode-card {
+      backdrop-filter: var(--glass-blur) !important;
+      -webkit-backdrop-filter: var(--glass-blur) !important;
+      transition: transform .25s var(--easing), box-shadow .25s var(--easing), border-color .25s var(--easing) !important;
+    }
+    .mode-card.selected {
+      box-shadow: var(--glass-shadow-hover),
+                  0 0 0 2px rgba(77,124,255,.45),
+                  0 0 40px rgba(77,124,255,.35) !important;
+    }
+
+    /* Botões com glass quando outline */
+    .btn-outline {
+      background: var(--glass-bg-2) !important;
+      backdrop-filter: blur(12px) saturate(160%) !important;
+      -webkit-backdrop-filter: blur(12px) saturate(160%) !important;
+      border: 1px solid var(--glass-border) !important;
+    }
+
+    /* Modal: glass mais forte com véu de fundo */
+    .modal-backdrop {
+      backdrop-filter: blur(8px) saturate(140%) !important;
+      -webkit-backdrop-filter: blur(8px) saturate(140%) !important;
+    }
+    .modal {
+      backdrop-filter: var(--glass-blur-lg) !important;
+      -webkit-backdrop-filter: var(--glass-blur-lg) !important;
+    }
+
+    /* Ranking de risco: items com vidro */
+    #ranking-risco .risco-item {
+      backdrop-filter: blur(16px) saturate(170%) !important;
+      -webkit-backdrop-filter: blur(16px) saturate(170%) !important;
+    }
+
+    /* KPI cards: glass + barra superior aurora */
+    .kpi-card {
+      backdrop-filter: var(--glass-blur) !important;
+      -webkit-backdrop-filter: var(--glass-blur) !important;
+      overflow: hidden;
+    }
+    .kpi-card::before {
+      content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+      background: linear-gradient(90deg, var(--blue), var(--sky), transparent);
+      opacity: .8;
+    }
+
+    /* Steps e file-item também recebem hint de glass */
+    .step,
+    .file-item {
+      background: var(--glass-bg-2);
+      backdrop-filter: blur(12px) saturate(150%);
+      -webkit-backdrop-filter: blur(12px) saturate(150%);
+      border: 1px solid var(--glass-border);
+    }
+
+    /* Aurora background blobs ficam visíveis através do vidro:
+       intensifica sua opacidade para que reflitam nos painéis */
+    .aurora-blob { opacity: .65 !important; }
+    [data-theme="dark"] .aurora-blob { opacity: .35 !important; }
+
+    /* Anti-alias para texto sobre vidro */
+    .card, .chart-card, .audit-layer, .kpi-card, .topbar, .mode-card {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Fallback: se backdrop-filter nao for suportado, fundo solido */
+    @supports not (backdrop-filter: blur(1px)) {
+      .card, .chart-card, .audit-layer, .topbar, .sidebar, .mode-card, .kpi-card {
+        background: var(--surface-solid) !important;
+      }
     }
 
     /* Audit overview KPIs (camada superior) */
