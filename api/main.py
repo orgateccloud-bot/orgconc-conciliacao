@@ -664,6 +664,13 @@ async def atualizar_cliente(request: Request, cliente_id: str, payload: ClienteU
 
 # ── Conciliação ───────────────────────────────────────────────────────────
 
+_MODELOS_VALIDOS = {
+    "haiku":  ("claude-haiku-4-5-20251001", "Haiku 4.5"),
+    "sonnet": ("claude-sonnet-4-6",         "Sonnet 4.6"),
+    "opus":   ("claude-opus-4-7",           "Opus 4.7"),
+}
+
+
 @app.post("/conciliar/ofx", dependencies=[Depends(auth)])
 @limiter.limit("20/minute")
 async def conciliar_ofx(
@@ -672,6 +679,7 @@ async def conciliar_ofx(
     max_tokens: int = 16000,
     simular: bool = False,
     multi_modelo: bool = False,
+    modelo: str = "sonnet",
     cliente_id: Optional[str] = None,
 ):
     """Cruza ate 50 extratos bancarios (OFX, PDF ou XML).
@@ -679,8 +687,15 @@ async def conciliar_ofx(
     Modos:
     - simular=true  → análise heurística local, sem LLM
     - multi_modelo=true → 3 modelos Claude em paralelo + síntese de consenso
-    - padrão → Sonnet 4.6 (single model)
+    - modelo=haiku → Haiku 4.5 (rápido e barato, ideal para triagem de grande volume)
+    - modelo=sonnet (padrão) → Sonnet 4.6 (qualidade recomendada)
+    - modelo=opus → Opus 4.7 (máxima profundidade)
     """
+    if modelo not in _MODELOS_VALIDOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"modelo invalido: {modelo}. Use: {sorted(_MODELOS_VALIDOS.keys())}",
+        )
     if not (1 <= len(arquivos) <= 50):
         raise HTTPException(status_code=400, detail="Envie entre 1 e 50 arquivos")
 
@@ -799,11 +814,13 @@ async def conciliar_ofx(
             "persistencia": db_status,
         })
 
-    # ── Modo single model (Sonnet 4.6) ────────────────────────────────────
+    # ── Modo single model (haiku|sonnet|opus) ────────────────────────────
+    model_id, model_label = _MODELOS_VALIDOS[modelo]
+    log.info("Conciliacao single-model: %s (%s)", modelo, model_id)
     client = _get_client()
     try:
         resp = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=model_id,
             max_tokens=max_tokens,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
@@ -828,6 +845,9 @@ async def conciliar_ofx(
 
     return JSONResponse({
         "modo": "claude_llm",
+        "modelo": modelo,
+        "modelo_id": model_id,
+        "modelo_label": model_label,
         "report_id": rid,
         "extratos": [
             {"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]}

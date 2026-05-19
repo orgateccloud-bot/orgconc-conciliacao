@@ -31,6 +31,8 @@
       --green10: #DCFCE7;
       --purple:  #7C3AED;
       --purple10:#EDE9FE;
+      --cyan:    #06B6D4;
+      --cyan10:  #CFFAFE;
       --red:     #DC2626;
       --red10:   #FEE2E2;
       --orange:  #D97706;
@@ -323,9 +325,15 @@
     /* ── Mode cards ─────────────────────────────────────────────── */
     .mode-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 14px;
       margin-bottom: 24px;
+    }
+    @media (max-width: 1100px) {
+      .mode-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .mode-grid { grid-template-columns: 1fr; }
     }
     /* ── Mode cards (futurista) ─────────────────────────────────── */
     .mode-card {
@@ -374,9 +382,11 @@
     .mode-card:hover::before { opacity: 1; }
 
     .mode-card.green   { color: var(--green); }
+    .mode-card.cyan    { color: var(--cyan); }
     .mode-card.blue    { color: var(--blue); }
     .mode-card.purple  { color: var(--purple); }
     .mode-card.green::before  { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+    .mode-card.cyan::before   { background: linear-gradient(90deg, transparent, var(--cyan), #67E8F9, transparent); }
     .mode-card.blue::before   { background: linear-gradient(90deg, transparent, var(--blue), var(--sky), transparent); }
     .mode-card.purple::before { background: linear-gradient(90deg, transparent, var(--purple), #C084FC, transparent); }
 
@@ -387,6 +397,7 @@
     .mode-card.selected::after { opacity: .28; }
     .mode-card.selected::before { height: 3px; opacity: 1; }
     .mode-card.selected.green  { box-shadow: 0 0 0 1.5px var(--green),  0 12px 30px rgba(22,163,74,.18), 0 0 30px rgba(22,163,74,.15); }
+    .mode-card.selected.cyan   { box-shadow: 0 0 0 1.5px var(--cyan),   0 12px 30px rgba(6,182,212,.22),  0 0 30px rgba(103,232,249,.25); }
     .mode-card.selected.blue   { box-shadow: 0 0 0 1.5px var(--blue),   0 12px 30px rgba(0,82,255,.22),  0 0 30px rgba(77,124,255,.25); }
     .mode-card.selected.purple { box-shadow: 0 0 0 1.5px var(--purple), 0 12px 30px rgba(124,58,237,.20),0 0 30px rgba(124,58,237,.20); }
 
@@ -421,6 +432,7 @@
     }
     .mode-card:hover .mode-icon::after { opacity: .4; }
     .mode-icon.green  { color: var(--green); }
+    .mode-icon.cyan   { color: var(--cyan); }
     .mode-icon.blue   { color: var(--blue); }
     .mode-icon.purple { color: var(--purple); }
 
@@ -466,6 +478,7 @@
       .mode-badge::before { animation: none; }
     }
     .mode-badge.green  { background: rgba(22,163,74,.10);  color: var(--green);  border-color: rgba(22,163,74,.30); }
+    .mode-badge.cyan   { background: rgba(6,182,212,.10);  color: var(--cyan);   border-color: rgba(6,182,212,.30); }
     .mode-badge.blue   { background: rgba(0,82,255,.10);   color: var(--blue);   border-color: rgba(0,82,255,.30); }
     .mode-badge.purple { background: rgba(124,58,237,.10); color: var(--purple); border-color: rgba(124,58,237,.30); }
 
@@ -478,6 +491,7 @@
       box-shadow: 0 0 0 3px rgba(255,255,255,.85), 0 2px 8px rgba(0,0,0,.15);
     }
     .mode-card.selected.green  .check-icon { display: flex; background: var(--green);  }
+    .mode-card.selected.cyan   .check-icon { display: flex; background: linear-gradient(135deg, var(--cyan), #67E8F9); }
     .mode-card.selected.blue   .check-icon { display: flex; background: linear-gradient(135deg, var(--blue), var(--sky)); }
     .mode-card.selected.purple .check-icon { display: flex; background: linear-gradient(135deg, var(--purple), #C084FC); }
 
@@ -1097,6 +1111,24 @@
             <h3>Python Heurístico</h3>
             <p>Análise local rápida com regras contábeis brasileiras. Sem custo de API, ideal para triagem.</p>
             <span class="mode-badge green">Gratuito · Rápido</span>
+          </div>
+
+          <!-- Haiku 4.5 (basico, rapido e barato) -->
+          <div class="mode-card cyan" role="radio" aria-checked="false" tabindex="0"
+               data-mode="haiku" onclick="selecionarModo(this)" onkeydown="teclaCard(event,this)">
+            <div class="check-icon" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="mode-icon cyan" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M13 2L4.5 13.5h6L11 22l8.5-11.5h-6L13 2z"/>
+              </svg>
+            </div>
+            <h3>Claude Haiku 4.5</h3>
+            <p>Modelo Anthropic mais rápido e econômico. Ideal para triagem de grande volume.</p>
+            <span class="mode-badge cyan">Básico · Veloz</span>
           </div>
 
           <!-- Sonnet 4.6 -->

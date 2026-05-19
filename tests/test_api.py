@@ -245,6 +245,48 @@ def test_upload_extensao_invalida():
 
 # ── Hardening: /conciliar/csv exige auth quando ORGCONC_AUTH_TOKEN ativo ──
 
+def test_conciliar_ofx_aceita_modelo_haiku_em_simular():
+    """modelo=haiku deve ser aceito mesmo em simular (parametro nao quebra fluxo)."""
+    r = client.post(
+        "/conciliar/ofx?simular=true&modelo=haiku",
+        files=[("arquivos", ("test.ofx", OFX_SAMPLE, "application/x-ofx"))],
+    )
+    assert r.status_code == 200
+    # Em simular, modelo eh ignorado mas nao pode quebrar
+    assert r.json()["modo"] == "simulacao_local"
+
+
+def test_conciliar_ofx_modelo_invalido_retorna_400():
+    """modelo=opus123 ou outro invalido deve retornar 400 com lista."""
+    r = client.post(
+        "/conciliar/ofx?modelo=opus123",
+        files=[("arquivos", ("test.ofx", OFX_SAMPLE, "application/x-ofx"))],
+    )
+    assert r.status_code == 400
+    detail = r.json()["detail"].lower()
+    assert "modelo" in detail and "invalido" in detail
+
+
+def test_modelos_validos_mapping():
+    """O dicionario _MODELOS_VALIDOS deve ter haiku, sonnet, opus mapeados."""
+    from api.main import _MODELOS_VALIDOS
+    assert "haiku" in _MODELOS_VALIDOS
+    assert "sonnet" in _MODELOS_VALIDOS
+    assert "opus" in _MODELOS_VALIDOS
+    assert _MODELOS_VALIDOS["haiku"][0] == "claude-haiku-4-5-20251001"
+    assert _MODELOS_VALIDOS["sonnet"][0] == "claude-sonnet-4-6"
+
+
+def test_frontend_tem_card_haiku():
+    """Dashboard deve ter o card Haiku como 4o modo."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert 'data-mode="haiku"' in html
+    assert "Haiku 4.5" in html
+    # E o grid deve ter 4 colunas
+    assert "repeat(4, 1fr)" in html
+
+
 def test_conciliar_csv_exige_auth_quando_token_definido():
     """/conciliar/csv NAO pode ser publico quando AUTH_TOKEN existe."""
     with patch("api.main.AUTH_TOKEN", "segredo-de-teste"):

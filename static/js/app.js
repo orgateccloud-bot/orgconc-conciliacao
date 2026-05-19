@@ -102,8 +102,18 @@ function atualizarBotaoCTA() {
   const desc = document.getElementById('cta-desc');
   const temArquivos = _arquivos.length > 0;
   btn.disabled = !temArquivos;
-  const nomes = { simulacao: 'Python Heurístico', llm: 'Claude Sonnet 4.6', multi: 'Multi-Modelo (3 modelos)' };
-  const cores = { simulacao: 'btn-green', llm: 'btn-primary', multi: 'btn-purple' };
+  const nomes = {
+    simulacao: 'Python Heurístico',
+    haiku:     'Claude Haiku 4.5',
+    llm:       'Claude Sonnet 4.6',
+    multi:     'Multi-Modelo (3 modelos)',
+  };
+  const cores = {
+    simulacao: 'btn-green',
+    haiku:     'btn-primary',
+    llm:       'btn-primary',
+    multi:     'btn-purple',
+  };
   btn.className = `btn ${cores[_modo] || 'btn-primary'} btn-lg`;
   if (temArquivos) {
     desc.textContent = `${_arquivos.length} arquivo(s) · Modo: ${nomes[_modo]}`;
@@ -154,7 +164,9 @@ async function iniciarConciliacao() {
   let url = `${API}/conciliar/ofx`;
   const params = new URLSearchParams();
   if (_modo === 'simulacao') params.set('simular', 'true');
-  if (_modo === 'multi')     params.set('multi_modelo', 'true');
+  else if (_modo === 'multi') params.set('multi_modelo', 'true');
+  else if (_modo === 'haiku') params.set('modelo', 'haiku');
+  // _modo === 'llm' usa o default (modelo=sonnet)
   if (params.toString()) url += '?' + params;
 
   try {
@@ -181,13 +193,20 @@ function renderResultado(data) {
   loading.classList.remove('active');
 
   _reportId = data.report_id;
-  _historicoRelatorios.push({ id: _reportId, modo: data.modo, ts: new Date() });
+  _historicoRelatorios.push({
+    id: _reportId,
+    modo: data.modo,
+    modelo_label: data.modelo_label || null,
+    ts: new Date(),
+  });
   atualizarHistorico();
 
   // KPIs
   const totalTx  = data.extratos?.reduce((s, e) => s + e.qtd, 0) ?? 0;
   const totalAnom = data.anomalias?.length ?? 0;
-  const modo = { simulacao_local: 'Python Local', claude_llm: 'Sonnet 4.6', multi_modelo: 'Multi-Modelo' }[data.modo] || data.modo;
+  // Quando claude_llm, prefere modelo_label do backend (Haiku / Sonnet / Opus)
+  const baseLabel = { simulacao_local: 'Python Local', claude_llm: data.modelo_label || 'Sonnet 4.6', multi_modelo: 'Multi-Modelo' }[data.modo] || data.modo;
+  const modo = baseLabel;
   const scoreConsenso = data.score_consenso != null ? (data.score_consenso * 100).toFixed(0) + '%' : '—';
 
   document.getElementById('kpi-grid').innerHTML = `
@@ -404,14 +423,16 @@ async function submitCliente(e) {
 function atualizarHistorico() {
   const container = document.getElementById('relatorios-lista');
   if (!_historicoRelatorios.length) return;
-  const modos = { simulacao_local: 'Python Local', claude_llm: 'Sonnet 4.6', multi_modelo: 'Multi-Modelo' };
-  container.innerHTML = _historicoRelatorios.slice().reverse().map(r => `
+  const modos = { simulacao_local: 'Python Local', claude_llm: 'Claude LLM', multi_modelo: 'Multi-Modelo' };
+  container.innerHTML = _historicoRelatorios.slice().reverse().map(r => {
+    const label = r.modelo_label ? `${modos[r.modo] || r.modo} (${r.modelo_label})` : (modos[r.modo] || r.modo);
+    return `
     <div class="card" style="margin-bottom:12px">
       <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
         <div>
           <strong style="font-size:.9rem">${r.id}</strong>
           <div style="font-size:.78rem;color:var(--muted);margin-top:2px">
-            ${modos[r.modo] || r.modo} · ${r.ts.toLocaleTimeString('pt-BR')}
+            ${label} · ${r.ts.toLocaleTimeString('pt-BR')}
           </div>
         </div>
         <div style="display:flex;gap:8px">
@@ -419,7 +440,8 @@ function atualizarHistorico() {
           <a class="btn btn-outline btn-sm" href="${API}/export/xlsx/${r.id}" target="_blank" rel="noopener">XLSX</a>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 /* ── Health check ───────────────────────────────────────────────── */
