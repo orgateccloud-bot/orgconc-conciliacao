@@ -1,10 +1,78 @@
-/* OrgConc Dashboard — extraido de frontend/index.html */
+/* OrgConc Dashboard v0.4.0 — extraido de frontend/index.html */
 /* ── Estado ──────────────────────────────────────────────────────── */
 const API = '';  // mesmo origin
+const STORAGE_KEY = 'orgconc.historico.v1';
+const THEME_KEY   = 'orgconc.tema.v1';
+const MAX_HIST    = 30;
+
 let _modo = 'llm';
 let _arquivos = [];
 let _reportId = null;
-let _historicoRelatorios = [];
+let _historicoRelatorios = carregarHistorico();
+let _chartCategorias   = null;
+let _chartAnomalias    = null;
+let _chartFluxo        = null;
+let _chartContrapartes = null;
+let _chartRadar        = null;
+let _chartSemana       = null;
+let _ultimoDataset     = null;
+
+/* ── Persistencia local (localStorage) ──────────────────────────── */
+function carregarHistorico() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.map(r => ({ ...r, ts: new Date(r.ts) })) : [];
+  } catch { return []; }
+}
+
+function persistirHistorico() {
+  try {
+    const slim = _historicoRelatorios.slice(-MAX_HIST).map(r => ({
+      id: r.id, modo: r.modo, modelo_label: r.modelo_label,
+      ts: r.ts instanceof Date ? r.ts.toISOString() : r.ts,
+      total_tx: r.total_tx ?? 0, total_anom: r.total_anom ?? 0,
+      score: r.score ?? null,
+    }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(slim));
+  } catch (e) { console.warn('Falha ao persistir historico:', e); }
+}
+
+function limparHistorico() {
+  if (!confirm('Limpar todo o histórico local de relatórios?')) return;
+  _historicoRelatorios = [];
+  persistirHistorico();
+  atualizarHistorico();
+  toast('Histórico limpo.', 'success');
+}
+
+/* ── Tema (dark/light) ──────────────────────────────────────────── */
+function aplicarTema(tema) {
+  document.documentElement.setAttribute('data-theme', tema);
+  const btn = document.getElementById('btn-theme');
+  if (btn) {
+    btn.setAttribute('aria-label', tema === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro');
+    btn.dataset.tema = tema;
+  }
+  try { localStorage.setItem(THEME_KEY, tema); } catch {}
+  // Re-renderiza charts para refletir paleta
+  if (_ultimoDataset) renderizarCharts(_ultimoDataset);
+}
+
+function toggleTema() {
+  const atual = document.documentElement.getAttribute('data-theme') || 'light';
+  aplicarTema(atual === 'dark' ? 'light' : 'dark');
+}
+
+(function _initTema() {
+  let tema;
+  try { tema = localStorage.getItem(THEME_KEY); } catch {}
+  if (!tema) {
+    tema = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  aplicarTema(tema);
+})();
 
 /* ── Navegação ──────────────────────────────────────────────────── */
 document.querySelectorAll('.nav-item[data-section]').forEach(btn => {
@@ -193,13 +261,22 @@ function renderResultado(data) {
   loading.classList.remove('active');
 
   _reportId = data.report_id;
+  _ultimoDataset = data;
+
+  const totalTx_  = data.extratos?.reduce((s, e) => s + e.qtd, 0) ?? 0;
+  const totalAnom_ = data.anomalias?.length ?? 0;
   _historicoRelatorios.push({
     id: _reportId,
     modo: data.modo,
     modelo_label: data.modelo_label || null,
     ts: new Date(),
+    total_tx: totalTx_,
+    total_anom: totalAnom_,
+    score: data.score_consenso ?? null,
   });
+  persistirHistorico();
   atualizarHistorico();
+  renderizarCharts(data);
 
   // KPIs
   const totalTx  = data.extratos?.reduce((s, e) => s + e.qtd, 0) ?? 0;
@@ -422,26 +499,411 @@ async function submitCliente(e) {
 /* ── Histórico ──────────────────────────────────────────────────── */
 function atualizarHistorico() {
   const container = document.getElementById('relatorios-lista');
-  if (!_historicoRelatorios.length) return;
+  if (!container) return;
+  if (!_historicoRelatorios.length) {
+    container.innerHTML = '<div class="text-muted" style="padding:24px;text-align:center">Nenhum relatório no histórico ainda.</div>';
+    return;
+  }
   const modos = { simulacao_local: 'Python Local', claude_llm: 'Claude LLM', multi_modelo: 'Multi-Modelo' };
-  container.innerHTML = _historicoRelatorios.slice().reverse().map(r => {
+  const cabecalho = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span class="text-muted" style="font-size:.78rem">${_historicoRelatorios.length} relatório(s) persistido(s) localmente</span>
+      <button class="btn btn-outline btn-sm" onclick="limparHistorico()" aria-label="Limpar histórico local">Limpar histórico</button>
+    </div>`;
+  container.innerHTML = cabecalho + _historicoRelatorios.slice().reverse().map(r => {
     const label = r.modelo_label ? `${modos[r.modo] || r.modo} (${r.modelo_label})` : (modos[r.modo] || r.modo);
+    const dt = r.ts instanceof Date ? r.ts : new Date(r.ts);
+    const data = dt.toLocaleString('pt-BR');
+    const score = r.score != null ? ` · Score ${(r.score*100).toFixed(0)}%` : '';
     return `
     <div class="card" style="margin-bottom:12px">
-      <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+      <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
         <div>
           <strong style="font-size:.9rem">${r.id}</strong>
           <div style="font-size:.78rem;color:var(--muted);margin-top:2px">
-            ${label} · ${r.ts.toLocaleTimeString('pt-BR')}
+            ${label} · ${data}${score}
+          </div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:3px">
+            ${r.total_tx ?? 0} transação(ões) · ${r.total_anom ?? 0} anomalia(s)
           </div>
         </div>
         <div style="display:flex;gap:8px">
           <a class="btn btn-outline btn-sm" href="${API}/export/html/${r.id}" target="_blank" rel="noopener">HTML</a>
           <a class="btn btn-outline btn-sm" href="${API}/export/xlsx/${r.id}" target="_blank" rel="noopener">XLSX</a>
+          <a class="btn btn-outline btn-sm" href="${API}/export/pdf/${r.id}" target="_blank" rel="noopener">PDF</a>
         </div>
       </div>
     </div>`;
   }).join('');
+}
+
+/* ── Charts (Chart.js) ──────────────────────────────────────────── */
+function paletaCharts() {
+  const tema = document.documentElement.getAttribute('data-theme') || 'light';
+  return tema === 'dark'
+    ? {
+        text: '#e6edf7', muted: '#9aa6c0', grid: 'rgba(255,255,255,.08)',
+        cores: ['#4dc8ff','#1e6fd9','#6fe3ff','#38e1a3','#ffb84d','#ff5c6c','#a78bfa','#ffe066','#f472b6','#22d3ee'],
+        critico: '#ff5c6c', alerta: '#ffb84d', atencao: '#ffe066',
+      }
+    : {
+        text: '#1f2b4d', muted: '#5a6b8a', grid: 'rgba(15,30,70,.08)',
+        cores: ['#1e6fd9','#0a3a7a','#4dc8ff','#10b981','#f59e0b','#ef4444','#7c3aed','#eab308','#ec4899','#06b6d4'],
+        critico: '#dc2626', alerta: '#d97706', atencao: '#ca8a04',
+      };
+}
+
+function destruirCharts() {
+  [_chartCategorias, _chartAnomalias, _chartFluxo,
+   _chartContrapartes, _chartRadar, _chartSemana
+  ].forEach(c => { try { c?.destroy(); } catch {} });
+  _chartCategorias = _chartAnomalias = _chartFluxo = null;
+  _chartContrapartes = _chartRadar = _chartSemana = null;
+}
+
+function agregarContrapartes(extratos) {
+  const mapa = new Map();
+  (extratos || []).forEach(e => {
+    (e.transacoes || []).forEach(t => {
+      const nome = (t.nome || t.memo || 'Sem identificação').toString().slice(0, 40);
+      const prev = mapa.get(nome) || 0;
+      mapa.set(nome, prev + Math.abs(t.valor || 0));
+    });
+  });
+  const arr = [...mapa.entries()].sort((a,b) => b[1] - a[1]).slice(0, 10);
+  return { labels: arr.map(x => x[0]), valores: arr.map(x => x[1]) };
+}
+
+function agregarConformidade(extratos, anomalias) {
+  const txs = (extratos || []).flatMap(e => e.transacoes || []);
+  const total = txs.length || 1;
+  const classificadas = txs.filter(t => (t.categoria || classificarCliente(t)) !== 'Outros').length;
+  const comData       = txs.filter(t => !!t.data).length;
+  const comMemo       = txs.filter(t => !!t.memo).length;
+  const semAnomCrit   = total - (anomalias || []).filter(a => a.severidade === 'critico').length;
+  const equilibrio = (() => {
+    const c = txs.filter(t => t.valor > 0).reduce((s,t) => s + t.valor, 0);
+    const d = Math.abs(txs.filter(t => t.valor < 0).reduce((s,t) => s + t.valor, 0));
+    if (c + d === 0) return 0;
+    return Math.min(c, d) / Math.max(c, d) * 100;
+  })();
+  return {
+    labels: ['Classificação', 'Datas válidas', 'Descrição preenchida', 'Sem críticos', 'Equilíbrio C/D'],
+    valores: [
+      (classificadas / total) * 100,
+      (comData / total) * 100,
+      (comMemo / total) * 100,
+      (semAnomCrit / total) * 100,
+      equilibrio,
+    ].map(v => Math.round(v)),
+  };
+}
+
+function agregarPorDiaSemana(extratos) {
+  const dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const credito = [0,0,0,0,0,0,0];
+  const debito  = [0,0,0,0,0,0,0];
+  (extratos || []).forEach(e => {
+    (e.transacoes || []).forEach(t => {
+      if (!t.data) return;
+      const d = new Date(t.data + 'T00:00:00');
+      const dow = d.getDay();
+      if (t.valor > 0) credito[dow] += t.valor;
+      else debito[dow] += Math.abs(t.valor);
+    });
+  });
+  return { labels: dias, credito, debito };
+}
+
+function rankingAnomalias(anomalias) {
+  return (anomalias || [])
+    .slice()
+    .sort((a, b) => {
+      const peso = { critico: 3, alerta: 2, atencao: 1 };
+      const pa = (peso[a.severidade] || 0) * 1e9 + Math.abs(a.valor || 0);
+      const pb = (peso[b.severidade] || 0) * 1e9 + Math.abs(b.valor || 0);
+      return pb - pa;
+    })
+    .slice(0, 5);
+}
+
+function renderizarRankingRisco(anomalias) {
+  const wrap = document.getElementById('ranking-risco');
+  if (!wrap) return;
+  const top = rankingAnomalias(anomalias);
+  if (!top.length) {
+    wrap.innerHTML = `
+      <div class="risco-empty">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Nenhum risco detectado
+      </div>`;
+    return;
+  }
+  wrap.innerHTML = top.map((a, i) => {
+    const valor = a.valor != null ? 'R$ ' + Math.abs(a.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '—';
+    return `
+      <div class="risco-item">
+        <div class="risco-pos">${i + 1}</div>
+        <div class="risco-info">
+          <div class="risco-tit"><span class="sev-dot ${a.severidade}"></span>${esc(a.titulo || a.tipo || 'Anomalia')}</div>
+          <div class="risco-sub">${esc(a.conta || '')} · ${esc(a.detalhe || '')}</div>
+        </div>
+        <div class="risco-val ${a.severidade}">${valor}</div>
+      </div>`;
+  }).join('');
+}
+
+function agregarCategorias(extratos) {
+  const mapa = new Map();
+  (extratos || []).forEach(e => {
+    (e.transacoes || []).forEach(t => {
+      const cat = (t.categoria || classificarCliente(t)).toString();
+      const prev = mapa.get(cat) || 0;
+      mapa.set(cat, prev + Math.abs(t.valor || 0));
+    });
+  });
+  const arr = [...mapa.entries()].sort((a,b) => b[1] - a[1]).slice(0, 8);
+  return { labels: arr.map(x => x[0]), valores: arr.map(x => x[1]) };
+}
+
+function classificarCliente(t) {
+  const txt = ((t.memo || '') + ' ' + (t.nome || '')).toLowerCase();
+  if (/folha|salario|salário/.test(txt)) return 'Folha';
+  if (/imposto|darf|gps|inss|icms|iss/.test(txt)) return 'Tributos';
+  if (/fornecedor|pagamento/.test(txt)) return 'Fornecedores';
+  if (/cliente|recebimento/.test(txt)) return 'Recebimentos';
+  if (/tarifa|taxa|juros|iof/.test(txt)) return 'Taxas';
+  if (/transfer|ted|pix|doc/.test(txt)) return 'Transferências';
+  return 'Outros';
+}
+
+function agregarAnomaliasPorSeveridade(anomalias) {
+  const c = { critico: 0, alerta: 0, atencao: 0 };
+  (anomalias || []).forEach(a => { if (c[a.severidade] != null) c[a.severidade]++; });
+  return c;
+}
+
+function agregarFluxoDiario(extratos) {
+  const mapa = new Map();
+  (extratos || []).forEach(e => {
+    (e.transacoes || []).forEach(t => {
+      if (!t.data) return;
+      const k = t.data;
+      const acc = mapa.get(k) || { credito: 0, debito: 0 };
+      if (t.valor > 0) acc.credito += t.valor; else acc.debito += Math.abs(t.valor);
+      mapa.set(k, acc);
+    });
+  });
+  const datas = [...mapa.keys()].sort();
+  return {
+    labels: datas,
+    credito: datas.map(d => mapa.get(d).credito),
+    debito:  datas.map(d => mapa.get(d).debito),
+  };
+}
+
+function renderizarCamadasAuditoria(data) {
+  const wrap = document.getElementById('audit-layers');
+  if (!wrap) return;
+  const totalTx  = (data.extratos || []).reduce((s, e) => s + (e.qtd || 0), 0);
+  const totalCred = (data.extratos || []).reduce((s, e) =>
+    s + (e.transacoes || []).filter(t => t.valor > 0).reduce((a,t) => a + t.valor, 0), 0);
+  const totalDeb = (data.extratos || []).reduce((s, e) =>
+    s + (e.transacoes || []).filter(t => t.valor < 0).reduce((a,t) => a + Math.abs(t.valor), 0), 0);
+  const sev = agregarAnomaliasPorSeveridade(data.anomalias);
+  const totalAnom = (data.anomalias || []).length;
+
+  // Saúde da conciliação: invertido proporcional a anomalias críticas
+  const saude = totalTx === 0 ? 0 : Math.max(0, 100 - (sev.critico * 18 + sev.alerta * 7 + sev.atencao * 2));
+  const saudeClass = saude >= 85 ? 'l-ok' : saude >= 60 ? 'l-alerta' : 'l-critico';
+
+  const fmt = n => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  wrap.innerHTML = `
+    <div class="audit-layer ${saudeClass}">
+      <div class="lbl">Saúde da Conciliação</div>
+      <div class="val">${saude.toFixed(0)}<span style="font-size:14px;color:var(--muted);font-weight:600">/100</span></div>
+      <div class="sub">${sev.critico} crítico(s) · ${sev.alerta} alerta(s)</div>
+    </div>
+    <div class="audit-layer">
+      <div class="lbl">Volume Total</div>
+      <div class="val">${totalTx}</div>
+      <div class="sub">${(data.extratos || []).length} conta(s) auditada(s)</div>
+    </div>
+    <div class="audit-layer l-ok">
+      <div class="lbl">Total Crédito</div>
+      <div class="val" style="font-size:18px">${fmt(totalCred)}</div>
+      <div class="sub">Entrada consolidada</div>
+    </div>
+    <div class="audit-layer l-critico">
+      <div class="lbl">Total Débito</div>
+      <div class="val" style="font-size:18px">${fmt(totalDeb)}</div>
+      <div class="sub">Saída consolidada · Líquido: ${fmt(totalCred - totalDeb)}</div>
+    </div>`;
+}
+
+function renderizarCharts(data) {
+  renderizarCamadasAuditoria(data);
+  renderizarRankingRisco(data.anomalias);
+  if (typeof Chart === 'undefined') { return; }
+  destruirCharts();
+  const pal = paletaCharts();
+  Chart.defaults.color = pal.text;
+  Chart.defaults.borderColor = pal.grid;
+  Chart.defaults.font.family = "'Inter','Segoe UI',sans-serif";
+
+  const cv1 = document.getElementById('chart-categorias');
+  const cv2 = document.getElementById('chart-anomalias');
+  const cv3 = document.getElementById('chart-fluxo');
+
+  if (cv1) {
+    const { labels, valores } = agregarCategorias(data.extratos);
+    _chartCategorias = new Chart(cv1, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{ data: valores, backgroundColor: pal.cores, borderWidth: 2, borderColor: 'transparent' }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: c => `${c.label}: R$ ${c.parsed.toLocaleString('pt-BR',{minimumFractionDigits:2})}` } },
+        },
+      },
+    });
+  }
+
+  if (cv2) {
+    const c = agregarAnomaliasPorSeveridade(data.anomalias);
+    _chartAnomalias = new Chart(cv2, {
+      type: 'bar',
+      data: {
+        labels: ['Crítico','Alerta','Atenção'],
+        datasets: [{
+          data: [c.critico, c.alerta, c.atencao],
+          backgroundColor: [pal.critico, pal.alerta, pal.atencao],
+          borderRadius: 8, borderSkipped: false, maxBarThickness: 64,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: pal.grid } },
+        },
+      },
+    });
+  }
+
+  if (cv3) {
+    const f = agregarFluxoDiario(data.extratos);
+    _chartFluxo = new Chart(cv3, {
+      type: 'line',
+      data: {
+        labels: f.labels,
+        datasets: [
+          { label: 'Crédito', data: f.credito, borderColor: pal.cores[3], backgroundColor: 'rgba(56,225,163,.12)', tension: .35, fill: true, pointRadius: 2 },
+          { label: 'Débito',  data: f.debito,  borderColor: pal.cores[5], backgroundColor: 'rgba(255,92,108,.12)', tension: .35, fill: true, pointRadius: 2 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: {
+          x: { grid: { color: pal.grid }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+          y: { grid: { color: pal.grid }, ticks: { callback: v => 'R$ ' + Number(v).toLocaleString('pt-BR') } },
+        },
+      },
+    });
+  }
+
+  const cv4 = document.getElementById('chart-contrapartes');
+  if (cv4) {
+    const c = agregarContrapartes(data.extratos);
+    _chartContrapartes = new Chart(cv4, {
+      type: 'bar',
+      data: {
+        labels: c.labels,
+        datasets: [{
+          data: c.valores,
+          backgroundColor: pal.cores[0],
+          borderRadius: 6, borderSkipped: false, maxBarThickness: 18,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => 'R$ ' + Number(ctx.parsed.x).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) } },
+        },
+        scales: {
+          x: { grid: { color: pal.grid }, ticks: { callback: v => 'R$ ' + Number(v).toLocaleString('pt-BR') } },
+          y: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        },
+      },
+    });
+  }
+
+  const cv5 = document.getElementById('chart-radar');
+  if (cv5) {
+    const r = agregarConformidade(data.extratos, data.anomalias);
+    _chartRadar = new Chart(cv5, {
+      type: 'radar',
+      data: {
+        labels: r.labels,
+        datasets: [{
+          label: 'Conformidade (%)',
+          data: r.valores,
+          backgroundColor: 'rgba(30,111,217,.18)',
+          borderColor: pal.cores[0],
+          borderWidth: 2,
+          pointBackgroundColor: pal.cores[0],
+          pointRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.label}: ${c.parsed.r}%` } } },
+        scales: {
+          r: {
+            min: 0, max: 100,
+            grid: { color: pal.grid },
+            angleLines: { color: pal.grid },
+            pointLabels: { color: pal.text, font: { size: 10 } },
+            ticks: { display: false, stepSize: 25 },
+          },
+        },
+      },
+    });
+  }
+
+  const cv6 = document.getElementById('chart-semana');
+  if (cv6) {
+    const s = agregarPorDiaSemana(data.extratos);
+    _chartSemana = new Chart(cv6, {
+      type: 'bar',
+      data: {
+        labels: s.labels,
+        datasets: [
+          { label: 'Crédito', data: s.credito, backgroundColor: pal.cores[3], borderRadius: 5, stack: 'x' },
+          { label: 'Débito',  data: s.debito,  backgroundColor: pal.cores[5], borderRadius: 5, stack: 'x' },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: {
+          x: { stacked: true, grid: { display: false } },
+          y: { stacked: true, grid: { color: pal.grid }, ticks: { callback: v => 'R$ ' + Number(v).toLocaleString('pt-BR') } },
+        },
+      },
+    });
+  }
 }
 
 /* ── Health check ───────────────────────────────────────────────── */
@@ -487,3 +949,10 @@ function toast(msg, type = 'info') {
 
 /* ── Init ───────────────────────────────────────────────────────── */
 verificarHealth();
+atualizarHistorico();
+window.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+    e.preventDefault();
+    toggleTema();
+  }
+});

@@ -10,10 +10,12 @@
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
           integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi"
           crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+          crossorigin="anonymous"></script>
   <style>
     /* ── Reset & Tokens (Aurora Blue) ────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
+    :root, [data-theme="light"] {
       --navy:    #0F172A;
       --navy70:  rgba(15,23,42,.7);
 
@@ -59,6 +61,188 @@
 
       --easing:    cubic-bezier(0.16, 1, 0.3, 1);
     }
+
+    /* ── Dark theme tokens ─────────────────────────────────────────── */
+    [data-theme="dark"] {
+      --navy:    #e6edf7;
+      --navy70:  rgba(230,237,247,.7);
+
+      --blue:        #4D7CFF;
+      --blue-soft:   #6FA0FF;
+      --sky:         #38BDF8;
+      --aurora-1:    #1e3a8a;
+      --aurora-2:    #1e40af;
+      --aurora-3:    #1d4ed8;
+      --blue10:      #1e293b;
+      --blue20:      #243049;
+
+      --green:   #34D399;
+      --green10: #064e3b;
+      --purple:  #A78BFA;
+      --purple10:#312e81;
+      --cyan:    #22D3EE;
+      --cyan10:  #164e63;
+      --red:     #F87171;
+      --red10:   #7f1d1d;
+      --orange:  #FBBF24;
+      --orange10:#78350f;
+
+      --bg:          #0b1220;
+      --bg-mesh:     radial-gradient(at 20% 10%, #15203a 0%, transparent 55%),
+                     radial-gradient(at 80% 80%, #1a2238 0%, transparent 55%),
+                     radial-gradient(at 50% 50%, #0e1729 0%, transparent 65%);
+      --surface:     rgba(20,28,48,.72);
+      --surface-solid: #111a30;
+      --border:      rgba(96,165,250,.18);
+      --border-solid: #1f2b4d;
+      --text:        #e6edf7;
+      --muted:       #94a3b8;
+
+      --shadow:      0 4px 20px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.35);
+      --shadow-lg:   0 18px 50px rgba(0,0,0,.55), 0 4px 14px rgba(0,0,0,.40);
+      --shadow-glow: 0 0 40px rgba(96,165,250,.30);
+    }
+
+    /* Transição suave de tema */
+    body, .card, .topbar, .sidebar, .mode-card, .btn, input, select, textarea {
+      transition: background-color .25s var(--easing), color .25s var(--easing), border-color .25s var(--easing);
+    }
+
+    /* Toggle de tema */
+    .theme-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      width: 38px; height: 38px;
+      border-radius: 12px;
+      border: 1px solid var(--border-solid);
+      background: var(--surface-solid);
+      color: var(--text);
+      cursor: pointer;
+      justify-content: center;
+      transition: all .2s var(--easing);
+    }
+    .theme-toggle:hover {
+      border-color: var(--blue);
+      box-shadow: var(--shadow-glow);
+      transform: translateY(-1px);
+    }
+    .theme-toggle .sun-ico { display: none; }
+    .theme-toggle .moon-ico { display: block; }
+    [data-theme="dark"] .theme-toggle .sun-ico { display: block; }
+    [data-theme="dark"] .theme-toggle .moon-ico { display: none; }
+
+    /* ── Charts grid (auditoria moderna multi-camada) ──────────────── */
+    .audit-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 20px 0;
+    }
+    .audit-grid .chart-card.span-2 { grid-column: 1 / -1; }
+    @media (max-width: 880px) {
+      .audit-grid { grid-template-columns: 1fr; }
+    }
+    .chart-card {
+      background: var(--surface);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+    .chart-card::before {
+      content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+      background: linear-gradient(90deg, var(--blue), var(--sky), transparent);
+      opacity: .6;
+    }
+    .chart-card h3 {
+      font-size: 12px; letter-spacing: 1.6px; text-transform: uppercase;
+      color: var(--muted); font-weight: 700; margin-bottom: 14px;
+    }
+    .chart-canvas-wrap {
+      position: relative;
+      height: 260px;
+    }
+    .chart-card.tall .chart-canvas-wrap { height: 320px; }
+
+    /* Ranking de risco (lista vertical) */
+    #ranking-risco {
+      height: 260px;
+      overflow-y: auto;
+      padding: 4px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .risco-item {
+      display: grid;
+      grid-template-columns: 26px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface-solid);
+      transition: all .15s var(--easing);
+    }
+    .risco-item:hover { transform: translateX(2px); border-color: var(--blue); }
+    .risco-pos {
+      display: flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; border-radius: 6px;
+      font-size: 11px; font-weight: 800;
+      background: linear-gradient(135deg, var(--blue), var(--sky));
+      color: white;
+    }
+    .risco-info { display: flex; flex-direction: column; min-width: 0; }
+    .risco-tit { font-size: 12.5px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .risco-sub { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+    .risco-val { font-size: 13px; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+    .risco-val.critico { color: var(--red); }
+    .risco-val.alerta  { color: var(--orange); }
+    .risco-val.atencao { color: #ca8a04; }
+    [data-theme="dark"] .risco-val.atencao { color: #fbbf24; }
+    .risco-item .sev-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      display: inline-block; margin-right: 6px;
+      vertical-align: middle;
+    }
+    .risco-item .sev-dot.critico { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .risco-item .sev-dot.alerta  { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+    .risco-item .sev-dot.atencao { background: #eab308; box-shadow: 0 0 8px #eab308; }
+    .risco-empty {
+      display: flex; align-items: center; justify-content: center; height: 100%;
+      color: var(--green); font-weight: 600; gap: 8px;
+    }
+
+    /* Audit overview KPIs (camada superior) */
+    .audit-layers {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    @media (max-width: 880px) {
+      .audit-layers { grid-template-columns: repeat(2, 1fr); }
+    }
+    .audit-layer {
+      position: relative;
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: var(--surface);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .audit-layer::after {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+      background: linear-gradient(180deg, var(--blue), var(--sky));
+    }
+    .audit-layer.l-critico::after  { background: linear-gradient(180deg, #ef4444, #f97316); }
+    .audit-layer.l-alerta::after   { background: linear-gradient(180deg, #f59e0b, #fbbf24); }
+    .audit-layer.l-ok::after       { background: linear-gradient(180deg, #10b981, #34d399); }
+    .audit-layer .lbl { font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .audit-layer .val { font-size: 26px; font-weight: 800; color: var(--text); margin-top: 4px; }
+    .audit-layer .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
     html { font-size: 16px; }
     body {
       font-family: 'Inter', sans-serif;
@@ -1045,7 +1229,7 @@
     </a>
   </nav>
   <div class="sidebar-footer">
-    <div class="version-badge">v0.3.0</div>
+    <div class="version-badge">v0.4.0</div>
   </div>
 </aside>
 
@@ -1055,6 +1239,15 @@
     <span class="topbar-title" id="topbar-title">Conciliação Bancária</span>
     <div class="topbar-actions">
       <span class="badge-db" id="db-badge" aria-live="polite">DB: verificando…</span>
+      <button class="theme-toggle" id="btn-theme" onclick="toggleTema()" aria-label="Alternar tema escuro/claro" title="Tema (Ctrl+Shift+D)">
+        <svg class="moon-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+        <svg class="sun-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -1259,6 +1452,45 @@
 
       <!-- Export bar -->
       <div class="export-bar" id="export-bar"></div>
+
+      <!-- Auditoria multi-camada: visões agregadas (Aurora Audit Layer) -->
+      <div class="section-title" style="margin-top:24px">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        Visão de Auditoria · Camadas Analíticas
+      </div>
+      <div class="audit-layers" id="audit-layers"></div>
+      <div class="audit-grid">
+        <div class="chart-card">
+          <h3>Distribuição por Categoria</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-categorias"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Anomalias por Severidade</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-anomalias"></canvas></div>
+        </div>
+        <div class="chart-card tall span-2">
+          <h3>Fluxo de Caixa Diário · Crédito vs Débito</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-fluxo"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Top Contrapartes · Volume Movimentado</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-contrapartes"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Radar de Conformidade</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-radar"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Movimentação por Dia da Semana</h3>
+          <div class="chart-canvas-wrap"><canvas id="chart-semana"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Top 5 Anomalias · Risco Financeiro</h3>
+          <div class="chart-canvas-wrap" id="ranking-risco"></div>
+        </div>
+      </div>
 
       <hr class="divider" />
 

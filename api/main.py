@@ -86,11 +86,14 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 _DB_URL = os.environ.get("DATABASE_URL", "").strip()
 DB_DISPONIVEL = _DB_IMPORTS_OK and bool(_DB_URL) and not re.search(r"\[.+?\]", _DB_URL)
 
-# --- Logging ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+# --- Logging estruturado JSON com request_id ---
+from api.services.logging_estruturado import (
+    configurar_logging,
+    RequestIdMiddleware,
 )
+_LOG_JSON = os.environ.get("ORGCONC_LOG_JSON", "true").strip().lower() not in ("0", "false", "no")
+_LOG_LEVEL = os.environ.get("ORGCONC_LOG_LEVEL", "INFO").strip()
+configurar_logging(nivel=_LOG_LEVEL, json_mode=_LOG_JSON)
 log = logging.getLogger("orgconc")
 
 # --- Rate limiter ---
@@ -120,16 +123,18 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(
     title="ORGATEC · Conciliacao Bancaria API",
     description="Cruza extratos OFX/PDF/XML contra razao contabil. Gera HTML/XLSX/PDF.",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=_lifespan,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS if CORS_ORIGINS else ["*"],
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -138,7 +143,7 @@ from starlette.responses import Response as StarletteResponse
 
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' cdn.jsdelivr.net; "
+    "script-src 'self' cdn.jsdelivr.net cdnjs.cloudflare.com; "
     "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
     "font-src 'self' fonts.gstatic.com; "
     "img-src 'self' data:; "
@@ -496,7 +501,7 @@ def animate_demo():
 def root():
     return {
         "service": "Conciliacao Bancaria API",
-        "version": "0.3.0",
+        "version": "0.4.0",
         "endpoints": [
             "/health", "/docs",
             "/conciliar/ofx",
@@ -520,7 +525,7 @@ async def health():
             db_status = "erro"
     return {
         "status": "ok",
-        "versao": "0.3.0",
+        "versao": "0.4.0",
         "api_key_configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "banco_dados": db_status,
     }
