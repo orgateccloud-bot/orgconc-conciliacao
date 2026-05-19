@@ -138,7 +138,7 @@ from starlette.responses import Response as StarletteResponse
 
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+    "script-src 'self' cdn.jsdelivr.net; "
     "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
     "font-src 'self' fonts.gstatic.com; "
     "img-src 'self' data:; "
@@ -163,15 +163,32 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(_SecurityHeadersMiddleware)
 
 
+from api.services.auth import (
+    auth_optional,
+    current_user,
+    decodificar_token,
+    emitir_token,
+    hash_senha,
+    verificar_senha,
+    TokenPayload,
+)
+
+
 def auth(authorization: Optional[str] = Header(None)) -> None:
-    """Auth opcional via Bearer token (so valida se ORGCONC_AUTH_TOKEN estiver definido)."""
+    """Wrapper retrocompativel: aceita JWT OU token legacy.
+
+    Se ORGCONC_AUTH_TOKEN nao estiver configurado, libera (modo dev).
+    """
     if not AUTH_TOKEN:
         return
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token Bearer ausente")
     token = authorization.split(" ", 1)[1].strip()
-    if not secrets.compare_digest(token, AUTH_TOKEN):
-        raise HTTPException(status_code=401, detail="Token invalido")
+    # 1. Tenta token legacy (igual ao AUTH_TOKEN)
+    if secrets.compare_digest(token, AUTH_TOKEN):
+        return
+    # 2. Tenta JWT — levanta 401 se invalido
+    decodificar_token(token)
 
 
 # ── Modelos Pydantic ──────────────────────────────────────────────────────
@@ -487,6 +504,7 @@ def root():
             "/conciliar/ofx",
             "/export/html/{report_id}", "/export/xlsx/{report_id}", "/export/pdf/{report_id}",
             "/clientes", "/clientes/{id}",
+            "/auth/login", "/auth/me",
             "/logo-base64",
         ],
     }
@@ -508,6 +526,61 @@ async def health():
         "api_key_configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "banco_dados": db_status,
     }
+
+
+# ── Auth (JWT) ────────────────────────────────────────────────────────────
+
+class LoginPayload(BaseModel):
+    email: str
+    senha: str
+
+
+@app.post("/auth/login", tags=["auth"])
+@limiter.limit("10/minute")
+async def auth_login(request: Request, payload: LoginPayload):
+    """Emite JWT a partir de email + senha.
+
+    Para o MVP atual, valida contra ORGCONC_ADMIN_EMAIL + ORGCONC_ADMIN_SENHA_HASH
+    do .env (single-user). Quando houver tabela users, valida contra BD.
+    """
+    admin_email = os.environ.get("ORGCONC_ADMIN_EMAIL", "").strip().lower()
+    admin_hash = os.environ.get("ORGCONC_ADMIN_SENHA_HASH", "").strip()
+
+    if not admin_email or not admin_hash:
+        raise HTTPException(
+            status_code=503,
+            detail="Auth nao configurada — defina ORGCONC_ADMIN_EMAIL e ORGCONC_ADMIN_SENHA_HASH no .env",
+        )
+
+    if payload.email.strip().lower() != admin_email:
+        # Mesma mensagem para email errado e senha errada (evita user enumeration)
+        raise HTTPException(status_code=401, detail="Credenciais invalidas")
+
+    if not verificar_senha(payload.senha, admin_hash):
+        raise HTTPException(status_code=401, detail="Credenciais invalidas")
+
+    token = emitir_token(sub=admin_email, email=admin_email, role="admin")
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@app.get("/auth/me", tags=["auth"])
+async def auth_me(user: TokenPayload = Depends(current_user)):
+    """Retorna info do usuario autenticado (debug/UI)."""
+    return {"sub": user.sub, "email": user.email, "role": user.role}
+
+
+@app.post("/auth/hash", tags=["auth"], include_in_schema=False)
+async def auth_hash_helper(payload: dict):
+    """Helper de DEV: gera bcrypt hash de uma senha (uso: setup inicial).
+
+    Disponivel apenas quando ORGCONC_AUTH_TOKEN esta vazio (modo dev).
+    """
+    if AUTH_TOKEN:
+        raise HTTPException(status_code=404, detail="Indisponivel")
+    senha = payload.get("senha", "")
+    if not senha or len(senha) < 8:
+        raise HTTPException(status_code=400, detail="Senha minima de 8 chars")
+    return {"hash": hash_senha(senha)}
 
 
 # ── Clientes ──────────────────────────────────────────────────────────────

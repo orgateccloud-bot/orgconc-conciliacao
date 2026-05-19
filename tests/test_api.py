@@ -310,6 +310,139 @@ def test_frontend_usa_marked_com_sri():
     assert "crossorigin=\"anonymous\"" in html
 
 
+# ── JWT auth ──────────────────────────────────────────────────────────────
+
+def test_auth_login_sem_config_retorna_503():
+    """Sem ORGCONC_ADMIN_* configurado, /auth/login deve retornar 503."""
+    with patch.dict(os.environ, {"ORGCONC_ADMIN_EMAIL": "", "ORGCONC_ADMIN_SENHA_HASH": ""}):
+        r = client.post("/auth/login", json={"email": "x@y.com", "senha": "qualquer"})
+    assert r.status_code == 503
+
+
+def test_auth_login_credenciais_invalidas_retorna_401():
+    """Email errado deve retornar 401 com mesma mensagem que senha errada (anti-enum)."""
+    from api.services.auth import hash_senha
+    hash_valido = hash_senha("senha-correta-123")
+    with patch.dict(os.environ, {
+        "ORGCONC_ADMIN_EMAIL": "admin@orgconc.com",
+        "ORGCONC_ADMIN_SENHA_HASH": hash_valido,
+    }):
+        r1 = client.post("/auth/login", json={"email": "outro@x.com", "senha": "qualquer"})
+        r2 = client.post("/auth/login", json={"email": "admin@orgconc.com", "senha": "errada"})
+    assert r1.status_code == 401
+    assert r2.status_code == 401
+    assert r1.json()["detail"] == r2.json()["detail"]  # anti-enumeration
+
+
+def test_auth_login_sucesso_emite_jwt():
+    """Login correto deve emitir JWT valido."""
+    from api.services.auth import hash_senha, decodificar_token
+    hash_valido = hash_senha("senha-correta-123")
+    with patch.dict(os.environ, {
+        "ORGCONC_ADMIN_EMAIL": "admin@orgconc.com",
+        "ORGCONC_ADMIN_SENHA_HASH": hash_valido,
+    }):
+        r = client.post("/auth/login", json={"email": "admin@orgconc.com", "senha": "senha-correta-123"})
+    assert r.status_code == 200
+    j = r.json()
+    assert "access_token" in j
+    assert j["token_type"] == "bearer"
+    payload = decodificar_token(j["access_token"])
+    assert payload.email == "admin@orgconc.com"
+    assert payload.role == "admin"
+
+
+def test_auth_me_exige_token():
+    """/auth/me sem token retorna 401 quando LEGACY_SERVICE_TOKEN configurado."""
+    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-test-token"):
+        r = client.get("/auth/me")
+    assert r.status_code == 401
+
+
+def test_auth_me_com_token_legacy_funciona():
+    """Token legacy compartilhado deve funcionar via /auth/me."""
+    with patch("api.main.AUTH_TOKEN", "legacy-test-token"), \
+         patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-test-token"):
+        r = client.get("/auth/me", headers={"Authorization": "Bearer legacy-test-token"})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["role"] == "service"
+
+
+def test_auth_me_com_jwt_funciona():
+    """JWT valido emitido por emitir_token deve passar pelo current_user."""
+    from api.services.auth import emitir_token
+    token = emitir_token(sub="teste@x.com", email="teste@x.com", role="admin")
+    with patch("api.main.AUTH_TOKEN", "qualquer-coisa"):
+        r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json()["email"] == "teste@x.com"
+
+
+def test_auth_jwt_expirado_retorna_401():
+    """JWT com exp no passado deve retornar 401 com mensagem clara."""
+    from api.services.auth import emitir_token
+    token = emitir_token(sub="x@y.com", ttl_min=-1)  # ja expirado
+    r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 401
+    assert "expirado" in r.json()["detail"].lower()
+
+
+# ── Hardening: CSP script-src sem unsafe-inline ───────────────────────────
+
+def test_csp_script_src_sem_unsafe_inline():
+    """Script-src deve permitir self + cdn.jsdelivr.net mas NAO unsafe-inline."""
+    r = client.get("/health")
+    csp = r.headers.get("content-security-policy", "")
+    # Extrai a diretiva script-src
+    parts = [p.strip() for p in csp.split(";") if p.strip().startswith("script-src")]
+    assert parts, "script-src diretiva ausente do CSP"
+    script_src = parts[0]
+    assert "'unsafe-inline'" not in script_src, f"script-src contem unsafe-inline: {script_src}"
+    assert "'self'" in script_src
+    assert "cdn.jsdelivr.net" in script_src
+
+
+# ── Frontend: JS extraido + a11y ──────────────────────────────────────────
+
+def test_frontend_nao_tem_script_inline():
+    """frontend/index.html nao pode ter <script> com conteudo inline."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
+    # Conta apenas tags <script> SEM src (inline)
+    import re
+    inline_scripts = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>[\s\S]+?</script>", html)
+    # Tolera scripts vazios <script></script>
+    inline_com_conteudo = [s for s in inline_scripts if len(re.sub(r"<[^>]+>", "", s).strip()) > 5]
+    assert not inline_com_conteudo, f"Encontrei {len(inline_com_conteudo)} script(s) inline com conteudo"
+
+
+def test_frontend_carrega_app_js_externo():
+    """frontend/index.html deve referenciar /ui/js/app.js."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert "/ui/js/app.js" in html or 'src="/ui/js/' in html
+
+
+def test_static_js_app_existe_e_eh_servido():
+    """static/js/app.js deve existir e ser servido via /ui/js/app.js."""
+    from pathlib import Path
+    p = Path(__file__).resolve().parent.parent / "static" / "js" / "app.js"
+    assert p.exists(), "static/js/app.js deve existir"
+    assert p.stat().st_size > 100, "app.js esta vazio"
+
+    r = client.get("/ui/js/app.js")
+    assert r.status_code == 200
+    assert "fetch" in r.text or "addEventListener" in r.text
+
+
+def test_frontend_tem_focus_visible():
+    """Frontend deve ter regra :focus-visible para a11y."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert ":focus-visible" in html, "frontend sem :focus-visible (a11y de teclado)"
+
+
 # ── Hardening: limite agregado de upload ──────────────────────────────────
 
 def test_limite_agregado_de_upload_retorna_413():
