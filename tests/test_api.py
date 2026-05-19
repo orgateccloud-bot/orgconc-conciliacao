@@ -207,3 +207,51 @@ def test_render_html_contem_logo_e_dados():
     assert "ORGATEC" in html
     assert "Inter:wght" in html
     assert "<table" in html
+
+
+# ── Clientes ──────────────────────────────────────────────────────────────
+
+def test_clientes_cnpj_invalido_retorna_422():
+    """CNPJ incorreto deve ser rejeitado pelo Pydantic antes de chegar ao banco."""
+    r = client.post("/clientes", json={"nome": "Empresa Teste", "cnpj": "11111111111111"})
+    assert r.status_code == 422
+
+
+def test_clientes_cnpj_todos_iguais_retorna_422():
+    """CNPJ com todos os digitos iguais (ex: 00.000.000/0000-00) eh invalido."""
+    r = client.post("/clientes", json={"nome": "Empresa Teste", "cnpj": "00000000000000"})
+    assert r.status_code == 422
+
+
+def test_clientes_criar_sem_db_retorna_503():
+    """Sem DATABASE_URL, POST /clientes deve retornar 503."""
+    r = client.post("/clientes", json={"nome": "Empresa Sem DB", "plano": "basico"})
+    assert r.status_code == 503
+
+
+def test_clientes_listar_sem_db_retorna_503():
+    """Sem DATABASE_URL, GET /clientes deve retornar 503."""
+    r = client.get("/clientes")
+    assert r.status_code == 503
+
+
+def test_clientes_buscar_sem_db_retorna_503():
+    """Sem DATABASE_URL, GET /clientes/{id} deve retornar 503."""
+    r = client.get("/clientes/00000000-0000-0000-0000-000000000001")
+    assert r.status_code == 503
+
+
+def test_clientes_atualizar_sem_db_retorna_503():
+    """Sem DATABASE_URL, PATCH /clientes/{id} deve retornar 503."""
+    r = client.patch("/clientes/00000000-0000-0000-0000-000000000001", json={"nome": "Novo"})
+    assert r.status_code == 503
+
+
+# ── Headers de Segurança ──────────────────────────────────────────────────
+
+def test_security_headers_presentes():
+    """Toda resposta deve incluir os headers de segurança obrigatorios."""
+    r = client.get("/health")
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert r.headers.get("x-frame-options") == "DENY"
+    assert "Content-Security-Policy" in r.headers or "content-security-policy" in r.headers

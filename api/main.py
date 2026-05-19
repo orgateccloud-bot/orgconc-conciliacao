@@ -118,6 +118,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response as StarletteResponse
+
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
+    "font-src 'self' fonts.gstatic.com; "
+    "img-src 'self' data:; "
+    "object-src 'none'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'"
+)
+
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = _CSP
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        return response
+
+app.add_middleware(_SecurityHeadersMiddleware)
+
 
 def auth(authorization: Optional[str] = Header(None)) -> None:
     """Auth opcional via Bearer token (so valida se ORGCONC_AUTH_TOKEN estiver definido)."""
