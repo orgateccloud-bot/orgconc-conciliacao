@@ -37,6 +37,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from markdown import markdown as md_to_html
+import contextlib
+from pydantic import BaseModel
+from sqlalchemy import text as sql_text
+
+# Imports de banco (opcionais — ativos somente se DATABASE_URL estiver configurado)
+_DB_IMPORTS_OK = False
+try:
+    from api.db.client import SessionLocal, engine
+    from api.db import models
+    from api.db import clientes as crud_clientes
+    _DB_IMPORTS_OK = True
+except Exception:
+    pass
 
 # --- Config via .env ---
 _env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -56,6 +69,9 @@ MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 DATA_DIR = Path(os.environ.get("ORGCONC_DATA_DIR", "./data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+_DB_URL = os.environ.get("DATABASE_URL", "").strip()
+DB_DISPONIVEL = _DB_IMPORTS_OK and bool(_DB_URL) and "[YOUR-PASSWORD]" not in _DB_URL
+
 # --- Logging ---
 logging.basicConfig(
     level=logging.INFO,
@@ -74,10 +90,22 @@ SYSTEM_PROMPT = (
     "executivo, achados criticos, classificacao contabil e plano de acao."
 )
 
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI):
+    if DB_DISPONIVEL:
+        log.info("Banco configurado: %s", _DB_URL.split("@")[-1] if "@" in _DB_URL else "ok")
+    else:
+        log.info("Banco nao configurado — persistencia JSON local ativa")
+    yield
+    if DB_DISPONIVEL and _DB_IMPORTS_OK:
+        await engine.dispose()
+
+
 app = FastAPI(
     title="ORGATEC · Conciliacao Bancaria API",
     description="Cruza extratos OFX/PDF/XML contra razao contabil. Gera HTML/XLSX/PDF.",
-    version="0.2.0",
+    version="0.3.0",
+    lifespan=_lifespan,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -98,6 +126,80 @@ def auth(authorization: Optional[str] = Header(None)) -> None:
     token = authorization.split(" ", 1)[1].strip()
     if not secrets.compare_digest(token, AUTH_TOKEN):
         raise HTTPException(status_code=401, detail="Token invalido")
+
+
+# ── Modelos Pydantic ──────────────────────────────────────────────────────
+
+class ClienteCreate(BaseModel):
+    nome: str
+    cnpj: Optional[str] = None
+    email: Optional[str] = None
+    telefone: Optional[str] = None
+    plano: str = "basico"
+
+class ClienteUpdate(BaseModel):
+    nome: Optional[str] = None
+    email: Optional[str] = None
+    telefone: Optional[str] = None
+    plano: Optional[str] = None
+    ativo: Optional[bool] = None
+
+
+# ── Persistência no banco ─────────────────────────────────────────────────
+
+async def _salvar_no_banco(
+    report_id: str,
+    extratos: list[dict],
+    anomalias: list[dict],
+    modo: str,
+    cliente_id: Optional[str] = None,
+) -> None:
+    if not DB_DISPONIVEL:
+        return
+    import uuid as _uuid
+    from datetime import date
+    try:
+        total_cred = sum(t["valor"] for e in extratos for t in e["transacoes"] if t["valor"] > 0)
+        total_deb  = sum(t["valor"] for e in extratos for t in e["transacoes"] if t["valor"] < 0)
+        datas = sorted({t["data"] for e in extratos for t in e["transacoes"] if t.get("data")})
+        cid = _uuid.UUID(cliente_id) if cliente_id else None
+        async with SessionLocal() as db:
+            conc = models.Conciliacao(
+                cliente_id=cid,
+                report_id=report_id,
+                modo=modo,
+                total_transacoes=sum(e["qtd"] for e in extratos),
+                total_anomalias=len(anomalias),
+                valor_total_credito=total_cred,
+                valor_total_debito=total_deb,
+                periodo_inicio=date.fromisoformat(datas[0]) if datas else None,
+                periodo_fim=date.fromisoformat(datas[-1]) if datas else None,
+            )
+            db.add(conc)
+            await db.flush()
+            anomalias_set = {
+                (a.get("conta", ""), round(abs(a.get("valor", 0)), 2))
+                for a in anomalias
+            }
+            for e in extratos:
+                for t in e["transacoes"]:
+                    eh_anomalia = (e.get("conta", ""), round(abs(t["valor"]), 2)) in anomalias_set
+                    tx = models.Transacao(
+                        conciliacao_id=conc.id,
+                        cliente_id=cid,
+                        data_lancamento=date.fromisoformat(t["data"]) if t.get("data") else date.today(),
+                        valor=t["valor"],
+                        memo=t.get("memo"),
+                        categoria=_classificar(t.get("memo", ""), t.get("nome", "")),
+                        banco=e.get("conta"),
+                        tipo=t.get("tipo"),
+                        eh_anomalia=eh_anomalia,
+                    )
+                    db.add(tx)
+            await db.commit()
+            log.info("Conciliacao %s salva no banco (%d transacoes)", report_id, sum(e["qtd"] for e in extratos))
+    except Exception:
+        log.exception("Falha ao salvar no banco (conciliacao %s) — JSON preservado", report_id)
 
 
 async def read_limited(up: UploadFile, max_bytes: int = MAX_UPLOAD_BYTES) -> bytes:
@@ -1138,30 +1240,37 @@ def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
                     "detalhe": f"{t['data']} | R$ {t['valor']:,.2f} | {t['memo'][:60]}",
                 })
 
-    # Saldo descasado entre INTERCREDIS (sem par)
-    if len(extratos) == 2:
-        c1, c2 = extratos[0], extratos[1]
-        tx_int_c1 = [t for t in c1["transacoes"] if "INTERCREDIS" in (t["memo"] + t["nome"]).upper()]
-        tx_int_c2 = [t for t in c2["transacoes"] if "INTERCREDIS" in (t["memo"] + t["nome"]).upper()]
-        usados = set()
-        casados = 0
-        for t1 in tx_int_c1:
-            for j, t2 in enumerate(tx_int_c2):
-                if j in usados:
-                    continue
-                if abs(abs(t1["valor"]) - abs(t2["valor"])) < 0.01 and (t1["valor"] * t2["valor"] < 0):
-                    usados.add(j); casados += 1; break
-        sem_par_c1 = len(tx_int_c1) - casados
-        sem_par_c2 = len(tx_int_c2) - casados
-        if sem_par_c1 + sem_par_c2 > 0:
-            anomalias.append({
-                "severidade": "alerta",
-                "tipo": "Transferencia sem par",
-                "titulo": f"{sem_par_c1 + sem_par_c2} transferência(s) INTERCREDIS sem par",
-                "conta": "Cruzamento",
-                "valor": 0,
-                "detalhe": f"Conta 1: {sem_par_c1} sem par | Conta 2: {sem_par_c2} sem par",
-            })
+    # Transferências internas sem par — verifica todos os pares de contas
+    _KEYWORDS_TRANSF = ("INTERCREDIS", "TRANSF.CONTAS", "TRANSF MESMA TIT", "TRANSFERENCIA ENTRE CONTAS")
+    if len(extratos) >= 2:
+        from itertools import combinations
+        for c1, c2 in combinations(extratos, 2):
+            def _eh_transf(t):
+                s = (t["memo"] + t["nome"]).upper()
+                return any(k in s for k in _KEYWORDS_TRANSF)
+            tx1 = [t for t in c1["transacoes"] if _eh_transf(t)]
+            tx2 = [t for t in c2["transacoes"] if _eh_transf(t)]
+            usados = set()
+            casados = 0
+            for t1 in tx1:
+                for j, t2 in enumerate(tx2):
+                    if j in usados:
+                        continue
+                    if abs(abs(t1["valor"]) - abs(t2["valor"])) < 0.01 and t1["valor"] * t2["valor"] < 0:
+                        usados.add(j); casados += 1; break
+            sem_par = (len(tx1) - casados) + (len(tx2) - casados)
+            if sem_par > 0:
+                anomalias.append({
+                    "severidade": "alerta",
+                    "tipo": "Transferencia sem par",
+                    "titulo": f"{sem_par} transferência(s) interna(s) sem par",
+                    "conta": f"{c1['conta']} ↔ {c2['conta']}",
+                    "valor": 0,
+                    "detalhe": (
+                        f"{c1['conta']}: {len(tx1) - casados} sem par | "
+                        f"{c2['conta']}: {len(tx2) - casados} sem par"
+                    ),
+                })
 
     # Ordena: critico > alerta > atencao, depois por |valor|
     ordem = {"critico": 0, "alerta": 1, "atencao": 2}
@@ -1300,34 +1409,42 @@ def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
     out.append(f"| Cobertura de classificação | {pct_classif:.1f}% |\n")
     out.append(f"| Total de anomalias | {len(anomalias)} ({sev_count['critico']} críticas) |\n\n")
 
-    # === 3. TRANSFERENCIAS INTERCREDIS ===
-    if len(extratos) == 2:
-        out.append("## 3. Transferências entre Contas (INTERCREDIS)\n\n")
-        c1, c2 = extratos[0], extratos[1]
-        pares = []
-        usados_c2 = set()
-        for t1 in c1["transacoes"]:
-            if "INTERCREDIS" not in (t1["memo"] + t1["nome"]).upper():
-                continue
-            for j, t2 in enumerate(c2["transacoes"]):
-                if j in usados_c2:
-                    continue
-                if abs(abs(t1["valor"]) - abs(t2["valor"])) < 0.01 and (t1["valor"] * t2["valor"] < 0):
-                    pares.append((t1, t2))
-                    usados_c2.add(j)
-                    break
-        if pares:
-            out.append("| Data | Origem | Destino | Valor | Status |\n|---|---|---|---:|:-:|\n")
-            soma = 0
-            for t1, t2 in pares:
-                origem = c1["conta"] if t1["valor"] < 0 else c2["conta"]
-                destino = c2["conta"] if t1["valor"] < 0 else c1["conta"]
-                v = abs(t1["valor"]); soma += v
-                out.append(f"| {t1['data']} | {origem} | {destino} | R$ {v:,.2f} | ✅ CASADO |\n")
-            out.append(f"\n**Resumo:** {len(pares)} pares conciliados · "
-                       f"Volume transferido R$ {soma:,.2f} · Taxa de match 100%\n\n")
+    # === 3. TRANSFERENCIAS ENTRE CONTAS ===
+    out.append("## 3. Transferências entre Contas Próprias\n\n")
+    _KEYWORDS_TRANSF = ("INTERCREDIS", "TRANSF.CONTAS", "TRANSF MESMA TIT", "TRANSFERENCIA ENTRE CONTAS")
+    def _eh_transf(t):
+        s = (t["memo"] + t["nome"]).upper()
+        return any(k in s for k in _KEYWORDS_TRANSF)
+
+    if len(extratos) >= 2:
+        from itertools import combinations as _combis
+        total_pares_encontrados = 0
+        total_volume = 0.0
+        out.append("| Data | Origem | Destino | Valor | Status |\n|---|---|---|---:|:-:|\n")
+        for c1, c2 in _combis(extratos, 2):
+            tx1 = [t for t in c1["transacoes"] if _eh_transf(t)]
+            tx2 = [t for t in c2["transacoes"] if _eh_transf(t)]
+            usados = set()
+            for t1 in tx1:
+                for j, t2 in enumerate(tx2):
+                    if j in usados:
+                        continue
+                    if abs(abs(t1["valor"]) - abs(t2["valor"])) < 0.01 and t1["valor"] * t2["valor"] < 0:
+                        origem = c1["conta"] if t1["valor"] < 0 else c2["conta"]
+                        destino = c2["conta"] if t1["valor"] < 0 else c1["conta"]
+                        v = abs(t1["valor"])
+                        out.append(f"| {t1['data']} | {origem} | {destino} | R$ {v:,.2f} | ✅ CASADO |\n")
+                        total_volume += v
+                        total_pares_encontrados += 1
+                        usados.add(j)
+                        break
+        if total_pares_encontrados:
+            out.append(f"\n**Resumo:** {total_pares_encontrados} par(es) conciliado(s) · "
+                       f"Volume total R$ {total_volume:,.2f}\n\n")
         else:
-            out.append("_Nenhuma transferência INTERCREDIS detectada._\n\n")
+            out.append("\n_Nenhuma transferência entre contas detectada._\n\n")
+    else:
+        out.append("_Apenas 1 extrato enviado — cruzamento entre contas não aplicável._\n\n")
 
     # === 4. TOP CATEGORIAS CONTÁBEIS ===
     out.append("## 4. Distribuição por Categoria Contábil\n\n")
@@ -1443,27 +1560,114 @@ def root():
 
 
 @app.get("/health")
-def health():
+async def health():
+    db_status = "nao_configurado"
+    if DB_DISPONIVEL:
+        try:
+            async with SessionLocal() as db:
+                await db.execute(sql_text("SELECT 1"))
+            db_status = "ok"
+        except Exception:
+            db_status = "erro"
     return {
         "status": "ok",
+        "versao": "0.3.0",
         "api_key_configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "banco_dados": db_status,
     }
 
+
+# ── Clientes ──────────────────────────────────────────────────────────────
+
+@app.post("/clientes", dependencies=[Depends(auth)], status_code=201, tags=["clientes"])
+async def criar_cliente(payload: ClienteCreate):
+    """Cadastra um novo cliente."""
+    if not DB_DISPONIVEL:
+        raise HTTPException(503, "Banco de dados nao configurado — adicione DATABASE_URL ao .env")
+    async with SessionLocal() as db:
+        cliente = await crud_clientes.criar_cliente(
+            db, nome=payload.nome, cnpj=payload.cnpj,
+            email=payload.email, telefone=payload.telefone, plano=payload.plano,
+        )
+    return {
+        "id": str(cliente.id), "nome": cliente.nome, "cnpj": cliente.cnpj,
+        "email": cliente.email, "plano": cliente.plano,
+        "criado_em": cliente.criado_em.isoformat(),
+    }
+
+
+@app.get("/clientes", dependencies=[Depends(auth)], tags=["clientes"])
+async def listar_clientes(apenas_ativos: bool = True):
+    """Lista todos os clientes."""
+    if not DB_DISPONIVEL:
+        raise HTTPException(503, "Banco de dados nao configurado")
+    async with SessionLocal() as db:
+        clientes = await crud_clientes.listar_clientes(db, apenas_ativos=apenas_ativos)
+    return [
+        {"id": str(c.id), "nome": c.nome, "cnpj": c.cnpj, "email": c.email,
+         "plano": c.plano, "ativo": c.ativo}
+        for c in clientes
+    ]
+
+
+@app.get("/clientes/{cliente_id}", dependencies=[Depends(auth)], tags=["clientes"])
+async def buscar_cliente(cliente_id: str):
+    """Busca um cliente pelo ID."""
+    if not DB_DISPONIVEL:
+        raise HTTPException(503, "Banco de dados nao configurado")
+    import uuid as _uuid
+    try:
+        cid = _uuid.UUID(cliente_id)
+    except ValueError:
+        raise HTTPException(400, "ID invalido")
+    async with SessionLocal() as db:
+        cliente = await crud_clientes.buscar_cliente(db, cid)
+    if not cliente:
+        raise HTTPException(404, "Cliente nao encontrado")
+    return {
+        "id": str(cliente.id), "nome": cliente.nome, "cnpj": cliente.cnpj,
+        "email": cliente.email, "telefone": cliente.telefone,
+        "plano": cliente.plano, "ativo": cliente.ativo,
+        "criado_em": cliente.criado_em.isoformat(),
+    }
+
+
+@app.patch("/clientes/{cliente_id}", dependencies=[Depends(auth)], tags=["clientes"])
+async def atualizar_cliente(cliente_id: str, payload: ClienteUpdate):
+    """Atualiza dados de um cliente."""
+    if not DB_DISPONIVEL:
+        raise HTTPException(503, "Banco de dados nao configurado")
+    import uuid as _uuid
+    try:
+        cid = _uuid.UUID(cliente_id)
+    except ValueError:
+        raise HTTPException(400, "ID invalido")
+    campos = {k: v for k, v in payload.model_dump().items() if v is not None}
+    async with SessionLocal() as db:
+        cliente = await crud_clientes.atualizar_cliente(db, cid, **campos)
+    if not cliente:
+        raise HTTPException(404, "Cliente nao encontrado")
+    return {"id": str(cliente.id), "nome": cliente.nome, "plano": cliente.plano, "ativo": cliente.ativo}
+
+
+# ── Conciliação ───────────────────────────────────────────────────────────
 
 @app.post("/conciliar/ofx", dependencies=[Depends(auth)])
 @limiter.limit("20/minute")
 async def conciliar_ofx(
     request: Request,
-    arquivos: List[UploadFile] = File(..., description="1 ou 2 arquivos (.ofx, .pdf ou .xml)"),
+    arquivos: List[UploadFile] = File(..., description="1 a 50 arquivos (.ofx, .pdf ou .xml)"),
     max_tokens: int = 16000,
     simular: bool = False,
+    cliente_id: Optional[str] = None,
 ):
-    """Cruza ate 2 extratos bancarios (OFX, PDF ou XML).
+    """Cruza ate 50 extratos bancarios (OFX, PDF ou XML).
 
+    Aceita arquivos de multiplos bancos e periodos simultaneamente.
     Use simular=true para gerar relatorio local (sem chamar a API).
     """
-    if not (1 <= len(arquivos) <= 2):
-        raise HTTPException(status_code=400, detail="Envie 1 ou 2 arquivos")
+    if not (1 <= len(arquivos) <= 50):
+        raise HTTPException(status_code=400, detail="Envie entre 1 e 50 arquivos")
 
     extratos_parsed = []
     for up in arquivos:
@@ -1494,6 +1698,7 @@ async def conciliar_ofx(
         anomalias = _detectar_anomalias(extratos_parsed)
         relatorio = _conciliacao_local(extratos_parsed, anomalias)
         rid = _salvar_dataset(extratos_parsed, anomalias, relatorio)
+        await _salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao", cliente_id)
         return JSONResponse({
             "modo": "simulacao_local",
             "report_id": rid,
@@ -1513,10 +1718,13 @@ async def conciliar_ofx(
             f"Total: {e['qtd']} transacoes\n{_fmt_csv(e['transacoes'])}"
         )
 
+    n_contas = len(extratos_parsed)
     prompt = (
-        "Analise os extratos bancarios abaixo. Identifique transferencias entre "
-        "contas (se houver duas), duplicidades, transacoes atipicas e pre-classifique "
-        "para lancamento contabil. Gere relatorio em portugues em Markdown.\n\n"
+        f"Analise os {n_contas} extrato(s) bancario(s) abaixo. "
+        "Identifique transferencias entre contas proprias (INTERCREDIS/TED entre as mesmas contas), "
+        "duplicidades, transacoes atipicas e pre-classifique para lancamento contabil. "
+        "Consolide o fluxo de caixa considerando todas as contas em conjunto. "
+        "Gere relatorio em portugues em Markdown.\n\n"
         + "\n\n".join(blocos)
     )
 
@@ -1545,6 +1753,7 @@ async def conciliar_ofx(
     relatorio = "\n".join(b.text for b in resp.content if b.type == "text")
     anomalias = _detectar_anomalias(extratos_parsed)
     rid = _salvar_dataset(extratos_parsed, anomalias, relatorio)
+    await _salvar_no_banco(rid, extratos_parsed, anomalias, "llm", cliente_id)
 
     return JSONResponse({
         "modo": "claude_llm",
