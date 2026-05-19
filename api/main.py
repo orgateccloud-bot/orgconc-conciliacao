@@ -41,6 +41,11 @@ import contextlib
 from pydantic import BaseModel
 from sqlalchemy import text as sql_text
 
+# --- Config via .env (deve rodar ANTES dos imports de banco) ---
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path, override=True)
+
 # Imports de banco (opcionais — ativos somente se DATABASE_URL estiver configurado)
 _DB_IMPORTS_OK = False
 try:
@@ -50,12 +55,6 @@ try:
     _DB_IMPORTS_OK = True
 except Exception:
     pass
-
-# --- Config via .env ---
-_env_path = Path(__file__).resolve().parent.parent / ".env"
-if _env_path.exists():
-    # override=True para sobrescrever vars vazias herdadas do shell
-    load_dotenv(_env_path, override=True)
 
 AUTH_TOKEN = os.environ.get("ORGCONC_AUTH_TOKEN", "").strip()
 CORS_ORIGINS = [
@@ -70,7 +69,7 @@ DATA_DIR = Path(os.environ.get("ORGCONC_DATA_DIR", "./data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 _DB_URL = os.environ.get("DATABASE_URL", "").strip()
-DB_DISPONIVEL = _DB_IMPORTS_OK and bool(_DB_URL) and "[YOUR-PASSWORD]" not in _DB_URL
+DB_DISPONIVEL = _DB_IMPORTS_OK and bool(_DB_URL) and not re.search(r"\[.+?\]", _DB_URL)
 
 # --- Logging ---
 logging.basicConfig(

@@ -4,7 +4,10 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from dotenv import load_dotenv
 
-load_dotenv()
+from pathlib import Path as _Path
+_env = _Path(__file__).resolve().parent.parent.parent / ".env"
+if _env.exists():
+    load_dotenv(_env, override=True)
 
 _url_sync = os.getenv("DATABASE_URL", "")
 # SQLAlchemy async exige driver asyncpg; converte prefixo se necessário
