@@ -327,65 +327,159 @@
       gap: 14px;
       margin-bottom: 24px;
     }
+    /* ── Mode cards (futurista) ─────────────────────────────────── */
     .mode-card {
-      border: 2px solid var(--border);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 18px 16px;
+      padding: 22px 18px 18px;
       cursor: pointer;
-      transition: border-color .15s, box-shadow .15s, transform .1s;
-      background: var(--surface);
+      transition: transform .25s var(--easing), box-shadow .25s var(--easing), border-color .25s;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.92) 0%, rgba(248,252,255,.78) 100%);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
       position: relative;
       overflow: hidden;
       user-select: none;
+      box-shadow:
+        0 1px 0 rgba(255,255,255,.6) inset,
+        0 2px 6px rgba(15,23,42,.04);
     }
-    .mode-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+    /* Linha de gradient no topo (running glow) */
     .mode-card::before {
       content: '';
       position: absolute;
       top: 0; left: 0; right: 0;
-      height: 3px;
+      height: 2px;
+      opacity: .85;
+      transition: opacity .25s;
     }
-    .mode-card.green::before  { background: var(--green); }
-    .mode-card.blue::before   { background: var(--blue); }
-    .mode-card.purple::before { background: var(--purple); }
-    .mode-card.selected.green  { border-color: var(--green);  box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
-    .mode-card.selected.blue   { border-color: var(--blue);   box-shadow: 0 0 0 3px rgba(3,105,161,.15); }
-    .mode-card.selected.purple { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+    /* Glow ambiente atras do card (visivel no hover/selected) */
+    .mode-card::after {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: var(--radius);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .35s var(--easing);
+      background: radial-gradient(circle at 30% 0%, currentColor 0%, transparent 60%);
+      filter: blur(14px);
+    }
+    .mode-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 18px 40px rgba(15,23,42,.12), 0 4px 12px rgba(15,23,42,.06);
+    }
+    .mode-card:hover::after { opacity: .18; }
+    .mode-card:hover::before { opacity: 1; }
+
+    .mode-card.green   { color: var(--green); }
+    .mode-card.blue    { color: var(--blue); }
+    .mode-card.purple  { color: var(--purple); }
+    .mode-card.green::before  { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+    .mode-card.blue::before   { background: linear-gradient(90deg, transparent, var(--blue), var(--sky), transparent); }
+    .mode-card.purple::before { background: linear-gradient(90deg, transparent, var(--purple), #C084FC, transparent); }
+
+    .mode-card.selected {
+      border-color: transparent;
+      transform: translateY(-2px);
+    }
+    .mode-card.selected::after { opacity: .28; }
+    .mode-card.selected::before { height: 3px; opacity: 1; }
+    .mode-card.selected.green  { box-shadow: 0 0 0 1.5px var(--green),  0 12px 30px rgba(22,163,74,.18), 0 0 30px rgba(22,163,74,.15); }
+    .mode-card.selected.blue   { box-shadow: 0 0 0 1.5px var(--blue),   0 12px 30px rgba(0,82,255,.22),  0 0 30px rgba(77,124,255,.25); }
+    .mode-card.selected.purple { box-shadow: 0 0 0 1.5px var(--purple), 0 12px 30px rgba(124,58,237,.20),0 0 30px rgba(124,58,237,.20); }
+
+    /* Icone — hexagon-ish com gradient + glow */
     .mode-icon {
-      width: 36px; height: 36px;
-      border-radius: 8px;
+      width: 44px; height: 44px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.2rem;
-      margin-bottom: 10px;
+      margin-bottom: 14px;
+      position: relative;
+      border-radius: 12px;
+      color: #fff;
     }
-    .mode-icon.green  { background: var(--green10); }
-    .mode-icon.blue   { background: var(--blue10); }
-    .mode-icon.purple { background: var(--purple10); }
-    .mode-card h3 { font-size: .9rem; font-weight: 700; margin-bottom: 4px; }
-    .mode-card p  { font-size: .78rem; color: var(--muted); line-height: 1.45; }
+    .mode-icon svg { width: 22px; height: 22px; stroke-width: 1.75; position: relative; z-index: 1; }
+    .mode-icon::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(135deg, currentColor 0%, transparent 100%);
+      opacity: .9;
+    }
+    .mode-icon::after {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: inherit;
+      background: currentColor;
+      filter: blur(14px);
+      opacity: .25;
+      z-index: -1;
+      transition: opacity .25s;
+    }
+    .mode-card:hover .mode-icon::after { opacity: .4; }
+    .mode-icon.green  { color: var(--green); }
+    .mode-icon.blue   { color: var(--blue); }
+    .mode-icon.purple { color: var(--purple); }
+
+    .mode-card h3 {
+      font-size: .95rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+      color: var(--navy);
+    }
+    .mode-card p  {
+      font-size: .8rem;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 4px;
+    }
     .mode-badge {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       font-size: .65rem;
-      font-weight: 600;
-      padding: 2px 7px;
-      border-radius: 20px;
-      margin-top: 8px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      margin-top: 10px;
       text-transform: uppercase;
-      letter-spacing: .05em;
+      letter-spacing: .08em;
+      border: 1px solid;
     }
-    .mode-badge.green  { background: var(--green10);  color: var(--green); }
-    .mode-badge.blue   { background: var(--blue10);   color: var(--blue); }
-    .mode-badge.purple { background: var(--purple10); color: var(--purple); }
+    .mode-badge::before {
+      content: '';
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: .4; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mode-badge::before { animation: none; }
+    }
+    .mode-badge.green  { background: rgba(22,163,74,.10);  color: var(--green);  border-color: rgba(22,163,74,.30); }
+    .mode-badge.blue   { background: rgba(0,82,255,.10);   color: var(--blue);   border-color: rgba(0,82,255,.30); }
+    .mode-badge.purple { background: rgba(124,58,237,.10); color: var(--purple); border-color: rgba(124,58,237,.30); }
+
     .check-icon {
       position: absolute;
-      top: 10px; right: 10px;
-      width: 20px; height: 20px;
+      top: 12px; right: 12px;
+      width: 22px; height: 22px;
       border-radius: 50%;
       display: none; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 3px rgba(255,255,255,.85), 0 2px 8px rgba(0,0,0,.15);
     }
-    .mode-card.selected.green  .check-icon { display: flex; background: var(--green); }
-    .mode-card.selected.blue   .check-icon { display: flex; background: var(--blue); }
-    .mode-card.selected.purple .check-icon { display: flex; background: var(--purple); }
+    .mode-card.selected.green  .check-icon { display: flex; background: var(--green);  }
+    .mode-card.selected.blue   .check-icon { display: flex; background: linear-gradient(135deg, var(--blue), var(--sky)); }
+    .mode-card.selected.purple .check-icon { display: flex; background: linear-gradient(135deg, var(--purple), #C084FC); }
 
     /* ── Upload zone ────────────────────────────────────────────── */
     .upload-zone {
@@ -993,7 +1087,13 @@
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
-            <div class="mode-icon green" aria-hidden="true">🐍</div>
+            <div class="mode-icon green" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+                <rect x="9" y="9" width="6" height="6"/>
+                <path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/>
+              </svg>
+            </div>
             <h3>Python Heurístico</h3>
             <p>Análise local rápida com regras contábeis brasileiras. Sem custo de API, ideal para triagem.</p>
             <span class="mode-badge green">Gratuito · Rápido</span>
@@ -1007,7 +1107,13 @@
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
-            <div class="mode-icon blue" aria-hidden="true">✨</div>
+            <div class="mode-icon blue" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L9 9l-7 3 7 3 3 7 3-7 7-3-7-3-3-7z"/>
+                <circle cx="19" cy="5" r="1.2" fill="currentColor"/>
+                <circle cx="5" cy="19" r="1" fill="currentColor"/>
+              </svg>
+            </div>
             <h3>Claude Sonnet 4.6</h3>
             <p>Modelo principal da Anthropic. Análise profunda com linguagem natural e contexto contábil.</p>
             <span class="mode-badge blue">Recomendado</span>
@@ -1021,7 +1127,16 @@
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
-            <div class="mode-icon purple" aria-hidden="true">🔬</div>
+            <div class="mode-icon purple" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="5" r="2"/>
+                <circle cx="5" cy="17" r="2"/>
+                <circle cx="19" cy="17" r="2"/>
+                <circle cx="12" cy="13" r="1.5" fill="currentColor"/>
+                <path d="M12 7v4M10.5 14.2L6.5 16M13.5 14.2L17.5 16"/>
+                <path d="M7 17h10" stroke-dasharray="2 2"/>
+              </svg>
+            </div>
             <h3>Multi-Modelo</h3>
             <p>Opus 4.7 + Sonnet 4.6 + Haiku 4.5 em paralelo com síntese de consenso. Máxima confiança.</p>
             <span class="mode-badge purple">Alta Confiança</span>
