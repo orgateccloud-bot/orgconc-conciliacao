@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORGATEC · Conciliação Bancária</title>
+  <link rel="icon" href="/ui/logo.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <style>
+    :root {
+      --bg: #050a14;
+      --bg-2: #0a1024;
+      --surface: #0f1729;
+      --surface-2: #131c34;
+      --surface-3: #1a2547;
+      --border: #1f2b4d;
+      --border-hover: #2f3f6f;
+      --blue-1: #0a3a7a;
+      --blue-2: #1e6fd9;
+      --blue-3: #4dc8ff;
+      --cyan: #6fe3ff;
+      --text: #f0f4fa;
+      --text-2: #c3cbdc;
+      --muted: #7a849c;
+      --danger: #ff5c6c;
+      --warn: #ffb84d;
+      --warn-2: #ffe066;
+      --ok: #38e1a3;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--bg); color: var(--text); }
+    body {
+      font-family: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
+      min-height: 100vh;
+      background:
+        radial-gradient(1400px 700px at 80% -10%, rgba(30, 111, 217, 0.22), transparent 55%),
+        radial-gradient(900px 500px at -10% 100%, rgba(77, 200, 255, 0.14), transparent 60%),
+        var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input { font-family: inherit; }
+    a { color: var(--blue-3); text-decoration: none; }
+    a:hover { color: var(--cyan); }
+
+    .container { max-width: 1180px; margin: 0 auto; padding: 28px 28px 60px; }
+
+    /* TOPBAR */
+    .topbar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 14px 20px; margin-bottom: 32px;
+      background: rgba(15, 23, 41, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      backdrop-filter: blur(8px);
+    }
+    .topbar img.logo {
+      width: 44px; height: 44px;
+      filter: drop-shadow(0 0 16px rgba(77, 200, 255, 0.45));
+    }
+    .topbar .brand { line-height: 1.15; }
+    .topbar .brand .nm {
+      font-weight: 800; font-size: 18px; letter-spacing: 0.4px;
+      background: linear-gradient(90deg, #ffffff 0%, var(--blue-3) 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .topbar .brand .tg { color: var(--muted); font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase; margin-top: 1px; }
+    .topbar .spacer { flex: 1; }
+    .nav-tag {
+      background: rgba(77, 200, 255, 0.08);
+      border: 1px solid rgba(77, 200, 255, 0.25);
+      color: var(--cyan);
+      padding: 6px 14px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
+      text-transform: uppercase;
+    }
+
+    /* HERO */
+    .hero { margin-bottom: 28px; }
+    .hero h1 {
+      font-size: 34px; font-weight: 800; letter-spacing: -0.6px; line-height: 1.15;
+      margin-bottom: 8px;
+    }
+    .hero .lead { color: var(--text-2); font-size: 15px; max-width: 720px; }
+
+    /* CARD */
+    .card {
+      background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+    .card-title {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; font-weight: 700;
+      letter-spacing: 1.8px; text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+    .card-title .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue-3); box-shadow: 0 0 10px var(--blue-3); }
+
+    /* DROP ZONE */
+    .drop {
+      position: relative;
+      border: 1.5px dashed rgba(77, 200, 255, 0.3);
+      background: linear-gradient(180deg, rgba(30, 111, 217, 0.06), rgba(30, 111, 217, 0.02));
+      border-radius: 12px;
+      padding: 36px 24px;
+      text-align: center;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .drop:hover, .drop.drag-over {
+      border-color: var(--blue-3);
+      background: linear-gradient(180deg, rgba(30, 111, 217, 0.12), rgba(30, 111, 217, 0.04));
+      transform: translateY(-1px);
+    }
+    .drop input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .drop-ico {
+      width: 48px; height: 48px;
+      margin: 0 auto 10px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(77, 200, 255, 0.1);
+      border: 1px solid rgba(77, 200, 255, 0.25);
+      border-radius: 12px;
+      color: var(--cyan);
+    }
+    .drop-text { font-size: 14px; color: var(--text); font-weight: 500; }
+    .drop-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* FILE LIST */
+    .file-list { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+    .file-item {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface-3); border: 1px solid var(--border);
+      padding: 8px 12px; border-radius: 8px;
+      font-size: 13px;
+    }
+    .file-item .ico { color: var(--cyan); }
+    .file-item .name { flex: 1; color: var(--text); font-family: "JetBrains Mono", monospace; font-size: 12px; }
+    .file-item .size { color: var(--muted); font-size: 11px; }
+    .file-item.empty { color: var(--muted); justify-content: center; font-style: italic; }
+
+    /* BUTTONS */
+    .actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 20px;
+      border-radius: 10px;
+      font-size: 13.5px; font-weight: 700; letter-spacing: 0.3px;
+      cursor: pointer; border: 1px solid transparent;
+      transition: all 0.15s ease;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--blue-1), var(--blue-2));
+      color: white;
+      border-color: rgba(77, 200, 255, 0.5);
+      box-shadow: 0 4px 14px rgba(30, 111, 217, 0.3);
+    }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 22px rgba(77, 200, 255, 0.4);
+    }
+    .btn-ghost {
+      background: var(--surface-3);
+      color: var(--text-2);
+      border-color: var(--border);
+    }
+    .btn-ghost:hover:not(:disabled) {
+      color: var(--text);
+      border-color: var(--blue-3);
+    }
+    .btn-pdf {
+      background: linear-gradient(135deg, #b91c4d, #ef4444);
+      color: white;
+      border-color: rgba(239, 68, 68, 0.5);
+      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.25);
+    }
+    .btn-pdf:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 22px rgba(239, 68, 68, 0.4);
+    }
+    .btn:disabled { opacity: 0.45; cursor: wait; transform: none; }
+    .btn .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid currentColor; border-right-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* STATUS */
+    .status {
+      margin-top: 14px; padding: 11px 16px;
+      border-radius: 10px; font-size: 13px;
+      display: none; border: 1px solid transparent;
+    }
+    .status.err { background: rgba(255, 92, 108, 0.1); color: var(--danger); border-color: rgba(255, 92, 108, 0.3); display: block; }
+    .status.ok { background: rgba(56, 225, 163, 0.1); color: var(--ok); border-color: rgba(56, 225, 163, 0.3); display: block; }
+    .status.work { background: rgba(77, 200, 255, 0.1); color: var(--cyan); border-color: rgba(77, 200, 255, 0.3); display: block; }
+
+    /* METRICS */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .metric {
+      background: linear-gradient(180deg, var(--surface), var(--surface-2));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 18px;
+      position: relative; overflow: hidden;
+    }
+    .metric::before {
+      content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--blue-1), var(--blue-3));
+    }
+    .metric .lb { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
+    .metric .vl { font-size: 22px; font-weight: 800; margin-top: 6px; color: var(--text); }
+    .metric .vl.accent { color: var(--cyan); }
+
+    /* ANOMALIAS */
+    .anom-hd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .anom-hd h2 { font-size: 16px; color: var(--text); font-weight: 700; }
+    .sev-chips { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+    .sev-chip {
+      padding: 4px 11px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+      border: 1px solid;
+    }
+    .sev-chip.critico { background: rgba(255, 92, 108, 0.12); color: var(--danger); border-color: rgba(255, 92, 108, 0.4); }
+    .sev-chip.alerta  { background: rgba(255, 184, 77, 0.12); color: var(--warn); border-color: rgba(255, 184, 77, 0.4); }
+    .sev-chip.atencao { background: rgba(255, 224, 102, 0.10); color: var(--warn-2); border-color: rgba(255, 224, 102, 0.35); }
+    .anom-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 10px;
+    }
+    .anom {
+      border-radius: 11px;
+      padding: 12px 14px 13px;
+      border: 1px solid;
+      position: relative;
+      transition: transform 0.15s ease;
+    }
+    .anom:hover { transform: translateY(-2px); }
+    .anom.critico { background: linear-gradient(180deg, rgba(255, 92, 108, 0.10), rgba(255, 92, 108, 0.03)); border-color: rgba(255, 92, 108, 0.45); }
+    .anom.alerta  { background: linear-gradient(180deg, rgba(255, 184, 77, 0.10), rgba(255, 184, 77, 0.03)); border-color: rgba(255, 184, 77, 0.45); }
+    .anom.atencao { background: linear-gradient(180deg, rgba(255, 224, 102, 0.07), rgba(255, 224, 102, 0.02)); border-color: rgba(255, 224, 102, 0.30); }
+    .anom-tag {
+      display: inline-block;
+      font-size: 9.5px; letter-spacing: 1.6px; text-transform: uppercase;
+      font-weight: 700; margin-bottom: 5px;
+      padding: 2px 7px; border-radius: 4px;
+    }
+    .anom.critico .anom-tag { background: rgba(255, 92, 108, 0.2); color: var(--danger); }
+    .anom.alerta .anom-tag  { background: rgba(255, 184, 77, 0.2); color: var(--warn); }
+    .anom.atencao .anom-tag { background: rgba(255, 224, 102, 0.15); color: var(--warn-2); }
+    .anom-tt { font-size: 13.5px; font-weight: 700; color: var(--text); }
+    .anom-cc { font-size: 11px; color: var(--muted); margin: 3px 0 6px; }
+    .anom-dt { font-size: 11.5px; color: var(--text-2); font-family: "JetBrains Mono", monospace; line-height: 1.4; }
+
+    /* REPORT */
+    #saida { display: none; }
+    .report-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px;
+    }
+    .report-header h2 { font-size: 16px; font-weight: 700; }
+    #relatorio {
+      background: linear-gradient(180deg, var(--surface), var(--surface-2));
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 28px 34px;
+      line-height: 1.7;
+    }
+    #relatorio h1 { font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--cyan); margin-bottom: 14px; }
+    #relatorio h2 { font-size: 17px; margin-top: 26px; margin-bottom: 8px; color: var(--blue-3); }
+    #relatorio h3 { font-size: 14px; margin-top: 18px; margin-bottom: 6px; color: var(--text); }
+    #relatorio p { margin-bottom: 8px; color: var(--text-2); }
+    #relatorio table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: 12.5px; }
+    #relatorio th, #relatorio td { border: 1px solid var(--border); padding: 7px 11px; text-align: left; }
+    #relatorio th { background: rgba(30, 111, 217, 0.12); color: var(--cyan); font-weight: 600; }
+    #relatorio td { color: var(--text-2); }
+    #relatorio tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+    #relatorio code { background: rgba(30, 111, 217, 0.18); padding: 2px 7px; border-radius: 4px; font-size: 11.5px; color: var(--cyan); font-family: "JetBrains Mono", monospace; }
+    #relatorio strong { color: var(--text); }
+    #relatorio em { color: var(--muted); }
+    #relatorio ul, #relatorio ol { padding-left: 22px; margin-bottom: 10px; }
+    #relatorio li { margin-bottom: 4px; color: var(--text-2); }
+
+    /* FOOTER */
+    footer {
+      margin-top: 38px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    }
+
+    /* PDF mode: simplified colors so PDF doesn't lose contrast */
+    .pdf-mode { background: #ffffff !important; }
+    .pdf-mode #relatorio { background: #ffffff !important; border-color: #d0d7de !important; color: #1f2328 !important; padding: 32px !important; }
+    .pdf-mode #relatorio h1 { color: #0a3a7a !important; border-color: #d0d7de !important; }
+    .pdf-mode #relatorio h2 { color: #1e6fd9 !important; }
+    .pdf-mode #relatorio h3 { color: #1f2328 !important; }
+    .pdf-mode #relatorio p, .pdf-mode #relatorio li, .pdf-mode #relatorio td { color: #1f2328 !important; }
+    .pdf-mode #relatorio th { background: #f0f6ff !important; color: #0a3a7a !important; border-color: #d0d7de !important; }
+    .pdf-mode #relatorio td { border-color: #d0d7de !important; }
+    .pdf-mode #relatorio code { background: #f0f6ff !important; color: #0a3a7a !important; }
+    .pdf-mode #relatorio strong { color: #1f2328 !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="topbar">
+      <img class="logo" src="/ui/logo.png" alt="ORGATEC">
+      <div class="brand">
+        <div class="nm">ORGATEC</div>
+        <div class="tg">Contabilidade & Auditoria</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="nav-tag">OrgAudi 1.0</span>
+    </div>
+
+    <div class="hero">
+      <h1>Conciliação Bancária Inteligente</h1>
+      <div class="lead">Cruza extratos OFX, identifica anomalias por severidade, gera relatório executivo e exporta PDF pronto para entrega.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>Entrada de Dados</div>
+
+      <div class="drop" id="drop">
+        <input type="file" id="files" accept=".ofx,.OFX,.pdf,.PDF,.xml,.XML" multiple onchange="atualizarLista()">
+        <div class="drop-ico">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="drop-text">Arraste 1 ou 2 arquivos, ou clique para selecionar</div>
+        <div class="drop-hint">Formatos: <strong>.ofx</strong> · <strong>.pdf</strong> · <strong>.xml</strong> · até 2 contas do mesmo titular</div>
+      </div>
+
+      <div class="file-list" id="file-list">
+        <div class="file-item empty">Nenhum arquivo selecionado</div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" onclick="enviar(true)" id="btn-sim">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Simular (gratuito)
+        </button>
+        <button class="btn btn-ghost" onclick="enviar(false)" id="btn-llm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="2" y="2" width="20" height="8" rx="2"/><path d="M2 12h20"/><path d="M2 16h20"/><path d="M2 20h20"/></svg>
+          Conciliar com Claude
+        </button>
+      </div>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div id="saida">
+      <div class="metrics" id="metrics"></div>
+
+      <div class="card" id="anom-wrap" style="display:none">
+        <div class="anom-hd">
+          <h2>⚠️ Anomalias Detectadas</h2>
+          <div class="sev-chips" id="sev-chips"></div>
+        </div>
+        <div class="anom-grid" id="anom-grid"></div>
+      </div>
+
+      <div class="report-header">
+        <h2>📑 Relatório Completo</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost" onclick="baixar('html')" id="btn-html">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            HTML
+          </button>
+          <button class="btn" style="background:linear-gradient(135deg,#0d6e3a,#1f9d3f);color:white;border-color:rgba(34,197,94,0.5);" onclick="baixar('xlsx')" id="btn-xlsx">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+            XLSX
+          </button>
+          <button class="btn btn-pdf" onclick="gerarPDF()" id="btn-pdf">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            PDF
+          </button>
+        </div>
+      </div>
+      <div id="relatorio"></div>
+    </div>
+
+    <footer>
+      <div>© ORGATEC Contabilidade e Auditoria · orgatec.cloud@gmail.com</div>
+      <div>FastAPI · <a href="/docs" target="_blank">Swagger</a> · <a href="/health" target="_blank">Health</a></div>
+    </footer>
+  </div>
+
+  <script>
+    const API = window.location.origin.startsWith("http") ? window.location.origin : "http://127.0.0.1:8765";
+    let lastReportId = null;
+    let logoDataUri = null;
+
+    // Pre-carrega a logo em base64 para o PDF nao depender de fetch dinamico
+    fetch(`${API}/logo-base64`).then(r => r.json()).then(d => { logoDataUri = d.data_uri; }).catch(() => {});
+
+    function baixar(fmt) {
+      if (!lastReportId) { setStatus("Gere um relatório antes de baixar.", "err"); return; }
+      window.open(`${API}/export/${fmt}/${lastReportId}`, "_blank");
+    }
+
+    // Drag-and-drop visual
+    const drop = document.getElementById("drop");
+    ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("drag-over"); }));
+    ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("drag-over"); }));
+    drop.addEventListener("drop", e => {
+      document.getElementById("files").files = e.dataTransfer.files;
+      atualizarLista();
+    });
+
+    function atualizarLista() {
+      const fs = document.getElementById("files").files;
+      const list = document.getElementById("file-list");
+      if (!fs.length) {
+        list.innerHTML = '<div class="file-item empty">Nenhum arquivo selecionado</div>';
+        return;
+      }
+      list.innerHTML = "";
+      for (const f of fs) {
+        const kb = (f.size / 1024).toFixed(1);
+        list.insertAdjacentHTML("beforeend", `
+          <div class="file-item">
+            <span class="ico">📄</span>
+            <span class="name">${f.name}</span>
+            <span class="size">${kb} KB</span>
+          </div>`);
+      }
+    }
+
+    function setStatus(msg, kind) {
+      const el = document.getElementById("status");
+      el.textContent = msg;
+      el.className = "status " + (kind || "");
+    }
+
+    function renderAnomalias(anomalias) {
+      const wrap = document.getElementById("anom-wrap");
+      const grid = document.getElementById("anom-grid");
+      const chips = document.getElementById("sev-chips");
+      grid.innerHTML = ""; chips.innerHTML = "";
+      if (!anomalias.length) { wrap.style.display = "none"; return; }
+
+      const by = { critico: [], alerta: [], atencao: [] };
+      for (const a of anomalias) (by[a.severidade] || by.atencao).push(a);
+      const labels = { critico: "🔴 Críticos", alerta: "🟠 Alertas", atencao: "🟡 Atenção" };
+      for (const k of ["critico", "alerta", "atencao"]) {
+        if (by[k].length) chips.insertAdjacentHTML("beforeend",
+          `<span class="sev-chip ${k}">${labels[k]} ${by[k].length}</span>`);
+      }
+
+      const lista = [...by.critico, ...by.alerta, ...by.atencao.slice(0, 6)];
+      for (const a of lista) {
+        grid.insertAdjacentHTML("beforeend", `
+          <div class="anom ${a.severidade}">
+            <span class="anom-tag">${a.tipo}</span>
+            <div class="anom-tt">${a.titulo}</div>
+            <div class="anom-cc">${a.conta}</div>
+            <div class="anom-dt">${a.detalhe}</div>
+          </div>`);
+      }
+      if (by.atencao.length > 6) {
+        grid.insertAdjacentHTML("beforeend",
+          `<div class="anom atencao" style="display:flex;align-items:center;justify-content:center;font-style:italic;color:var(--muted);font-size:12px">+ ${by.atencao.length - 6} adicionais</div>`);
+      }
+      wrap.style.display = "block";
+    }
+
+    async function enviar(simular) {
+      const files = document.getElementById("files").files;
+      if (!files.length || files.length > 2) { setStatus("Selecione 1 ou 2 arquivos OFX.", "err"); return; }
+
+      const btns = document.querySelectorAll(".btn");
+      btns.forEach(b => b.disabled = true);
+      const btnActive = document.getElementById(simular ? "btn-sim" : "btn-llm");
+      const originalContent = btnActive.innerHTML;
+      btnActive.innerHTML = '<span class="spinner"></span> Processando...';
+      setStatus(simular ? "Processando localmente..." : "Chamando Claude API...", "work");
+
+      const form = new FormData();
+      for (const f of files) form.append("arquivos", f);
+
+      const t0 = performance.now();
+      try {
+        const url = `${API}/conciliar/ofx${simular ? "?simular=true" : ""}`;
+        const r = await fetch(url, { method: "POST", body: form });
+        const dt = ((performance.now() - t0) / 1000).toFixed(2);
+        const data = await r.json();
+
+        if (!r.ok) {
+          const err = data.detail?.anthropic_error || data.detail || JSON.stringify(data);
+          setStatus(`HTTP ${r.status}: ${err}`, "err");
+          return;
+        }
+
+        const metrics = document.getElementById("metrics");
+        metrics.innerHTML = "";
+        const stats = [
+          { label: "Modo", val: data.modo === "simulacao_local" ? "SIMULAÇÃO" : "CLAUDE LLM", accent: true },
+          { label: "Tempo", val: dt + "s" },
+        ];
+        for (const e of data.extratos || []) stats.push({ label: e.conta.replace("AG ", ""), val: e.qtd + " tx" });
+        if (data.anomalias) stats.push({ label: "Anomalias", val: data.anomalias.length, accent: true });
+        if (data.usage) {
+          stats.push({ label: "Tokens entrada", val: data.usage.input_tokens.toLocaleString() });
+          stats.push({ label: "Tokens saída", val: data.usage.output_tokens.toLocaleString() });
+        }
+        for (const s of stats) {
+          metrics.insertAdjacentHTML("beforeend",
+            `<div class="metric"><div class="lb">${s.label}</div><div class="vl${s.accent ? ' accent' : ''}">${s.val}</div></div>`);
+        }
+
+        lastReportId = data.report_id || null;
+        renderAnomalias(data.anomalias || []);
+        document.getElementById("relatorio").innerHTML = marked.parse(data.relatorio_md || "");
+        document.getElementById("saida").style.display = "block";
+        setStatus(`Concluído em ${dt}s.`, "ok");
+        window.scrollTo({ top: document.getElementById("saida").offsetTop - 20, behavior: "smooth" });
+      } catch (e) {
+        setStatus("Erro de conexão: " + e.message, "err");
+      } finally {
+        btns.forEach(b => b.disabled = false);
+        btnActive.innerHTML = originalContent;
+      }
+    }
+
+    async function gerarPDF() {
+      if (!lastReportId) { setStatus("Gere um relatório antes de exportar PDF.", "err"); return; }
+      const btn = document.getElementById("btn-pdf");
+      const original = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner"></span> Renderizando PDF...';
+      btn.disabled = true;
+
+      // Garante logo carregada
+      if (!logoDataUri) {
+        try { const r = await fetch(`${API}/logo-base64`); logoDataUri = (await r.json()).data_uri; } catch {}
+      }
+
+      // Busca o HTML server-side (mesmo template do export HTML) para consistencia visual
+      let serverHtml = "";
+      try {
+        const r = await fetch(`${API}/export/html/${lastReportId}`);
+        serverHtml = await r.text();
+      } catch (e) {
+        // fallback: monta inline com o que ja temos
+      }
+
+      // Constroi container: prioriza HTML server-side (template idêntico ao /export/html)
+      const PAGE_W = 794; // A4 = 210mm @ 96dpi
+      const el = document.createElement("div");
+      el.style.cssText = `background:#fff;width:${PAGE_W}px;color:#1a202c;font-family:Inter,sans-serif;`;
+
+      if (serverHtml) {
+        // Extrai apenas o conteudo interno do <body> do server
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(serverHtml, "text/html");
+        const wrap = doc.querySelector(".wrap") || doc.body;
+        el.innerHTML = wrap.outerHTML;
+        // Copia os estilos do <head> server para o container
+        const serverStyle = doc.querySelector("style");
+        if (serverStyle) {
+          const s = document.createElement("style");
+          // Restringe os estilos ao container para nao afetar a pagina
+          s.textContent = serverStyle.textContent
+            .replace(/body\s*\{/g, ".pdf-root {")
+            .replace(/html, body\s*\{/g, ".pdf-root {")
+            .replace(/\.wrap\s*\{/g, ".pdf-root .wrap {")
+            + `
+            .pdf-root h1, .pdf-root h2, .pdf-root h3 { page-break-after: avoid; }
+            .pdf-root table, .pdf-root tr { page-break-inside: avoid; }
+            .pdf-root .hd { padding: 22px 36px !important; }
+            .pdf-root .hd .brand .nm { font-size: 22px !important; }
+            .pdf-root .content { padding: 24px 36px 16px !important; font-size: 11px; line-height: 1.55; }
+            .pdf-root .content h1 { font-size: 18px; margin-bottom: 10px; }
+            .pdf-root .content h2 { font-size: 14px; margin: 16px 0 6px; }
+            .pdf-root .content h3 { font-size: 12px; }
+            .pdf-root .content p, .pdf-root .content li { font-size: 10.5px; }
+            .pdf-root .content table { font-size: 9.5px; margin: 6px 0; }
+            .pdf-root .content th, .pdf-root .content td { padding: 5px 8px; }
+            .pdf-root .ft { padding: 10px 36px !important; font-size: 9px; }
+          `;
+          document.head.appendChild(s);
+        }
+        el.classList.add("pdf-root");
+        // Substitui logos relativas (/ui/logo.png) por data URI
+        el.querySelectorAll("img").forEach(img => {
+          if (logoDataUri && (img.src.includes("/ui/logo.png") || img.alt === "ORGATEC")) {
+            img.src = logoDataUri;
+          }
+        });
+      } else {
+        // Fallback: monta inline com o que ja temos
+        const data = new Date().toLocaleString("pt-BR");
+        const logoImg = logoDataUri ? `<img src="${logoDataUri}" style="width:58px;height:58px;">` : "";
+        const reportHtml = document.getElementById("relatorio").innerHTML;
+        el.innerHTML = `
+          <div style="background:linear-gradient(135deg,#0a3a7a 0%,#1e6fd9 60%,#4dc8ff 100%);padding:22px 36px;color:#fff;display:flex;gap:16px;align-items:center;">
+            ${logoImg}
+            <div><div style="font-size:22px;font-weight:800;">ORGATEC</div><div style="font-size:9.5px;letter-spacing:2.5px;text-transform:uppercase;opacity:0.9;">Contabilidade &amp; Auditoria</div></div>
+            <div style="margin-left:auto;text-align:right;font-size:10px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:8px;padding:7px 12px;">
+              <div style="font-weight:700;letter-spacing:1.5px;font-size:9px;">RELATÓRIO DE CONCILIAÇÃO</div>
+              <div style="font-size:11px;font-weight:600;margin-top:2px;">${data}</div>
+            </div>
+          </div>
+          <div style="padding:24px 36px 16px;color:#1a202c;font-size:11px;line-height:1.55;">${reportHtml}</div>
+          <div style="background:#f7fafc;padding:10px 36px;color:#718096;font-size:9px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;">
+            <div>© ORGATEC · orgatec.cloud@gmail.com</div>
+            <div style="background:#eff6ff;color:#1e6fd9;padding:2px 9px;border-radius:999px;font-weight:600;">OrgAudi 1.0</div>
+          </div>
+        `;
+      }
+      document.body.appendChild(el);
+
+      try {
+        // Aguarda imagens carregarem
+        const imgs = el.querySelectorAll("img");
+        await Promise.all(Array.from(imgs).map(img => img.complete ? null : new Promise(res => {
+          img.onload = img.onerror = res;
+        })));
+        await html2pdf().from(el).set({
+          margin: [0, 0, 0, 0],
+          filename: `conciliacao_${new Date().toISOString().slice(0,10)}.pdf`,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: "#ffffff",
+            logging: false,
+            allowTaint: true,
+            width: 794,
+            windowWidth: 794,
+          },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait", compress: true },
+          pagebreak: { mode: ["css", "legacy", "avoid-all"], avoid: ["tr", "h1", "h2", "h3", "table"] },
+        }).save();
+        setStatus("PDF gerado.", "ok");
+      } catch (e) {
+        setStatus("Erro ao gerar PDF: " + e.message, "err");
+      } finally {
+        document.body.removeChild(el);
+        btn.innerHTML = original;
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

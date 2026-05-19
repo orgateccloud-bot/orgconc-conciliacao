@@ -1,0 +1,43 @@
+# Secrets
+.env
+*.key
+*.pem
+
+# Dados persistidos (datasets temporários)
+data/
+
+# Dados bancários reais (não publicar)
+*.ofx
+*.OFX
+
+# Scripts legacy com API keys hardcoded
+conciliar_ofx.py
+resultado.py
+teste*.py
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Outputs temporarios
+relatorio_simulacao.md
+sim_anomalias.json
+sim_resposta.json

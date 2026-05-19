@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "conciliacao-api",
+      "runtimeExecutable": "C:/Users/Veloso/AppData/Local/Programs/Python/Python312/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "api.main:app", "--reload", "--host", "127.0.0.1", "--port", "8765"],
+      "port": 8765
+    }
+  ]
+}
