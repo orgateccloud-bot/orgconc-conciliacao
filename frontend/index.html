@@ -1999,6 +1999,156 @@
       background: var(--surface-2);
       border-color: var(--border);
     }
+
+    /* ── Refinamentos dark mode (visual menos "neon") ───────────── */
+    [data-theme="dark"] .badge-db {
+      background: rgba(52, 211, 153, 0.10) !important;
+      color: #6EE7B7 !important;
+      border-color: rgba(52, 211, 153, 0.25) !important;
+      font-weight: 600 !important;
+    }
+    [data-theme="dark"] .badge-db.offline {
+      background: rgba(248, 113, 113, 0.10) !important;
+      color: #FCA5A5 !important;
+      border-color: rgba(248, 113, 113, 0.25) !important;
+    }
+    [data-theme="dark"] .mode-badge.green {
+      background: rgba(52, 211, 153, 0.08) !important;
+      color: #6EE7B7 !important;
+    }
+    [data-theme="dark"] .mode-badge.cyan {
+      background: rgba(34, 211, 238, 0.08) !important;
+      color: #67E8F9 !important;
+    }
+    [data-theme="dark"] .mode-badge.purple {
+      background: rgba(167, 139, 250, 0.08) !important;
+      color: #C4B5FD !important;
+    }
+    [data-theme="dark"] .mode-badge.blue {
+      background: rgba(96, 165, 250, 0.08) !important;
+      color: #93C5FD !important;
+    }
+    [data-theme="dark"] .plano-badge,
+    [data-theme="dark"] .nav-tag {
+      background: rgba(96, 165, 250, 0.10) !important;
+      color: #93C5FD !important;
+      border-color: rgba(96, 165, 250, 0.20) !important;
+    }
+    /* Ring do mode-card selected mais discreto */
+    [data-theme="dark"] .mode-card.selected {
+      box-shadow: 0 0 0 1px var(--accent), 0 1px 2px rgba(0,0,0,.45) !important;
+    }
+    [data-theme="dark"] .mode-card.green.selected {
+      box-shadow: 0 0 0 1px var(--green), 0 1px 2px rgba(0,0,0,.45) !important;
+    }
+    [data-theme="dark"] .mode-card.cyan.selected {
+      box-shadow: 0 0 0 1px var(--cyan), 0 1px 2px rgba(0,0,0,.45) !important;
+    }
+    [data-theme="dark"] .mode-card.purple.selected {
+      box-shadow: 0 0 0 1px var(--purple), 0 1px 2px rgba(0,0,0,.45) !important;
+    }
+    /* Mode-icon mais sutil em dark */
+    [data-theme="dark"] .mode-card .mode-icon {
+      background: var(--surface-2) !important;
+      color: var(--text-2) !important;
+    }
+    [data-theme="dark"] .mode-card.selected .mode-icon {
+      background: rgba(96, 165, 250, 0.10) !important;
+      color: #93C5FD !important;
+      border-color: rgba(96, 165, 250, 0.25) !important;
+    }
+    [data-theme="dark"] .mode-card.green .mode-icon {
+      color: #6EE7B7 !important;
+    }
+    [data-theme="dark"] .mode-card.green.selected .mode-icon {
+      background: rgba(52, 211, 153, 0.10) !important;
+      color: #6EE7B7 !important;
+      border-color: rgba(52, 211, 153, 0.25) !important;
+    }
+    [data-theme="dark"] .mode-card.purple .mode-icon,
+    [data-theme="dark"] .mode-card.purple.selected .mode-icon {
+      background: rgba(167, 139, 250, 0.10) !important;
+      color: #C4B5FD !important;
+      border-color: rgba(167, 139, 250, 0.20) !important;
+    }
+    [data-theme="dark"] .mode-card.cyan .mode-icon,
+    [data-theme="dark"] .mode-card.cyan.selected .mode-icon {
+      background: rgba(34, 211, 238, 0.10) !important;
+      color: #67E8F9 !important;
+      border-color: rgba(34, 211, 238, 0.20) !important;
+    }
+    /* Check-icon do card selected mais corporativo */
+    [data-theme="dark"] .mode-card .check-icon {
+      background: var(--accent) !important;
+      box-shadow: none !important;
+    }
+    [data-theme="dark"] .mode-card.green.selected .check-icon  { background: var(--green) !important; }
+    [data-theme="dark"] .mode-card.cyan.selected .check-icon   { background: var(--cyan) !important; }
+    [data-theme="dark"] .mode-card.purple.selected .check-icon { background: var(--purple) !important; }
+
+    /* Step active dark: visual mais profissional */
+    [data-theme="dark"] .step.active {
+      background: rgba(96, 165, 250, 0.10) !important;
+      border-color: var(--accent) !important;
+      color: #93C5FD !important;
+    }
+    [data-theme="dark"] .step.done {
+      background: rgba(52, 211, 153, 0.08) !important;
+      border-color: var(--green) !important;
+      color: #6EE7B7 !important;
+    }
+
+    /* ── Sidebar items (correcao: era branco translucido sobre sidebar branca) ── */
+    .nav-section {
+      color: var(--muted) !important;
+      font-size: .62rem !important;
+      letter-spacing: 0.14em !important;
+      text-transform: uppercase !important;
+      font-weight: 700 !important;
+      padding: 14px 14px 6px !important;
+    }
+    .sidebar-nav .nav-item {
+      color: var(--text-2) !important;
+      background: transparent !important;
+      border: none !important;
+      border-radius: 6px !important;
+      padding: 8px 12px !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      font-size: .85rem !important;
+      font-weight: 500 !important;
+      font-family: 'Inter', sans-serif !important;
+      width: calc(100% - 8px) !important;
+      margin: 1px 4px !important;
+      cursor: pointer !important;
+      box-shadow: none !important;
+      text-decoration: none !important;
+    }
+    .sidebar-nav .nav-item:hover {
+      background: var(--surface-2) !important;
+      color: var(--text) !important;
+      box-shadow: none !important;
+    }
+    .sidebar-nav .nav-item.active {
+      background: var(--accent-soft) !important;
+      color: var(--accent) !important;
+      font-weight: 600 !important;
+      box-shadow: inset 2px 0 0 var(--accent) !important;
+    }
+    [data-theme="dark"] .sidebar-nav .nav-item.active {
+      background: rgba(96, 165, 250, 0.10) !important;
+      color: #93C5FD !important;
+      box-shadow: inset 2px 0 0 var(--accent) !important;
+    }
+    .sidebar-footer {
+      padding: 12px 14px !important;
+      border-top: 1px solid var(--border) !important;
+    }
+    /* Edge cyan da sidebar (era um efeito Aurora) */
+    .sidebar::after {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
