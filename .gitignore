@@ -5,6 +5,10 @@
 
 # Dados persistidos (datasets temporários)
 data/
+tests/_data_test/
+
+# Configurações locais do Claude Code
+.claude/settings.local.json
 
 # Dados bancários reais (não publicar)
 *.ofx
