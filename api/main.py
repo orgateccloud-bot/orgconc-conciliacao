@@ -34,7 +34,7 @@ from slowapi.util import get_remote_address
 from anthropic import Anthropic, APIStatusError
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from markdown import markdown as md_to_html
 import contextlib
@@ -171,6 +171,9 @@ def _validar_cnpj(cnpj: str) -> bool:
     return int(digits[12]) == _calc(digits, p1) and int(digits[13]) == _calc(digits, p2)
 
 
+_PLANOS_VALIDOS = {"basico", "pro", "enterprise"}
+
+
 class ClienteCreate(BaseModel):
     nome: str
     cnpj: Optional[str] = None
@@ -179,8 +182,13 @@ class ClienteCreate(BaseModel):
     plano: str = "basico"
 
     def model_post_init(self, __context) -> None:
-        if self.cnpj and not _validar_cnpj(self.cnpj):
-            raise ValueError(f"CNPJ inválido: {self.cnpj}")
+        if self.cnpj:
+            self.cnpj = re.sub(r"\D", "", self.cnpj)  # normaliza: remove máscara
+            if not _validar_cnpj(self.cnpj):
+                raise ValueError(f"CNPJ inválido: {self.cnpj}")
+        if self.plano not in _PLANOS_VALIDOS:
+            raise ValueError(f"Plano inválido: {self.plano}. Use: {sorted(_PLANOS_VALIDOS)}")
+
 
 class ClienteUpdate(BaseModel):
     nome: Optional[str] = None
@@ -188,6 +196,10 @@ class ClienteUpdate(BaseModel):
     telefone: Optional[str] = None
     plano: Optional[str] = None
     ativo: Optional[bool] = None
+
+    def model_post_init(self, __context) -> None:
+        if self.plano is not None and self.plano not in _PLANOS_VALIDOS:
+            raise ValueError(f"Plano inválido: {self.plano}. Use: {sorted(_PLANOS_VALIDOS)}")
 
 
 # ── Persistência no banco ─────────────────────────────────────────────────
@@ -286,6 +298,91 @@ def _get_client() -> Anthropic:
             detail="ANTHROPIC_API_KEY nao configurada no servidor",
         )
     return Anthropic(api_key=key)
+
+
+# Modelos usados no modo multi-modelo (ordem: capacidade decrescente)
+_MODELOS_MULTI = [
+    ("claude-opus-4-7",           "Opus 4.7",   "🔵"),
+    ("claude-sonnet-4-6",         "Sonnet 4.6", "🟢"),
+    ("claude-haiku-4-5-20251001", "Haiku 4.5",  "🟡"),
+]
+
+
+async def _chamar_modelo_async(
+    api_key: str,
+    prompt: str,
+    model_id: str,
+    label: str,
+    max_tokens: int,
+) -> dict:
+    """Chama um modelo Claude em thread executor (SDK síncrono → async seguro)."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    def _call():
+        c = Anthropic(api_key=api_key)
+        resp = c.messages.create(
+            model=model_id,
+            max_tokens=max_tokens,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return {
+            "texto": "\n".join(b.text for b in resp.content if b.type == "text"),
+            "input_tokens": resp.usage.input_tokens,
+            "output_tokens": resp.usage.output_tokens,
+        }
+
+    try:
+        res = await loop.run_in_executor(None, _call)
+    except APIStatusError as e:
+        body = getattr(e, "body", None) or {}
+        msg = (body.get("error") or {}).get("message") or str(e)
+        log.warning("Erro no modelo %s: %s", model_id, msg)
+        res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": msg}
+    else:
+        res["erro"] = None
+
+    res.update({"modelo": model_id, "label": label})
+    return res
+
+
+async def _sintetizar_consenso(
+    api_key: str,
+    resultados: list[dict],
+    max_tokens: int,
+) -> tuple[str, float]:
+    """Usa Sonnet 4.6 como juiz para sintetizar N relatórios em consenso.
+
+    Retorna (relatorio_consolidado, score_consenso 0.0-1.0).
+    """
+    validos = [r for r in resultados if not r.get("erro") and r["texto"]]
+    if not validos:
+        return "Nenhum modelo produziu resultado válido.", 0.0
+    if len(validos) == 1:
+        return validos[0]["texto"], 0.5
+
+    secoes = "\n\n".join(
+        f"### Análise — {r['label']}\n{r['texto']}"
+        for r in validos
+    )
+    prompt_juiz = (
+        f"Você recebeu {len(validos)} análises independentes do mesmo extrato bancário, "
+        "geradas por modelos Claude diferentes. Produza um RELATÓRIO FINAL consolidado em Markdown:\n\n"
+        "1. Primeira linha: `## Índice de Consenso: XX/100` — calcule baseado na concordância entre modelos\n"
+        "2. ✅ Achados confirmados por ≥ 2 modelos → alta confiança\n"
+        "3. ⚠️ Pontos divergentes → requerem revisão humana\n"
+        "4. Seções obrigatórias: Resumo Executivo · Anomalias · Classificações Contábeis · Plano de Ação\n"
+        "5. Seção final: **Convergências e Divergências entre Modelos** — liste o que cada modelo encontrou "
+        "de diferente e o grau de concordância por tópico\n\n"
+        f"---\n\n{secoes}"
+    )
+    res = await _chamar_modelo_async(api_key, prompt_juiz, "claude-sonnet-4-6", "Síntese", max_tokens)
+    texto = res["texto"] or validos[0]["texto"]
+
+    m = re.search(r"[Íi]ndice\s+de\s+[Cc]onsenso[:\s]+(\d+)", texto)
+    score = int(m.group(1)) / 100.0 if m else (len(validos) / 3 * 0.8)
+    return texto, round(min(max(score, 0.0), 1.0), 3)
 
 
 def _salvar_dataset(extratos: list[dict], anomalias: list[dict], relatorio: str) -> str:
@@ -1627,12 +1724,36 @@ def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
     return "".join(out)
 
 
+@app.get("/app", include_in_schema=False)
+def frontend():
+    """Serve o dashboard frontend."""
+    html_path = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
+    if not html_path.exists():
+        raise HTTPException(404, "Frontend não encontrado")
+    return FileResponse(str(html_path), media_type="text/html")
+
+
+@app.get("/animate-demo", include_in_schema=False)
+def animate_demo():
+    """Serve a página de demo do animate.css."""
+    html_path = Path(__file__).resolve().parent.parent / "frontend" / "animate-demo.html"
+    if not html_path.exists():
+        raise HTTPException(404, "Demo não encontrado")
+    return FileResponse(str(html_path), media_type="text/html")
+
+
 @app.get("/")
 def root():
     return {
         "service": "Conciliacao Bancaria API",
-        "version": "0.1.0",
-        "endpoints": ["/health", "/conciliar/ofx", "/conciliar/csv"],
+        "version": "0.3.0",
+        "endpoints": [
+            "/health", "/docs",
+            "/conciliar/ofx",
+            "/export/html/{report_id}", "/export/xlsx/{report_id}",
+            "/clientes", "/clientes/{id}",
+            "/logo-base64",
+        ],
     }
 
 
@@ -1662,11 +1783,15 @@ async def criar_cliente(request: Request, payload: ClienteCreate):
     """Cadastra um novo cliente."""
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado — adicione DATABASE_URL ao .env")
-    async with SessionLocal() as db:
-        cliente = await crud_clientes.criar_cliente(
-            db, nome=payload.nome, cnpj=payload.cnpj,
-            email=payload.email, telefone=payload.telefone, plano=payload.plano,
-        )
+    from sqlalchemy.exc import IntegrityError
+    try:
+        async with SessionLocal() as db:
+            cliente = await crud_clientes.criar_cliente(
+                db, nome=payload.nome, cnpj=payload.cnpj,
+                email=payload.email, telefone=payload.telefone, plano=payload.plano,
+            )
+    except IntegrityError:
+        raise HTTPException(409, "CNPJ já cadastrado")
     return {
         "id": str(cliente.id), "nome": cliente.nome, "cnpj": cliente.cnpj,
         "email": cliente.email, "plano": cliente.plano,
@@ -1740,12 +1865,15 @@ async def conciliar_ofx(
     arquivos: List[UploadFile] = File(..., description="1 a 50 arquivos (.ofx, .pdf ou .xml)"),
     max_tokens: int = 16000,
     simular: bool = False,
+    multi_modelo: bool = False,
     cliente_id: Optional[str] = None,
 ):
     """Cruza ate 50 extratos bancarios (OFX, PDF ou XML).
 
-    Aceita arquivos de multiplos bancos e periodos simultaneamente.
-    Use simular=true para gerar relatorio local (sem chamar a API).
+    Modos:
+    - simular=true  → análise heurística local, sem LLM
+    - multi_modelo=true → 3 modelos Claude em paralelo + síntese de consenso
+    - padrão → Sonnet 4.6 (single model)
     """
     if not (1 <= len(arquivos) <= 50):
         raise HTTPException(status_code=400, detail="Envie entre 1 e 50 arquivos")
@@ -1792,13 +1920,12 @@ async def conciliar_ofx(
             "relatorio_html": _render_html(relatorio),
         })
 
-    blocos = []
-    for e in extratos_parsed:
-        blocos.append(
-            f"=== {e['conta']} ({e['arquivo']}) ===\n"
-            f"Total: {e['qtd']} transacoes\n{_fmt_csv(e['transacoes'])}"
-        )
-
+    # ── Monta prompt comum ─────────────────────────────────────────────────
+    blocos = [
+        f"=== {e['conta']} ({e['arquivo']}) ===\n"
+        f"Total: {e['qtd']} transacoes\n{_fmt_csv(e['transacoes'])}"
+        for e in extratos_parsed
+    ]
     n_contas = len(extratos_parsed)
     prompt = (
         f"Analise os {n_contas} extrato(s) bancario(s) abaixo. "
@@ -1809,10 +1936,59 @@ async def conciliar_ofx(
         + "\n\n".join(blocos)
     )
 
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or ""
+    if not api_key:
+        raise HTTPException(500, "ANTHROPIC_API_KEY nao configurada no servidor")
+
+    # ── Modo multi-modelo: 3 modelos em paralelo + síntese ────────────────
+    if multi_modelo:
+        import asyncio as _aio
+        tokens_por_modelo = max(4000, max_tokens // 2)
+
+        tarefas = [
+            _chamar_modelo_async(api_key, prompt, mid, label, tokens_por_modelo)
+            for mid, label, _ in _MODELOS_MULTI
+        ]
+        resultados = list(await _aio.gather(*tarefas))
+
+        relatorio_consolidado, score_consenso = await _sintetizar_consenso(
+            api_key, resultados, max_tokens
+        )
+        anomalias = _detectar_anomalias(extratos_parsed)
+        rid = _salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado)
+        await _salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
+
+        return JSONResponse({
+            "modo": "multi_modelo",
+            "report_id": rid,
+            "score_consenso": score_consenso,
+            "modelos": [
+                {
+                    "modelo": r["modelo"],
+                    "label": r["label"],
+                    "input_tokens": r.get("input_tokens", 0),
+                    "output_tokens": r.get("output_tokens", 0),
+                    "erro": r.get("erro"),
+                }
+                for r in resultados
+            ],
+            "extratos": [
+                {"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]}
+                for e in extratos_parsed
+            ],
+            "anomalias": anomalias,
+            "relatorio_md": relatorio_consolidado,
+            "relatorio_html": _render_html(relatorio_consolidado),
+            "relatorios_individuais": {
+                r["label"]: r["texto"] for r in resultados if r["texto"]
+            },
+        })
+
+    # ── Modo single model (Sonnet 4.6) ────────────────────────────────────
     client = _get_client()
     try:
         resp = client.messages.create(
-            model="claude-sonnet-4-5",
+            model="claude-sonnet-4-6",
             max_tokens=max_tokens,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
@@ -1820,7 +1996,6 @@ async def conciliar_ofx(
     except APIStatusError as e:
         body = getattr(e, "body", None) or {}
         msg = (body.get("error") or {}).get("message") or str(e)
-        # Mensagens amigaveis em portugues para erros comuns
         if "credit balance" in msg.lower():
             friendly = ("Saldo de creditos Anthropic esgotado. "
                         "Recarregue em https://platform.claude.com/settings/billing "
@@ -1860,6 +2035,261 @@ def logo_base64():
     return {"data_uri": _LOGO_DATA_URI}
 
 
+def _render_pdf_html(relatorio_md: str, anomalias: list, extratos: list, report_id: str) -> str:
+    """Gera HTML print-optimized que abre o diálogo Salvar como PDF do browser."""
+    from datetime import datetime
+    body = md_to_html(relatorio_md, extensions=["tables", "fenced_code"])
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    total_tx   = sum(e.get("qtd", 0) for e in extratos)
+    total_cred = sum(t["valor"] for e in extratos for t in e.get("transacoes", []) if t["valor"] > 0)
+    total_deb  = sum(t["valor"] for e in extratos for t in e.get("transacoes", []) if t["valor"] < 0)
+    n_anom     = len(anomalias)
+    crit   = [a for a in anomalias if a.get("severidade") == "critico"]
+    alerta = [a for a in anomalias if a.get("severidade") == "alerta"]
+    atenc  = [a for a in anomalias if a.get("severidade") == "atencao"]
+
+    sev_rows = "".join(
+        f'<tr><td class="sev-{a["severidade"]}">'
+        f'{"🔴 CRÍTICO" if a["severidade"]=="critico" else "🟠 ALERTA" if a["severidade"]=="alerta" else "🟡 ATENÇÃO"}'
+        f'</td><td>{a.get("tipo","")}</td><td><strong>{a.get("titulo","")}</strong><br/>'
+        f'<small>{a.get("conta","")}</small></td>'
+        f'<td>{"R$ {:,.2f}".format(a["valor"]) if a.get("valor") else "—"}</td>'
+        f'<td>{a.get("detalhe","")}</td></tr>'
+        for a in anomalias
+    )
+    logo_html = (
+        f'<img src="{_LOGO_DATA_URI}" alt="ORGATEC" class="logo">'
+        if _LOGO_DATA_URI else ""
+    )
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<title>ORGATEC — Conciliação {report_id}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  :root {{
+    --navy: #0F172A; --blue: #0369A1; --green: #16A34A;
+    --red: #DC2626;  --orange: #D97706; --border: #E2E8F0;
+  }}
+  @page {{
+    size: A4;
+    margin: 15mm 18mm 18mm 18mm;
+  }}
+  @media print {{
+    body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+    .no-print {{ display: none !important; }}
+    .page-break {{ page-break-before: always; }}
+  }}
+  body {{
+    font-family: 'Inter', sans-serif;
+    font-size: 11pt;
+    color: #1a202c;
+    line-height: 1.6;
+    background: #fff;
+  }}
+
+  /* ── Print button (esconde ao imprimir) ── */
+  .print-bar {{
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: var(--navy); color: #fff;
+    padding: 10px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+  }}
+  .print-bar h2 {{ font-size: 14px; font-weight: 700; }}
+  .print-bar p  {{ font-size: 11px; opacity: .7; }}
+  .btn-pdf {{
+    background: var(--blue); color: #fff;
+    border: none; padding: 9px 20px;
+    border-radius: 6px; font-size: 13px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; gap: 8px;
+    font-family: inherit;
+  }}
+  .btn-pdf:hover {{ opacity: .9; }}
+
+  .wrap {{ max-width: 800px; margin: 56px auto 40px; background: #fff; }}
+
+  /* ── Header ── */
+  .hd {{
+    background: var(--navy);
+    color: #fff;
+    padding: 24px 32px;
+    display: flex; align-items: center; gap: 16px;
+    border-radius: 8px 8px 0 0;
+  }}
+  .logo {{ width: 48px; height: 48px; }}
+  .hd-brand h1 {{ font-size: 20pt; font-weight: 700; }}
+  .hd-brand p  {{ font-size: 9pt; opacity: .65; text-transform: uppercase; letter-spacing: .12em; }}
+  .hd-spacer {{ flex: 1; }}
+  .hd-meta {{ text-align: right; font-size: 9pt; }}
+  .hd-meta strong {{ font-size: 10pt; }}
+
+  /* ── KPI grid ── */
+  .kpi-grid {{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-bottom: 24px;
+  }}
+  .kpi {{
+    background: #fff;
+    padding: 14px 16px;
+  }}
+  .kpi-label {{
+    font-size: 8pt; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .08em;
+    color: #64748B; margin-bottom: 4px;
+  }}
+  .kpi-value {{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18pt; font-weight: 700; color: var(--navy);
+  }}
+  .kpi-value.blue   {{ color: var(--blue); }}
+  .kpi-value.green  {{ color: var(--green); }}
+  .kpi-value.red    {{ color: var(--red); }}
+  .kpi-sub {{ font-size: 8pt; color: #94A3B8; margin-top: 2px; }}
+
+  /* ── Anomalias ── */
+  .section-title {{
+    font-size: 12pt; font-weight: 700;
+    color: var(--navy); margin: 24px 0 10px;
+    padding-bottom: 6px; border-bottom: 2px solid var(--border);
+  }}
+  .anom-table {{ width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 24px; }}
+  .anom-table th {{
+    background: var(--navy); color: #fff;
+    padding: 7px 10px; text-align: left; font-weight: 600;
+  }}
+  .anom-table td {{ padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }}
+  .anom-table tr:nth-child(even) td {{ background: #F8FAFC; }}
+  .sev-critico {{ color: var(--red);    font-weight: 700; }}
+  .sev-alerta  {{ color: var(--orange); font-weight: 700; }}
+  .sev-atencao {{ color: #CA8A04;       font-weight: 700; }}
+
+  /* ── Report body (Markdown) ── */
+  .report-md h1 {{ font-size: 16pt; color: var(--navy); margin: 20px 0 8px; font-weight: 700; }}
+  .report-md h2 {{
+    font-size: 12pt; color: var(--blue); font-weight: 700;
+    margin: 18px 0 8px;
+    padding-left: 10px; border-left: 3px solid var(--blue);
+  }}
+  .report-md h3 {{ font-size: 11pt; color: var(--navy); font-weight: 600; margin: 14px 0 6px; }}
+  .report-md p  {{ margin-bottom: 8px; }}
+  .report-md ul, .report-md ol {{ padding-left: 18px; margin-bottom: 8px; }}
+  .report-md li {{ margin-bottom: 3px; }}
+  .report-md table {{ width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 12px; }}
+  .report-md th {{ background: var(--navy); color: #fff; padding: 7px 10px; text-align: left; }}
+  .report-md td {{ padding: 6px 10px; border-bottom: 1px solid var(--border); }}
+  .report-md tr:nth-child(even) td {{ background: #F8FAFC; }}
+  .report-md code {{
+    font-family: 'JetBrains Mono', monospace; font-size: 8.5pt;
+    background: #F1F5F9; padding: 1px 5px; border-radius: 3px; color: var(--blue);
+  }}
+  .report-md strong {{ font-weight: 700; }}
+
+  /* ── Footer ── */
+  .ft {{
+    margin-top: 32px; padding: 14px 0;
+    border-top: 1px solid var(--border);
+    font-size: 8.5pt; color: #94A3B8;
+    display: flex; justify-content: space-between;
+  }}
+</style>
+</head>
+<body>
+
+<!-- Barra de impressão (some ao imprimir) -->
+<div class="print-bar no-print">
+  <div>
+    <h2>Relatório de Conciliação — ORGATEC</h2>
+    <p>Gerado em {agora} · ID: {report_id}</p>
+  </div>
+  <button class="btn-pdf" onclick="window.print()">
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+    </svg>
+    Salvar como PDF
+  </button>
+</div>
+
+<div class="wrap">
+  <!-- Header -->
+  <div class="hd">
+    {logo_html}
+    <div class="hd-brand">
+      <h1>ORGATEC</h1>
+      <p>Contabilidade &amp; Auditoria</p>
+    </div>
+    <div class="hd-spacer"></div>
+    <div class="hd-meta">
+      <strong>Relatório de Conciliação</strong><br/>
+      {agora}<br/>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:8pt;opacity:.6">{report_id}</span>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-label">Transações</div>
+      <div class="kpi-value blue">{total_tx}</div>
+      <div class="kpi-sub">{len(extratos)} conta(s)</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Créditos</div>
+      <div class="kpi-value green">R$ {total_cred:,.0f}</div>
+      <div class="kpi-sub">entradas</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Débitos</div>
+      <div class="kpi-value red">R$ {abs(total_deb):,.0f}</div>
+      <div class="kpi-sub">saídas</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Anomalias</div>
+      <div class="kpi-value {'red' if n_anom else 'green'}">{n_anom}</div>
+      <div class="kpi-sub">🔴 {len(crit)} · 🟠 {len(alerta)} · 🟡 {len(atenc)}</div>
+    </div>
+  </div>
+
+  <!-- Anomalias -->
+  {"" if not anomalias else f'''
+  <div class="section-title">Anomalias Detectadas ({n_anom})</div>
+  <table class="anom-table">
+    <thead>
+      <tr><th>Severidade</th><th>Tipo</th><th>Título / Conta</th><th>Valor</th><th>Detalhe</th></tr>
+    </thead>
+    <tbody>{sev_rows}</tbody>
+  </table>
+  '''}
+
+  <!-- Relatório Markdown -->
+  <div class="section-title">Análise Detalhada</div>
+  <div class="report-md">{body}</div>
+
+  <!-- Footer -->
+  <div class="ft">
+    <span>© ORGATEC Contabilidade e Auditoria · orgatec.cloud@gmail.com</span>
+    <span>Gerado em {agora}</span>
+  </div>
+</div>
+
+<script>
+  // Abre o diálogo de impressão automaticamente se ?auto=1
+  if (new URLSearchParams(location.search).get('auto') === '1') {{
+    window.addEventListener('load', () => setTimeout(() => window.print(), 600));
+  }}
+</script>
+</body>
+</html>"""
+
+
 @app.get("/export/html/{rid}", dependencies=[Depends(auth)])
 def export_html(rid: str):
     """Baixa o relatorio renderizado em HTML standalone."""
@@ -1881,6 +2311,21 @@ def export_xlsx(rid: str):
         content=blob,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="conciliacao_{rid}.xlsx"'},
+    )
+
+
+@app.get("/export/pdf/{rid}", dependencies=[Depends(auth)])
+def export_pdf(rid: str, auto: int = 0):
+    """Abre visualizacao HTML print-optimized; usuario usa Ctrl+P / botao para salvar como PDF."""
+    ds = _carregar_dataset(rid)
+    html = _render_pdf_html(ds["relatorio"], ds["anomalias"], ds["extratos"], rid)
+    # Se auto=1 foi passado na URL, o JS dentro do HTML dispara o dialogo de impressao
+    if auto:
+        html = html.replace("location.search).get('auto') === '1'", "true", 1)
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="conciliacao_{rid}.pdf"'},
     )
 
 

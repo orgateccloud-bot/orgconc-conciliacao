@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS conciliacoes (
     id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     cliente_id          UUID        REFERENCES clientes(id) ON DELETE SET NULL,
     report_id           TEXT        UNIQUE NOT NULL,   -- compatível com JSON atual
-    modo                TEXT        NOT NULL CHECK (modo IN ('llm', 'simulacao')),
+    modo                TEXT        NOT NULL CHECK (modo IN ('llm', 'simulacao', 'simulacao_local', 'multi_modelo')),
     total_transacoes    INT         NOT NULL DEFAULT 0,
     total_anomalias     INT         NOT NULL DEFAULT 0,
     valor_total_credito NUMERIC(15,2),

@@ -13,9 +13,65 @@ os.environ["ORGCONC_DATA_DIR"] = str(Path(__file__).resolve().parent / "_data_te
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from api.main import app, _parse_ofx, _parse_xml, _classificar, _detectar_anomalias, _gerar_xlsx, _render_html
+from api.main import app, _parse_ofx, _parse_xml, _classificar, _detectar_anomalias, _gerar_xlsx, _render_html, DB_DISPONIVEL
 
 client = TestClient(app)
+
+OFX_SAMPLE2 = """OFXHEADER:100
+DATA:OFXSGML
+<OFX>
+<BANKMSGSRSV1>
+<STMTTRNRS>
+<STMTRS>
+<BANKACCTFROM>
+<BRANCHID>5678-9</BRANCHID>
+<ACCTID>1111-1</ACCTID>
+</BANKACCTFROM>
+<BANKTRANLIST>
+<STMTTRN>
+<TRNTYPE>DEBIT</TRNTYPE>
+<DTPOSTED>20260415120000</DTPOSTED>
+<TRNAMT>-75000.00</TRNAMT>
+<MEMO>INTERCREDIS TRANSF MESMA TIT</MEMO>
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>DEBIT</TRNTYPE>
+<DTPOSTED>20260416120000</DTPOSTED>
+<TRNAMT>-15000.00</TRNAMT>
+<MEMO>TED EMITIDO FORNECEDOR ABC</MEMO>
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>CREDIT</TRNTYPE>
+<DTPOSTED>20260417120000</DTPOSTED>
+<TRNAMT>500.00</TRNAMT>
+<MEMO>ESTORNO TARIFA INDEVIDA</MEMO>
+</STMTTRN>
+</BANKTRANLIST>
+</STMTRS>
+</STMTTRNRS>
+</BANKMSGSRSV1>
+</OFX>"""
+
+XML_SAMPLE = """<?xml version="1.0"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt>
+    <Stmt>
+      <Acct><Id><Othr><Id>ACC-XML-001</Id></Othr></Id></Acct>
+      <Ntry>
+        <Amt Ccy="BRL">500.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-04-15</Dt></BookgDt>
+        <NtryDtls><TxDtls><RmtInf><Ustrd>Receita XML</Ustrd></RmtInf></TxDtls></NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="BRL">75.50</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <BookgDt><Dt>2026-04-16</Dt></BookgDt>
+        <NtryDtls><TxDtls><RmtInf><Ustrd>Pagamento XML</Ustrd></RmtInf></TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>"""
 
 OFX_SAMPLE = """OFXHEADER:100
 DATA:OFXSGML
@@ -260,3 +316,235 @@ def test_security_headers_presentes():
     assert r.headers.get("x-content-type-options") == "nosniff"
     assert r.headers.get("x-frame-options") == "DENY"
     assert "Content-Security-Policy" in r.headers or "content-security-policy" in r.headers
+
+
+# ── Integração Real com DB ────────────────────────────────────────────────
+
+_CNPJ_TESTE = "11444777000161"  # CNPJ válido reservado para testes de integração
+_requer_db = pytest.mark.skipif(not DB_DISPONIVEL, reason="DATABASE_URL não configurado")
+
+
+def _limpar_cliente_teste() -> None:
+    """Remove cliente de teste via psycopg2 síncrono para evitar conflito de event loop."""
+    import psycopg2
+    url = os.environ.get("DATABASE_URL", "").replace("+asyncpg", "")
+    if not url or "[" in url:
+        return
+    with psycopg2.connect(url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM clientes WHERE cnpj = %s", (_CNPJ_TESTE,))
+        conn.commit()
+
+
+@pytest.fixture(scope="module")
+def cliente_real():
+    """Cria cliente no banco real e remove ao final do módulo."""
+    _limpar_cliente_teste()  # estado limpo antes de criar
+
+    r = client.post("/clientes", json={
+        "nome": "Empresa Integracao Teste",
+        "cnpj": _CNPJ_TESTE,
+        "email": "integracao@orgconc.com",
+        "plano": "basico",
+    })
+    assert r.status_code == 201, r.text
+    data = r.json()
+    yield data
+
+    _limpar_cliente_teste()  # cleanup
+
+
+@_requer_db
+def test_db_criar_cliente(cliente_real):
+    assert "id" in cliente_real
+    assert cliente_real["nome"] == "Empresa Integracao Teste"
+    assert cliente_real["cnpj"] == _CNPJ_TESTE
+    assert cliente_real["plano"] == "basico"
+
+
+@_requer_db
+def test_db_listar_clientes(cliente_real):
+    r = client.get("/clientes")
+    assert r.status_code == 200
+    ids = [c["id"] for c in r.json()]
+    assert cliente_real["id"] in ids
+
+
+@_requer_db
+def test_db_buscar_cliente_por_id(cliente_real):
+    r = client.get(f"/clientes/{cliente_real['id']}")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["id"] == cliente_real["id"]
+    assert j["email"] == "integracao@orgconc.com"
+
+
+@_requer_db
+def test_db_atualizar_cliente(cliente_real):
+    r = client.patch(f"/clientes/{cliente_real['id']}", json={"nome": "Empresa Atualizada", "plano": "pro"})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["nome"] == "Empresa Atualizada"
+    assert j["plano"] == "pro"
+
+
+@_requer_db
+def test_db_buscar_cliente_inexistente():
+    r = client.get("/clientes/00000000-0000-0000-0000-000000000099")
+    assert r.status_code == 404
+
+
+# ── Anomalias — cobertura de tipos ────────────────────────────────────────
+
+def _extrato(txs: list[dict], conta: str = "AG 0000 / CC 0000") -> dict:
+    return {"conta": conta, "qtd": len(txs), "transacoes": txs, "arquivo": "test.ofx"}
+
+
+def _tx(valor: float, memo: str = "TESTE", data: str = "2026-04-15") -> dict:
+    return {"valor": valor, "memo": memo, "nome": "", "data": data, "tipo": "DEBIT", "conta": ""}
+
+
+def test_anomalias_valor_alto_alerta():
+    txs = [_tx(75000.00, "TED EMITIDO GRANDE")]
+    anomalias = _detectar_anomalias([_extrato(txs)])
+    alerta = [a for a in anomalias if a["tipo"] == "Valor alto" and a["severidade"] == "alerta"]
+    assert len(alerta) == 1
+
+
+def test_anomalias_valor_alto_atencao():
+    txs = [_tx(25000.00, "TED EMITIDO MEDIO")]
+    anomalias = _detectar_anomalias([_extrato(txs)])
+    atencao = [a for a in anomalias if a["tipo"] == "Valor alto" and a["severidade"] == "atencao"]
+    assert len(atencao) == 1
+
+
+def test_anomalias_estorno_critico():
+    txs = [_tx(200.00, "ESTORNO TARIFA INDEVIDA")]
+    anomalias = _detectar_anomalias([_extrato(txs)])
+    estornos = [a for a in anomalias if a["tipo"] == "Estorno" and a["severidade"] == "critico"]
+    assert len(estornos) == 1
+
+
+def test_anomalias_lista_vazia():
+    assert _detectar_anomalias([]) == []
+
+
+def test_anomalias_sem_duplicidade_transacoes_distintas():
+    txs = [
+        _tx(100.00, "PIX RECEBIDO A", "2026-04-15"),
+        _tx(200.00, "PIX RECEBIDO B", "2026-04-15"),
+    ]
+    anomalias = _detectar_anomalias([_extrato(txs)])
+    dups = [a for a in anomalias if a["tipo"] == "Duplicidade"]
+    assert len(dups) == 0
+
+
+def test_anomalias_transferencia_sem_par():
+    e1 = _extrato([_tx(-1000.00, "INTERCREDIS TRANSF MESMA TIT")], "Conta A")
+    e2 = _extrato([_tx(-500.00, "INTERCREDIS TRANSF MESMA TIT")], "Conta B")
+    anomalias = _detectar_anomalias([e1, e2])
+    sem_par = [a for a in anomalias if a["tipo"] == "Transferencia sem par"]
+    assert len(sem_par) >= 1
+
+
+# ── Classificador — edge cases ────────────────────────────────────────────
+
+def test_classificador_ted_recebido():
+    assert _classificar("TED RECEBIDO CLIENTE", "") == "Receita TED/DOC"
+
+
+def test_classificador_ted_pago():
+    assert _classificar("TED EMITIDO FORNECEDOR", "") == "Pagamento TED/DOC"
+
+
+def test_classificador_desconhecido():
+    assert _classificar("XPTO INEXISTENTE 99", "") == "A classificar"
+
+
+def test_classificador_pix_a_classificar():
+    assert _classificar("PIX", "") == "PIX - A classificar"
+
+
+# ── Conciliar — múltiplos arquivos e XML ──────────────────────────────────
+
+def test_conciliar_multiplos_ofx():
+    r = client.post(
+        "/conciliar/ofx?simular=true",
+        files=[
+            ("arquivos", ("extrato1.ofx", OFX_SAMPLE, "application/x-ofx")),
+            ("arquivos", ("extrato2.ofx", OFX_SAMPLE2, "application/x-ofx")),
+        ],
+    )
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert len(j["extratos"]) == 2
+    assert j["modo"] == "simulacao_local"
+    estornos = [a for a in j["anomalias"] if a["tipo"] == "Estorno"]
+    assert len(estornos) >= 1
+
+
+def test_conciliar_xml():
+    r = client.post(
+        "/conciliar/ofx?simular=true",
+        files=[("arquivos", ("extrato.xml", XML_SAMPLE, "text/xml"))],
+    )
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["modo"] == "simulacao_local"
+    assert j["extratos"][0]["qtd"] == 2
+
+
+# ── Clientes — validações adicionais ──────────────────────────────────────
+
+def test_cliente_plano_invalido_retorna_422():
+    r = client.post("/clientes", json={"nome": "Empresa X", "plano": "platinum"})
+    assert r.status_code == 422
+
+
+def test_cliente_buscar_id_invalido_retorna_400():
+    r = client.get("/clientes/nao-e-um-uuid")
+    assert r.status_code == 400
+
+
+def test_cliente_cnpj_com_mascara_valido():
+    """CNPJ formatado com pontuação deve ser aceito pelo Pydantic e normalizado."""
+    r = client.post("/clientes", json={"nome": "Empresa Mascara", "cnpj": "11.444.777/0001-61"})
+    # 422 = formato rejeitado (não esperado); 503 = sem DB; 201 = criado; 409/500 = duplicado OK
+    assert r.status_code not in (422,), f"CNPJ com máscara foi rejeitado incorretamente: {r.text}"
+
+
+# ── XLSX — cabeçalhos das colunas ─────────────────────────────────────────
+
+def test_xlsx_cabecalhos_transacoes():
+    txs = _parse_ofx(OFX_SAMPLE)
+    extrato = {"conta": "AG 1234-5 / CC 9999-9", "qtd": len(txs), "transacoes": txs, "arquivo": "test.ofx"}
+    blob = _gerar_xlsx([extrato], [])
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(blob))
+    ws = wb["Transações"]
+    headers = [ws.cell(1, c).value for c in range(1, 10) if ws.cell(1, c).value]
+    assert "Data" in headers
+    assert "Valor (R$)" in headers or any("Valor" in str(h) for h in headers)
+    assert "Memo / Descrição" in headers or any("Memo" in str(h) for h in headers)
+
+
+# ── DB real — conciliação salva no banco ──────────────────────────────────
+
+@_requer_db
+def test_db_conciliacao_salva_no_banco():
+    """POST /conciliar/ofx?simular=true deve persistir registro em conciliacoes."""
+    import psycopg2
+    r = client.post(
+        "/conciliar/ofx?simular=true",
+        files=[("arquivos", ("real.ofx", OFX_SAMPLE, "application/x-ofx"))],
+    )
+    assert r.status_code == 200
+    rid = r.json()["report_id"]
+
+    url = os.environ.get("DATABASE_URL", "").replace("+asyncpg", "")
+    with psycopg2.connect(url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT report_id, total_transacoes FROM conciliacoes WHERE report_id = %s", (rid,))
+            row = cur.fetchone()
+    assert row is not None, f"Conciliacao {rid} nao encontrada no banco"
+    assert row[1] == 4  # OFX_SAMPLE tem 4 transacoes
