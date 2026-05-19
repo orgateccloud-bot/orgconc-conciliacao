@@ -1943,6 +1943,62 @@
     .mode-badge.cyan   { background: var(--cyan10) !important;  color: var(--cyan) !important; }
     .mode-badge.purple { background: var(--purple10) !important; color: var(--purple) !important; }
     .mode-badge.blue   { background: var(--accent-soft) !important; color: var(--accent) !important; }
+
+    /* Brand: logo Orgatec na sidebar e topbar */
+    .sidebar-logo {
+      padding: 18px 18px 16px !important;
+      border-bottom: 1px solid var(--border) !important;
+      background: var(--surface) !important;
+    }
+    .sidebar-logo .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .sidebar-logo .brand-img {
+      width: 40px; height: 40px;
+      object-fit: contain;
+      border-radius: 6px;
+      background: var(--surface-2);
+      padding: 4px;
+      border: 1px solid var(--border);
+    }
+    .sidebar-logo .brand-meta { display: flex; flex-direction: column; min-width: 0; }
+    .sidebar-logo h1 {
+      font-family: 'IBM Plex Serif', Georgia, serif !important;
+      font-size: 1.05rem !important;
+      font-weight: 700 !important;
+      color: var(--text) !important;
+      letter-spacing: -0.005em !important;
+      line-height: 1.1 !important;
+    }
+    .sidebar-logo span {
+      font-family: 'Inter', sans-serif !important;
+      font-size: .62rem !important;
+      letter-spacing: 0.14em !important;
+      text-transform: uppercase !important;
+      color: var(--muted) !important;
+      font-weight: 600 !important;
+      margin-top: 3px !important;
+    }
+    .topbar-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .topbar-logo {
+      width: 28px; height: 28px;
+      object-fit: contain;
+      border-radius: 4px;
+      background: var(--surface-2);
+      padding: 2px;
+      border: 1px solid var(--border);
+    }
+    [data-theme="dark"] .sidebar-logo .brand-img,
+    [data-theme="dark"] .topbar-logo {
+      background: var(--surface-2);
+      border-color: var(--border);
+    }
   </style>
 </head>
 <body>
@@ -1957,8 +2013,13 @@
 <!-- ── Sidebar ──────────────────────────────────────────────────── -->
 <aside class="sidebar" role="navigation" aria-label="Menu principal">
   <div class="sidebar-logo">
-    <h1>ORGATEC</h1>
-    <span>Conciliação Bancária</span>
+    <div class="brand-row">
+      <img src="/ui/logo.png" alt="ORGATEC" class="brand-img" width="40" height="40" />
+      <div class="brand-meta">
+        <h1>ORGATEC</h1>
+        <span>Conciliação Bancária</span>
+      </div>
+    </div>
   </div>
   <nav class="sidebar-nav">
     <div class="nav-section">Principal</div>
@@ -2002,7 +2063,10 @@
 <!-- ── Main ──────────────────────────────────────────────────────── -->
 <main class="main" id="main-content">
   <header class="topbar">
-    <span class="topbar-title" id="topbar-title">Conciliação Bancária</span>
+    <span class="topbar-brand">
+      <img src="/ui/logo.png" alt="" class="topbar-logo" width="28" height="28" aria-hidden="true" />
+      <span class="topbar-title" id="topbar-title">Conciliação Bancária</span>
+    </span>
     <div class="topbar-actions">
       <span class="badge-db" id="db-badge" aria-live="polite">DB: verificando…</span>
       <button class="theme-toggle" id="btn-theme" onclick="toggleTema()" aria-label="Alternar tema escuro/claro" title="Tema (Ctrl+Shift+D)">
