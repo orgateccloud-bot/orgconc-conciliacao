@@ -1,6 +1,9 @@
 """Modelos SQLAlchemy — espelham o schema do Supabase."""
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timezone
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 from sqlalchemy import String, Boolean, Integer, Float, Date, Numeric, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS
 TIMESTAMPTZ = _TS(timezone=True)
@@ -22,8 +25,8 @@ class Cliente(Base):
     telefone:     Mapped[str | None] = mapped_column(Text)
     plano:        Mapped[str]        = mapped_column(String(20), default="basico")
     ativo:        Mapped[bool]       = mapped_column(Boolean, default=True)
-    criado_em:    Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=datetime.utcnow)
-    atualizado_em: Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=datetime.utcnow)
+    criado_em:    Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
+    atualizado_em: Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now)
 
     conciliacoes: Mapped[list["Conciliacao"]] = relationship(back_populates="cliente")
 
@@ -41,7 +44,7 @@ class Conciliacao(Base):
     valor_total_debito:   Mapped[float | None] = mapped_column(Numeric(15, 2))
     periodo_inicio:       Mapped[date | None]  = mapped_column(Date)
     periodo_fim:          Mapped[date | None]  = mapped_column(Date)
-    criado_em:            Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=datetime.utcnow)
+    criado_em:            Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
 
     cliente:     Mapped["Cliente | None"]   = relationship(back_populates="conciliacoes")
     transacoes:  Mapped[list["Transacao"]]  = relationship(back_populates="conciliacao")
@@ -60,7 +63,7 @@ class Transacao(Base):
     banco:            Mapped[str | None]   = mapped_column(Text)
     tipo:             Mapped[str | None]   = mapped_column(Text)
     eh_anomalia:      Mapped[bool]         = mapped_column(Boolean, default=False)
-    criado_em:        Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=datetime.utcnow)
+    criado_em:        Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
 
     conciliacao: Mapped["Conciliacao | None"] = relationship(back_populates="transacoes")
     predicoes:   Mapped[list["MlPredicao"]]   = relationship(back_populates="transacao")
@@ -76,7 +79,7 @@ class MlPredicao(Base):
     confianca:      Mapped[float]        = mapped_column(Float, nullable=False)
     confirmado_por: Mapped[str | None]   = mapped_column(Text)
     correto:        Mapped[bool | None]  = mapped_column(Boolean)
-    criado_em:      Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=datetime.utcnow)
+    criado_em:      Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
 
     transacao: Mapped["Transacao | None"] = relationship(back_populates="predicoes")
 
@@ -94,5 +97,5 @@ class FsrsMemoria(Base):
     proxima_revisao:  Mapped[date]       = mapped_column(Date, nullable=False)
     repeticoes:       Mapped[int]        = mapped_column(Integer, default=0)
     lapsos:           Mapped[int]        = mapped_column(Integer, default=0)
-    criado_em:        Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=datetime.utcnow)
-    atualizado_em:    Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=datetime.utcnow)
+    criado_em:        Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
+    atualizado_em:    Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)

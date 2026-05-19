@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 # Forca data dir temporario antes de importar app
@@ -224,26 +225,30 @@ def test_clientes_cnpj_todos_iguais_retorna_422():
 
 
 def test_clientes_criar_sem_db_retorna_503():
-    """Sem DATABASE_URL, POST /clientes deve retornar 503."""
-    r = client.post("/clientes", json={"nome": "Empresa Sem DB", "plano": "basico"})
+    """Com DB_DISPONIVEL=False, POST /clientes deve retornar 503."""
+    with patch("api.main.DB_DISPONIVEL", False):
+        r = client.post("/clientes", json={"nome": "Empresa Sem DB", "plano": "basico"})
     assert r.status_code == 503
 
 
 def test_clientes_listar_sem_db_retorna_503():
-    """Sem DATABASE_URL, GET /clientes deve retornar 503."""
-    r = client.get("/clientes")
+    """Com DB_DISPONIVEL=False, GET /clientes deve retornar 503."""
+    with patch("api.main.DB_DISPONIVEL", False):
+        r = client.get("/clientes")
     assert r.status_code == 503
 
 
 def test_clientes_buscar_sem_db_retorna_503():
-    """Sem DATABASE_URL, GET /clientes/{id} deve retornar 503."""
-    r = client.get("/clientes/00000000-0000-0000-0000-000000000001")
+    """Com DB_DISPONIVEL=False, GET /clientes/{id} deve retornar 503."""
+    with patch("api.main.DB_DISPONIVEL", False):
+        r = client.get("/clientes/00000000-0000-0000-0000-000000000001")
     assert r.status_code == 503
 
 
 def test_clientes_atualizar_sem_db_retorna_503():
-    """Sem DATABASE_URL, PATCH /clientes/{id} deve retornar 503."""
-    r = client.patch("/clientes/00000000-0000-0000-0000-000000000001", json={"nome": "Novo"})
+    """Com DB_DISPONIVEL=False, PATCH /clientes/{id} deve retornar 503."""
+    with patch("api.main.DB_DISPONIVEL", False):
+        r = client.patch("/clientes/00000000-0000-0000-0000-000000000001", json={"nome": "Novo"})
     assert r.status_code == 503
 
 

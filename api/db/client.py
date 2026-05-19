@@ -13,7 +13,13 @@ _url_sync = os.getenv("DATABASE_URL", "")
 # SQLAlchemy async exige driver asyncpg; converte prefixo se necessário
 _url_async = _url_sync.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-engine = create_async_engine(_url_async, pool_pre_ping=True, pool_size=5, max_overflow=10)
+engine = create_async_engine(
+    _url_async,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    connect_args={"statement_cache_size": 0},  # obrigatorio com pgbouncer transaction pooler
+)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
