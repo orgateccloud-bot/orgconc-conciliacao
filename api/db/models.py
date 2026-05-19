@@ -2,7 +2,8 @@
 import uuid
 from datetime import datetime, date
 from sqlalchemy import String, Boolean, Integer, Float, Date, Numeric, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMPTZ
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS
+TIMESTAMPTZ = _TS(timezone=True)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .client import Base
 
