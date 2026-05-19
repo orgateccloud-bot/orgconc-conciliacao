@@ -474,8 +474,6 @@ def _render_html(relatorio_md: str) -> str:
     )
 
 
-
-
 @app.get("/app", include_in_schema=False)
 def frontend():
     """Serve o dashboard frontend."""

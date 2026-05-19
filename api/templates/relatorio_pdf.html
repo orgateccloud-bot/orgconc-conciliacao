@@ -3,12 +3,14 @@
 <head>
 <meta charset="UTF-8"/>
 <title>ORGATEC — Conciliação {{ report_id }}</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --navy: #0F172A; --blue: #0369A1; --green: #16A34A;
-    --red: #DC2626;  --orange: #D97706; --border: #E2E8F0;
+    --navy: #0F172A; --blue: #0052FF; --blue-soft: #4D7CFF; --sky: #0EA5E9;
+    --aurora-1: #DBEAFE; --aurora-2: #BFDBFE;
+    --green: #16A34A; --red: #DC2626; --orange: #D97706;
+    --border: #E2E8F0;
   }
   @page {
     size: A4;
@@ -24,7 +26,10 @@
     font-size: 11pt;
     color: #1a202c;
     line-height: 1.6;
-    background: #fff;
+    background:
+      radial-gradient(at 15% 8%, var(--aurora-2) 0%, transparent 45%),
+      radial-gradient(at 85% 90%, #E0E7FF 0%, transparent 45%),
+      #F0F7FF;
   }
 
   .print-bar {
@@ -38,29 +43,49 @@
   .print-bar h2 { font-size: 14px; font-weight: 700; }
   .print-bar p  { font-size: 11px; opacity: .7; }
   .btn-pdf {
-    background: var(--blue); color: #fff;
+    background: linear-gradient(135deg, var(--blue), var(--sky)); color: #fff;
     border: none; padding: 9px 20px;
     border-radius: 6px; font-size: 13px; font-weight: 600;
     cursor: pointer; display: flex; align-items: center; gap: 8px;
     font-family: inherit;
+    box-shadow: 0 4px 12px rgba(0,82,255,.3);
   }
   .btn-pdf:hover { opacity: .9; }
 
-  .wrap { max-width: 800px; margin: 56px auto 40px; background: #fff; }
+  .wrap {
+    max-width: 800px; margin: 56px auto 40px;
+    background: rgba(255,255,255,.86);
+    border: 1px solid rgba(186,230,253,.6);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(15,23,42,.10);
+    overflow: hidden;
+  }
 
   .hd {
-    background: var(--navy);
+    background: linear-gradient(135deg, var(--navy) 0%, #0B1B3D 45%, var(--blue) 100%);
     color: #fff;
     padding: 24px 32px;
     display: flex; align-items: center; gap: 16px;
-    border-radius: 8px 8px 0 0;
+    border-radius: 16px 16px 0 0;
+    position: relative;
+    overflow: hidden;
   }
+  .hd::after {
+    content: ""; position: absolute;
+    right: -100px; top: -100px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(77,124,255,.5), transparent 65%);
+    pointer-events: none;
+  }
+  .hd > * { position: relative; z-index: 1; }
   .logo { width: 48px; height: 48px; }
-  .hd-brand h1 { font-size: 20pt; font-weight: 700; }
-  .hd-brand p  { font-size: 9pt; opacity: .65; text-transform: uppercase; letter-spacing: .12em; }
+  .hd-brand h1 { font-size: 20pt; font-weight: 700; font-family: 'Calistoga', serif; }
+  .hd-brand p  { font-size: 9pt; opacity: .85; text-transform: uppercase; letter-spacing: .12em; }
   .hd-spacer { flex: 1; }
   .hd-meta { text-align: right; font-size: 9pt; }
   .hd-meta strong { font-size: 10pt; }
+
+  .body-inner { padding: 24px 32px; }
 
   .kpi-grid {
     display: grid;
@@ -69,8 +94,10 @@
     background: var(--border);
     border: 1px solid var(--border);
     margin-bottom: 24px;
+    border-radius: 8px;
+    overflow: hidden;
   }
-  .kpi { background: #fff; padding: 14px 16px; }
+  .kpi { background: rgba(255,255,255,.85); padding: 14px 16px; }
   .kpi-label {
     font-size: 8pt; font-weight: 600;
     text-transform: uppercase; letter-spacing: .08em;
@@ -90,9 +117,9 @@
     color: var(--navy); margin: 24px 0 10px;
     padding-bottom: 6px; border-bottom: 2px solid var(--border);
   }
-  .anom-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 24px; }
+  .anom-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 24px; border-radius: 8px; overflow: hidden; }
   .anom-table th {
-    background: var(--navy); color: #fff;
+    background: linear-gradient(180deg, var(--navy), #0B1B3D); color: #fff;
     padding: 7px 10px; text-align: left; font-weight: 600;
   }
   .anom-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -101,11 +128,11 @@
   .sev-alerta  { color: var(--orange); font-weight: 700; }
   .sev-atencao { color: #CA8A04;       font-weight: 700; }
 
-  .report-md h1 { font-size: 16pt; color: var(--navy); margin: 20px 0 8px; font-weight: 700; }
+  .report-md h1 { font-size: 16pt; color: var(--navy); margin: 20px 0 8px; font-weight: 700; font-family: 'Calistoga', serif; }
   .report-md h2 {
     font-size: 12pt; color: var(--blue); font-weight: 700;
     margin: 18px 0 8px;
-    padding-left: 10px; border-left: 3px solid var(--blue);
+    padding-left: 10px; border-left: 3px solid var(--sky);
   }
   .report-md h3 { font-size: 11pt; color: var(--navy); font-weight: 600; margin: 14px 0 6px; }
   .report-md p  { margin-bottom: 8px; }
@@ -162,59 +189,61 @@
     </div>
   </div>
 
-  <div class="kpi-grid">
-    <div class="kpi">
-      <div class="kpi-label">Transações</div>
-      <div class="kpi-value blue">{{ total_tx }}</div>
-      <div class="kpi-sub">{{ n_contas }} conta(s)</div>
+  <div class="body-inner">
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Transações</div>
+        <div class="kpi-value blue">{{ total_tx }}</div>
+        <div class="kpi-sub">{{ n_contas }} conta(s)</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Créditos</div>
+        <div class="kpi-value green">R$ {{ "{:,.0f}".format(total_cred) }}</div>
+        <div class="kpi-sub">entradas</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Débitos</div>
+        <div class="kpi-value red">R$ {{ "{:,.0f}".format(total_deb_abs) }}</div>
+        <div class="kpi-sub">saídas</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Anomalias</div>
+        <div class="kpi-value {% if n_anom %}red{% else %}green{% endif %}">{{ n_anom }}</div>
+        <div class="kpi-sub">🔴 {{ n_crit }} · 🟠 {{ n_alerta }} · 🟡 {{ n_atenc }}</div>
+      </div>
     </div>
-    <div class="kpi">
-      <div class="kpi-label">Créditos</div>
-      <div class="kpi-value green">R$ {{ "{:,.0f}".format(total_cred) }}</div>
-      <div class="kpi-sub">entradas</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-label">Débitos</div>
-      <div class="kpi-value red">R$ {{ "{:,.0f}".format(total_deb_abs) }}</div>
-      <div class="kpi-sub">saídas</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-label">Anomalias</div>
-      <div class="kpi-value {% if n_anom %}red{% else %}green{% endif %}">{{ n_anom }}</div>
-      <div class="kpi-sub">🔴 {{ n_crit }} · 🟠 {{ n_alerta }} · 🟡 {{ n_atenc }}</div>
-    </div>
-  </div>
 
-  {% if anomalias %}
-  <div class="section-title">Anomalias Detectadas ({{ n_anom }})</div>
-  <table class="anom-table">
-    <thead>
-      <tr><th>Severidade</th><th>Tipo</th><th>Título / Conta</th><th>Valor</th><th>Detalhe</th></tr>
-    </thead>
-    <tbody>
-      {% for a in anomalias %}
-      <tr>
-        <td class="sev-{{ a.severidade }}">
-          {% if a.severidade == "critico" %}🔴 CRÍTICO
-          {% elif a.severidade == "alerta" %}🟠 ALERTA
-          {% else %}🟡 ATENÇÃO{% endif %}
-        </td>
-        <td>{{ a.tipo or "" }}</td>
-        <td><strong>{{ a.titulo or "" }}</strong><br/><small>{{ a.conta or "" }}</small></td>
-        <td>{% if a.valor %}R$ {{ "{:,.2f}".format(a.valor) }}{% else %}—{% endif %}</td>
-        <td>{{ a.detalhe or "" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
+    {% if anomalias %}
+    <div class="section-title">Anomalias Detectadas ({{ n_anom }})</div>
+    <table class="anom-table">
+      <thead>
+        <tr><th>Severidade</th><th>Tipo</th><th>Título / Conta</th><th>Valor</th><th>Detalhe</th></tr>
+      </thead>
+      <tbody>
+        {% for a in anomalias %}
+        <tr>
+          <td class="sev-{{ a.severidade }}">
+            {% if a.severidade == "critico" %}🔴 CRÍTICO
+            {% elif a.severidade == "alerta" %}🟠 ALERTA
+            {% else %}🟡 ATENÇÃO{% endif %}
+          </td>
+          <td>{{ a.tipo or "" }}</td>
+          <td><strong>{{ a.titulo or "" }}</strong><br/><small>{{ a.conta or "" }}</small></td>
+          <td>{% if a.valor %}R$ {{ "{:,.2f}".format(a.valor) }}{% else %}—{% endif %}</td>
+          <td>{{ a.detalhe or "" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
 
-  <div class="section-title">Análise Detalhada</div>
-  <div class="report-md">{{ body|safe }}</div>
+    <div class="section-title">Análise Detalhada</div>
+    <div class="report-md">{{ body|safe }}</div>
 
-  <div class="ft">
-    <span>© ORGATEC Contabilidade e Auditoria · orgatec.cloud@gmail.com</span>
-    <span>Gerado em {{ agora }}</span>
+    <div class="ft">
+      <span>© ORGATEC Contabilidade e Auditoria · orgatec.cloud@gmail.com</span>
+      <span>Gerado em {{ agora }}</span>
+    </div>
   </div>
 </div>
 
