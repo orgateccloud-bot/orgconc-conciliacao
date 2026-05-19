@@ -539,72 +539,64 @@ def _render_html(relatorio_md: str) -> str:
 </html>"""
 
 
-def _gerar_xlsx(extratos: list[dict], anomalias: list[dict]) -> bytes:
-    """Gera planilha XLSX com 3 abas estilizadas: Resumo, Transacoes, Anomalias."""
-    from openpyxl.drawing.image import Image as XLImage
-    from openpyxl.utils import get_column_letter
-    from datetime import datetime
-
-    wb = Workbook()
-
-    # Paleta ORGATEC
-    BLUE_DARK = "0A3A7A"
-    BLUE = "1E6FD9"
-    BLUE_LIGHT = "4DC8FF"
-    WHITE = "FFFFFF"
-    GRAY_BORDER = "E2E8F0"
-    GRAY_LIGHT = "F7FAFC"
-    GRAY_HOVER = "EFF6FF"
+def _xlsx_estilos() -> dict:
+    """Paleta de cores, fontes e bordas compartilhados entre as abas XLSX."""
+    BLUE_DARK = "0A3A7A"; BLUE = "1E6FD9"; WHITE = "FFFFFF"
+    GRAY_BORDER = "E2E8F0"; GRAY_LIGHT = "F7FAFC"; GRAY_HOVER = "EFF6FF"
     RED = "DC2626"; RED_BG = "FEE2E2"
     ORANGE = "EA580C"; ORANGE_BG = "FFEDD5"
     YELLOW = "CA8A04"; YELLOW_BG = "FEF9C3"
     GREEN = "16A34A"
-
-    fill_blue_dark = PatternFill("solid", fgColor=BLUE_DARK)
-    fill_blue = PatternFill("solid", fgColor=BLUE)
-    fill_zebra = PatternFill("solid", fgColor=GRAY_LIGHT)
-    fill_kpi_blue = PatternFill("solid", fgColor=GRAY_HOVER)
-    fill_critico = PatternFill("solid", fgColor=RED_BG)
-    fill_alerta = PatternFill("solid", fgColor=ORANGE_BG)
-    fill_atencao = PatternFill("solid", fgColor=YELLOW_BG)
-
-    font_h_white = Font(bold=True, color=WHITE, size=11, name="Calibri")
-    font_brand = Font(bold=True, size=24, color=BLUE_DARK, name="Calibri")
-    font_brand_sub = Font(color=BLUE, size=10, italic=True, name="Calibri")
-    font_section = Font(bold=True, size=13, color=BLUE_DARK, name="Calibri")
-    font_kpi_lbl = Font(bold=True, size=9, color="64748B", name="Calibri")
-    font_kpi_val_red = Font(bold=True, size=22, color=RED, name="Calibri")
-    font_kpi_val_orange = Font(bold=True, size=22, color=ORANGE, name="Calibri")
-    font_kpi_val_yellow = Font(bold=True, size=22, color=YELLOW, name="Calibri")
-    font_kpi_val_blue = Font(bold=True, size=22, color=BLUE_DARK, name="Calibri")
-
     side_thin = Side(border_style="thin", color=GRAY_BORDER)
-    side_blue = Side(border_style="medium", color=BLUE)
-    border_all = Border(left=side_thin, right=side_thin, top=side_thin, bottom=side_thin)
-    border_kpi = Border(left=side_thin, right=side_thin, top=Side(border_style="medium", color=BLUE), bottom=side_thin)
+    return dict(
+        BLUE_DARK=BLUE_DARK, BLUE=BLUE, WHITE=WHITE,
+        RED=RED, ORANGE=ORANGE, YELLOW=YELLOW, GREEN=GREEN,
+        fill_blue_dark=PatternFill("solid", fgColor=BLUE_DARK),
+        fill_blue=PatternFill("solid", fgColor=BLUE),
+        fill_zebra=PatternFill("solid", fgColor=GRAY_LIGHT),
+        fill_kpi_blue=PatternFill("solid", fgColor=GRAY_HOVER),
+        fill_critico=PatternFill("solid", fgColor=RED_BG),
+        fill_alerta=PatternFill("solid", fgColor=ORANGE_BG),
+        fill_atencao=PatternFill("solid", fgColor=YELLOW_BG),
+        font_h_white=Font(bold=True, color=WHITE, size=11, name="Calibri"),
+        font_brand=Font(bold=True, size=24, color=BLUE_DARK, name="Calibri"),
+        font_brand_sub=Font(color=BLUE, size=10, italic=True, name="Calibri"),
+        font_section=Font(bold=True, size=13, color=BLUE_DARK, name="Calibri"),
+        font_kpi_lbl=Font(bold=True, size=9, color="64748B", name="Calibri"),
+        font_kpi_val_red=Font(bold=True, size=22, color=RED, name="Calibri"),
+        font_kpi_val_orange=Font(bold=True, size=22, color=ORANGE, name="Calibri"),
+        font_kpi_val_yellow=Font(bold=True, size=22, color=YELLOW, name="Calibri"),
+        font_kpi_val_blue=Font(bold=True, size=22, color=BLUE_DARK, name="Calibri"),
+        side_thin=side_thin,
+        border_all=Border(left=side_thin, right=side_thin, top=side_thin, bottom=side_thin),
+        border_kpi=Border(left=side_thin, right=side_thin,
+                          top=Side(border_style="medium", color=BLUE), bottom=side_thin),
+        FMT_BRL='R$ #,##0.00;[Red]-R$ #,##0.00',
+        FMT_BRL_POS='R$ #,##0.00',
+    )
 
-    FMT_BRL = 'R$ #,##0.00;[Red]-R$ #,##0.00'
-    FMT_BRL_POS = 'R$ #,##0.00'
 
-    def estilo_header(cells, fill=fill_blue_dark, font=font_h_white):
-        for c in cells:
-            c.fill = fill
-            c.font = font
-            c.alignment = Alignment(horizontal="left", vertical="center")
-            c.border = border_all
+def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -> None:
+    """Preenche a aba Resumo com cabecalho, KPIs e tabelas."""
+    from openpyxl.drawing.image import Image as XLImage
+    from datetime import datetime
 
-    def linha_borda(ws, row, cols):
-        for c in range(1, cols + 1):
-            ws.cell(row=row, column=c).border = border_all
-
-    # =========================================================
-    # ABA 1: RESUMO
-    # =========================================================
-    ws = wb.active
     ws.title = "Resumo"
     ws.sheet_view.showGridLines = False
 
-    # --- Cabecalho ORGATEC (linhas 1-3) ---
+    def estilo_header(cells, fill=None, font=None):
+        fill = fill or e["fill_blue_dark"]
+        font = font or e["font_h_white"]
+        for c in cells:
+            c.fill = fill; c.font = font
+            c.alignment = Alignment(horizontal="left", vertical="center")
+            c.border = e["border_all"]
+
+    def linha_borda(ws_inner, row, cols):
+        for c in range(1, cols + 1):
+            ws_inner.cell(row=row, column=c).border = e["border_all"]
+
+    # Cabecalho ORGATEC (linhas 1-3)
     if _LOGO_PATH.exists():
         try:
             img = XLImage(str(_LOGO_PATH))
@@ -617,13 +609,13 @@ def _gerar_xlsx(extratos: list[dict], anomalias: list[dict]) -> bytes:
     ws.row_dimensions[3].height = 10
 
     ws["B1"] = "ORGATEC"
-    ws["B1"].font = font_brand
+    ws["B1"].font = e["font_brand"]
     ws["B2"] = "Contabilidade & Auditoria"
-    ws["B2"].font = font_brand_sub
+    ws["B2"].font = e["font_brand_sub"]
     ws.merge_cells("B1:E1"); ws.merge_cells("B2:E2")
 
     ws["F1"] = "RELATÓRIO DE CONCILIAÇÃO"
-    ws["F1"].font = Font(bold=True, color=BLUE_DARK, size=11, name="Calibri")
+    ws["F1"].font = Font(bold=True, color=e["BLUE_DARK"], size=11, name="Calibri")
     ws["F1"].alignment = Alignment(horizontal="right", vertical="bottom")
     ws.merge_cells("F1:H1")
     ws["F2"] = f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}"
@@ -631,18 +623,17 @@ def _gerar_xlsx(extratos: list[dict], anomalias: list[dict]) -> bytes:
     ws["F2"].alignment = Alignment(horizontal="right", vertical="top")
     ws.merge_cells("F2:H2")
 
-    # Linha divisoria azul
     for col in range(1, 9):
-        ws.cell(row=3, column=col).fill = fill_blue
+        ws.cell(row=3, column=col).fill = e["fill_blue"]
     ws.row_dimensions[3].height = 4
 
-    # --- KPIs (linhas 5-8) ---
-    ws.cell(row=5, column=1, value="VISÃO GERAL").font = font_section
+    # KPIs (linhas 5-10)
+    ws.cell(row=5, column=1, value="VISÃO GERAL").font = e["font_section"]
     ws.merge_cells("A5:H5")
 
-    total_tx = sum(e["qtd"] for e in extratos)
-    total_cred = sum(t["valor"] for e in extratos for t in e["transacoes"] if t["valor"] > 0)
-    total_deb = sum(t["valor"] for e in extratos for t in e["transacoes"] if t["valor"] < 0)
+    total_tx   = sum(ex["qtd"] for ex in extratos)
+    total_cred = sum(t["valor"] for ex in extratos for t in ex["transacoes"] if t["valor"] > 0)
+    total_deb  = sum(t["valor"] for ex in extratos for t in ex["transacoes"] if t["valor"] < 0)
     saldo = total_cred + total_deb
 
     sev_count = {"critico": 0, "alerta": 0, "atencao": 0}
@@ -650,58 +641,58 @@ def _gerar_xlsx(extratos: list[dict], anomalias: list[dict]) -> bytes:
         sev_count[a["severidade"]] = sev_count.get(a["severidade"], 0) + 1
 
     kpis = [
-        ("TRANSAÇÕES",  total_tx,     font_kpi_val_blue,   fill_kpi_blue,  None),
-        ("CRÉDITOS",    total_cred,   Font(bold=True, size=18, color=GREEN, name="Calibri"), fill_kpi_blue, FMT_BRL_POS),
-        ("DÉBITOS",     total_deb,    Font(bold=True, size=18, color=RED, name="Calibri"),   fill_kpi_blue, FMT_BRL),
-        ("SALDO",       saldo,        Font(bold=True, size=18, color=BLUE_DARK, name="Calibri"), fill_kpi_blue, FMT_BRL),
+        ("TRANSAÇÕES",  total_tx,   e["font_kpi_val_blue"],
+         e["fill_kpi_blue"], None),
+        ("CRÉDITOS",    total_cred,
+         Font(bold=True, size=18, color=e["GREEN"], name="Calibri"),
+         e["fill_kpi_blue"], e["FMT_BRL_POS"]),
+        ("DÉBITOS",     total_deb,
+         Font(bold=True, size=18, color=e["RED"], name="Calibri"),
+         e["fill_kpi_blue"], e["FMT_BRL"]),
+        ("SALDO",       saldo,
+         Font(bold=True, size=18, color=e["BLUE_DARK"], name="Calibri"),
+         e["fill_kpi_blue"], e["FMT_BRL"]),
     ]
     sev_kpis = [
-        ("🔴 CRÍTICAS", sev_count["critico"], font_kpi_val_red, fill_critico),
-        ("🟠 ALERTAS",  sev_count["alerta"],  font_kpi_val_orange, fill_alerta),
-        ("🟡 ATENÇÃO",  sev_count["atencao"], font_kpi_val_yellow, fill_atencao),
-        ("✅ TOTAL",    len(anomalias),       font_kpi_val_blue, fill_kpi_blue),
+        ("🔴 CRÍTICAS", sev_count["critico"], e["font_kpi_val_red"],    e["fill_critico"]),
+        ("🟠 ALERTAS",  sev_count["alerta"],  e["font_kpi_val_orange"], e["fill_alerta"]),
+        ("🟡 ATENÇÃO",  sev_count["atencao"], e["font_kpi_val_yellow"], e["fill_atencao"]),
+        ("✅ TOTAL",    len(anomalias),        e["font_kpi_val_blue"],   e["fill_kpi_blue"]),
     ]
 
-    border_kpi_bottom = Border(left=side_thin, right=side_thin, bottom=side_thin)
+    border_kpi_bottom = Border(left=e["side_thin"], right=e["side_thin"], bottom=e["side_thin"])
 
-    def aplicar_kpi(ws, row_lbl, row_val, col, label, val, font_val, fill, fmt=None):
-        # Label
-        lbl = ws.cell(row=row_lbl, column=col, value=label)
-        lbl.font = font_kpi_lbl
+    def aplicar_kpi(ws_inner, row_lbl, row_val, col, label, val, font_val, fill, fmt=None):
+        lbl = ws_inner.cell(row=row_lbl, column=col, value=label)
+        lbl.font = e["font_kpi_lbl"]
         lbl.alignment = Alignment(horizontal="left", vertical="bottom")
-        lbl.fill = fill
-        lbl.border = border_kpi
-        # Valor
-        v = ws.cell(row=row_val, column=col, value=val)
+        lbl.fill = fill; lbl.border = e["border_kpi"]
+        v = ws_inner.cell(row=row_val, column=col, value=val)
         v.font = font_val
         v.alignment = Alignment(horizontal="left", vertical="center")
-        v.fill = fill
-        v.border = border_kpi_bottom
+        v.fill = fill; v.border = border_kpi_bottom
         if fmt:
             v.number_format = fmt
-        # Celula adjacente do merge (mesmo fill/border, sem reler StyleProxy)
-        lbl2 = ws.cell(row=row_lbl, column=col + 1)
-        lbl2.fill = fill; lbl2.border = border_kpi
-        v2 = ws.cell(row=row_val, column=col + 1)
+        lbl2 = ws_inner.cell(row=row_lbl, column=col + 1)
+        lbl2.fill = fill; lbl2.border = e["border_kpi"]
+        v2 = ws_inner.cell(row=row_val, column=col + 1)
         v2.fill = fill; v2.border = border_kpi_bottom
-        ws.merge_cells(start_row=row_lbl, start_column=col, end_row=row_lbl, end_column=col + 1)
-        ws.merge_cells(start_row=row_val, start_column=col, end_row=row_val, end_column=col + 1)
+        ws_inner.merge_cells(start_row=row_lbl, start_column=col, end_row=row_lbl, end_column=col + 1)
+        ws_inner.merge_cells(start_row=row_val, start_column=col, end_row=row_val, end_column=col + 1)
 
-    # 4 KPIs financeiros (linhas 6-7)
     for i, (label, val, font_val, fill, fmt) in enumerate(kpis):
         aplicar_kpi(ws, 6, 7, 1 + i * 2, label, val, font_val, fill, fmt)
     ws.row_dimensions[6].height = 18
     ws.row_dimensions[7].height = 30
 
-    # 4 KPIs de anomalias (linhas 9-10)
     for i, (label, val, font_val, fill) in enumerate(sev_kpis):
         aplicar_kpi(ws, 9, 10, 1 + i * 2, label, val, font_val, fill)
     ws.row_dimensions[9].height = 18
     ws.row_dimensions[10].height = 30
 
-    # --- Tabela por conta ---
+    # Tabela por conta
     r = 12
-    ws.cell(row=r, column=1, value="MOVIMENTAÇÃO POR CONTA").font = font_section
+    ws.cell(row=r, column=1, value="MOVIMENTAÇÃO POR CONTA").font = e["font_section"]
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
     r += 1
     headers_conta = ["Conta", "Arquivo", "Transações", "Créditos", "Débitos", "Saldo", "% do Total"]
@@ -710,199 +701,219 @@ def _gerar_xlsx(extratos: list[dict], anomalias: list[dict]) -> bytes:
     estilo_header([ws.cell(row=r, column=c) for c in range(1, len(headers_conta) + 1)])
     ws.row_dimensions[r].height = 24
     r += 1
-    for i, e in enumerate(extratos):
-        cred = sum(t["valor"] for t in e["transacoes"] if t["valor"] > 0)
-        deb = sum(t["valor"] for t in e["transacoes"] if t["valor"] < 0)
-        sld = cred + deb
-        pct = (e["qtd"] / total_tx) if total_tx else 0
-        ws.cell(row=r, column=1, value=e["conta"])
-        ws.cell(row=r, column=2, value=e["arquivo"])
-        ws.cell(row=r, column=3, value=e["qtd"])
-        c = ws.cell(row=r, column=4, value=cred); c.number_format = FMT_BRL_POS; c.font = Font(color=GREEN, name="Calibri")
-        c = ws.cell(row=r, column=5, value=deb);  c.number_format = FMT_BRL;     c.font = Font(color=RED, name="Calibri")
-        c = ws.cell(row=r, column=6, value=sld);  c.number_format = FMT_BRL;     c.font = Font(bold=True, name="Calibri")
-        c = ws.cell(row=r, column=7, value=pct);  c.number_format = '0.0%'
+    for i, ex in enumerate(extratos):
+        cred = sum(t["valor"] for t in ex["transacoes"] if t["valor"] > 0)
+        deb  = sum(t["valor"] for t in ex["transacoes"] if t["valor"] < 0)
+        sld  = cred + deb
+        pct  = (ex["qtd"] / total_tx) if total_tx else 0
+        ws.cell(row=r, column=1, value=ex["conta"])
+        ws.cell(row=r, column=2, value=ex["arquivo"])
+        ws.cell(row=r, column=3, value=ex["qtd"])
+        c = ws.cell(row=r, column=4, value=cred)
+        c.number_format = e["FMT_BRL_POS"]; c.font = Font(color=e["GREEN"], name="Calibri")
+        c = ws.cell(row=r, column=5, value=deb)
+        c.number_format = e["FMT_BRL"];     c.font = Font(color=e["RED"], name="Calibri")
+        c = ws.cell(row=r, column=6, value=sld)
+        c.number_format = e["FMT_BRL"];     c.font = Font(bold=True, name="Calibri")
+        c = ws.cell(row=r, column=7, value=pct); c.number_format = '0.0%'
         if i % 2 == 1:
             for col in range(1, len(headers_conta) + 1):
-                ws.cell(row=r, column=col).fill = fill_zebra
+                ws.cell(row=r, column=col).fill = e["fill_zebra"]
         linha_borda(ws, r, len(headers_conta))
         ws.row_dimensions[r].height = 22
         r += 1
 
-    # --- Top categorias contábeis ---
-    stats_resumo = _top_categorias_e_contrapartes(extratos)
-    cats_resumo = stats_resumo["cats"]
-    if cats_resumo:
+    # Top categorias contabeis
+    stats = _top_categorias_e_contrapartes(extratos)
+    cats = stats["cats"]
+    if cats:
         r += 2
-        ws.cell(row=r, column=1, value="🏷 DISTRIBUIÇÃO POR CATEGORIA").font = font_section
+        ws.cell(row=r, column=1, value="🏷 DISTRIBUIÇÃO POR CATEGORIA").font = e["font_section"]
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
         r += 1
         for col, txt in enumerate(["Categoria", "Qtd", "Valor Total", "Ticket Médio", "% Volume", "", "", ""], 1):
             if txt:
                 ws.cell(row=r, column=col, value=txt)
-        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)], fill=fill_blue, font=font_h_white)
+        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)],
+                      fill=e["fill_blue"], font=e["font_h_white"])
         ws.row_dimensions[r].height = 22
         r += 1
-        vol_total_calc = sum(abs(d["valor"]) for d in cats_resumo.values()) or 1
-        for i, cat in enumerate(sorted(cats_resumo, key=lambda k: -abs(cats_resumo[k]["valor"]))):
-            d = cats_resumo[cat]
+        vol_total = sum(abs(d["valor"]) for d in cats.values()) or 1
+        for i, cat in enumerate(sorted(cats, key=lambda k: -abs(cats[k]["valor"]))):
+            d = cats[cat]
             tk = d["valor"] / d["qtd"] if d["qtd"] else 0
-            pct = abs(d["valor"]) / vol_total_calc
+            pct = abs(d["valor"]) / vol_total
             ws.cell(row=r, column=1, value=cat)
             ws.cell(row=r, column=2, value=d["qtd"])
-            c = ws.cell(row=r, column=3, value=d["valor"]); c.number_format = FMT_BRL
-            c.font = Font(color=GREEN if d["valor"] > 0 else RED, name="Calibri")
-            c = ws.cell(row=r, column=4, value=tk); c.number_format = FMT_BRL
+            c = ws.cell(row=r, column=3, value=d["valor"]); c.number_format = e["FMT_BRL"]
+            c.font = Font(color=e["GREEN"] if d["valor"] > 0 else e["RED"], name="Calibri")
+            c = ws.cell(row=r, column=4, value=tk); c.number_format = e["FMT_BRL"]
             c = ws.cell(row=r, column=5, value=pct); c.number_format = '0.0%'
             if i % 2 == 1:
                 for col in range(1, 6):
-                    ws.cell(row=r, column=col).fill = fill_zebra
+                    ws.cell(row=r, column=col).fill = e["fill_zebra"]
             for col in range(1, 6):
-                ws.cell(row=r, column=col).border = border_all
+                ws.cell(row=r, column=col).border = e["border_all"]
             r += 1
 
-    # --- Top contrapartes ---
-    contrapartes = stats_resumo["contrapartes"]
-    top_cps = sorted(contrapartes.items(), key=lambda x: -abs(x[1]["valor"]))[:10]
+    # Top contrapartes
+    top_cps = sorted(stats["contrapartes"].items(), key=lambda x: -abs(x[1]["valor"]))[:10]
     if top_cps:
         r += 2
-        ws.cell(row=r, column=1, value="🏆 TOP 10 CONTRAPARTES").font = font_section
+        ws.cell(row=r, column=1, value="🏆 TOP 10 CONTRAPARTES").font = e["font_section"]
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
         r += 1
         for col, txt in enumerate(["#", "Contraparte (CNPJ/CPF/Nome)", "Transações", "Volume", "Tipo"], 1):
             ws.cell(row=r, column=col, value=txt)
-        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)], fill=fill_blue, font=font_h_white)
+        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)],
+                      fill=e["fill_blue"], font=e["font_h_white"])
         ws.row_dimensions[r].height = 22
         r += 1
         for i, (chave, d) in enumerate(top_cps, 1):
             ws.cell(row=r, column=1, value=i)
             ws.cell(row=r, column=2, value=chave)
             ws.cell(row=r, column=3, value=d["qtd"])
-            c = ws.cell(row=r, column=4, value=d["valor"]); c.number_format = FMT_BRL
-            c.font = Font(color=GREEN if d["valor"] > 0 else RED, bold=True, name="Calibri")
-            tipo = "Recebimento" if d["valor"] > 0 else "Pagamento"
-            ws.cell(row=r, column=5, value=tipo)
+            c = ws.cell(row=r, column=4, value=d["valor"]); c.number_format = e["FMT_BRL"]
+            c.font = Font(color=e["GREEN"] if d["valor"] > 0 else e["RED"], bold=True, name="Calibri")
+            ws.cell(row=r, column=5, value="Recebimento" if d["valor"] > 0 else "Pagamento")
             if i % 2 == 0:
                 for col in range(1, 6):
-                    ws.cell(row=r, column=col).fill = fill_zebra
+                    ws.cell(row=r, column=col).fill = e["fill_zebra"]
             for col in range(1, 6):
-                ws.cell(row=r, column=col).border = border_all
+                ws.cell(row=r, column=col).border = e["border_all"]
             r += 1
 
-    # --- Top anomalias criticas ---
+    # Top anomalias criticas
     crit_lista = [a for a in anomalias if a["severidade"] == "critico"][:10]
     if crit_lista:
         r += 2
-        ws.cell(row=r, column=1, value="🔴 ACHADOS CRÍTICOS").font = font_section
+        ws.cell(row=r, column=1, value="🔴 ACHADOS CRÍTICOS").font = e["font_section"]
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
         r += 1
         for col, txt in enumerate(["Tipo", "Título", "Conta", "Valor", "Detalhe"], 1):
             ws.cell(row=r, column=col, value=txt)
-        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)], fill=fill_blue, font=font_h_white)
+        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)],
+                      fill=e["fill_blue"], font=e["font_h_white"])
         ws.row_dimensions[r].height = 22
         r += 1
         for a in crit_lista:
             ws.cell(row=r, column=1, value=a["tipo"])
             ws.cell(row=r, column=2, value=a["titulo"])
             ws.cell(row=r, column=3, value=a["conta"])
-            c = ws.cell(row=r, column=4, value=a.get("valor", 0)); c.number_format = FMT_BRL
+            c = ws.cell(row=r, column=4, value=a.get("valor", 0)); c.number_format = e["FMT_BRL"]
             ws.cell(row=r, column=5, value=a["detalhe"])
             for col in range(1, 6):
-                ws.cell(row=r, column=col).fill = fill_critico
-                ws.cell(row=r, column=col).border = border_all
+                ws.cell(row=r, column=col).fill = e["fill_critico"]
+                ws.cell(row=r, column=col).border = e["border_all"]
             r += 1
 
-    # Larguras
     for col, w in zip("ABCDEFGH", [26, 32, 13, 16, 16, 16, 13, 8]):
         ws.column_dimensions[col].width = w
 
-    # =========================================================
-    # ABA 2: TRANSACOES
-    # =========================================================
-    ws2 = wb.create_sheet("Transações")
-    ws2.sheet_view.showGridLines = False
-    ws2.row_dimensions[1].height = 30
+
+def _xlsx_aba_transacoes(wb, extratos: list[dict], e: dict) -> None:
+    """Cria e preenche a aba Transacoes."""
+    from openpyxl.utils import get_column_letter
+
+    ws = wb.create_sheet("Transações")
+    ws.sheet_view.showGridLines = False
+    ws.row_dimensions[1].height = 30
     cabec = ["Conta", "Data", "Tipo", "Valor", "Memo", "Nome", "Doc"]
     for col, txt in enumerate(cabec, 1):
-        cell = ws2.cell(row=1, column=col, value=txt)
-        cell.fill = fill_blue_dark
-        cell.font = font_h_white
+        cell = ws.cell(row=1, column=col, value=txt)
+        cell.fill = e["fill_blue_dark"]
+        cell.font = e["font_h_white"]
         cell.alignment = Alignment(horizontal="left", vertical="center")
-        cell.border = border_all
+        cell.border = e["border_all"]
     r = 2
-    for e in extratos:
-        for t in e["transacoes"]:
-            ws2.cell(row=r, column=1, value=e["conta"])
-            ws2.cell(row=r, column=2, value=t["data"])
-            tipo_cell = ws2.cell(row=r, column=3, value=t["tipo"])
+    for ex in extratos:
+        for t in ex["transacoes"]:
+            ws.cell(row=r, column=1, value=ex["conta"])
+            ws.cell(row=r, column=2, value=t["data"])
+            tipo_cell = ws.cell(row=r, column=3, value=t["tipo"])
             if t["tipo"] == "CREDIT":
-                tipo_cell.font = Font(color=GREEN, bold=True, name="Calibri", size=10)
+                tipo_cell.font = Font(color=e["GREEN"], bold=True, name="Calibri", size=10)
             elif t["tipo"] == "DEBIT":
-                tipo_cell.font = Font(color=RED, bold=True, name="Calibri", size=10)
-            c = ws2.cell(row=r, column=4, value=t["valor"])
-            c.number_format = FMT_BRL
-            c.font = Font(color=GREEN if t["valor"] > 0 else RED, name="Calibri", size=10, bold=True)
-            ws2.cell(row=r, column=5, value=t["memo"])
-            ws2.cell(row=r, column=6, value=t["nome"])
-            ws2.cell(row=r, column=7, value=t["checknum"])
+                tipo_cell.font = Font(color=e["RED"], bold=True, name="Calibri", size=10)
+            c = ws.cell(row=r, column=4, value=t["valor"])
+            c.number_format = e["FMT_BRL"]
+            c.font = Font(color=e["GREEN"] if t["valor"] > 0 else e["RED"],
+                          name="Calibri", size=10, bold=True)
+            ws.cell(row=r, column=5, value=t["memo"])
+            ws.cell(row=r, column=6, value=t["nome"])
+            ws.cell(row=r, column=7, value=t["checknum"])
             if r % 2 == 0:
                 for col in range(1, len(cabec) + 1):
                     if col != 3 and col != 4:
-                        ws2.cell(row=r, column=col).fill = fill_zebra
+                        ws.cell(row=r, column=col).fill = e["fill_zebra"]
             for col in range(1, len(cabec) + 1):
-                ws2.cell(row=r, column=col).border = border_all
+                ws.cell(row=r, column=col).border = e["border_all"]
             r += 1
     for col, w in zip("ABCDEFG", [26, 12, 10, 16, 52, 30, 14]):
-        ws2.column_dimensions[col].width = w
-    ws2.freeze_panes = "A2"
-    ws2.auto_filter.ref = f"A1:{get_column_letter(len(cabec))}{r-1}"
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(cabec))}{r-1}"
 
-    # =========================================================
-    # ABA 3: ANOMALIAS
-    # =========================================================
-    ws3 = wb.create_sheet("Anomalias")
-    ws3.sheet_view.showGridLines = False
-    ws3.row_dimensions[1].height = 30
-    cabec3 = ["Severidade", "Tipo", "Título", "Conta", "Valor", "Detalhe"]
-    for col, txt in enumerate(cabec3, 1):
-        cell = ws3.cell(row=1, column=col, value=txt)
-        cell.fill = fill_blue_dark
-        cell.font = font_h_white
+
+def _xlsx_aba_anomalias(wb, anomalias: list[dict], e: dict) -> None:
+    """Cria e preenche a aba Anomalias."""
+    from openpyxl.utils import get_column_letter
+
+    ws = wb.create_sheet("Anomalias")
+    ws.sheet_view.showGridLines = False
+    ws.row_dimensions[1].height = 30
+    cabec = ["Severidade", "Tipo", "Título", "Conta", "Valor", "Detalhe"]
+    for col, txt in enumerate(cabec, 1):
+        cell = ws.cell(row=1, column=col, value=txt)
+        cell.fill = e["fill_blue_dark"]
+        cell.font = e["font_h_white"]
         cell.alignment = Alignment(horizontal="left", vertical="center")
-        cell.border = border_all
+        cell.border = e["border_all"]
     r = 2
     sev_meta = {
-        "critico": ("🔴 CRÍTICO", fill_critico, Font(bold=True, color=RED, name="Calibri", size=10)),
-        "alerta":  ("🟠 ALERTA",  fill_alerta,  Font(bold=True, color=ORANGE, name="Calibri", size=10)),
-        "atencao": ("🟡 ATENÇÃO", fill_atencao, Font(bold=True, color=YELLOW, name="Calibri", size=10)),
+        "critico": ("🔴 CRÍTICO", e["fill_critico"],
+                    Font(bold=True, color=e["RED"],    name="Calibri", size=10)),
+        "alerta":  ("🟠 ALERTA",  e["fill_alerta"],
+                    Font(bold=True, color=e["ORANGE"], name="Calibri", size=10)),
+        "atencao": ("🟡 ATENÇÃO", e["fill_atencao"],
+                    Font(bold=True, color=e["YELLOW"], name="Calibri", size=10)),
     }
     for a in anomalias:
         label, fill, font_sev = sev_meta.get(a["severidade"], ("?", None, None))
-        sev_cell = ws3.cell(row=r, column=1, value=label)
+        sev_cell = ws.cell(row=r, column=1, value=label)
         if font_sev:
             sev_cell.font = font_sev
-        ws3.cell(row=r, column=2, value=a["tipo"])
-        ws3.cell(row=r, column=3, value=a["titulo"])
-        ws3.cell(row=r, column=4, value=a["conta"])
-        c = ws3.cell(row=r, column=5, value=a.get("valor", 0))
-        c.number_format = FMT_BRL
-        ws3.cell(row=r, column=6, value=a["detalhe"])
+        ws.cell(row=r, column=2, value=a["tipo"])
+        ws.cell(row=r, column=3, value=a["titulo"])
+        ws.cell(row=r, column=4, value=a["conta"])
+        c = ws.cell(row=r, column=5, value=a.get("valor", 0))
+        c.number_format = e["FMT_BRL"]
+        ws.cell(row=r, column=6, value=a["detalhe"])
         if fill:
-            for col in range(1, len(cabec3) + 1):
-                ws3.cell(row=r, column=col).fill = fill
-        for col in range(1, len(cabec3) + 1):
-            ws3.cell(row=r, column=col).border = border_all
+            for col in range(1, len(cabec) + 1):
+                ws.cell(row=r, column=col).fill = fill
+        for col in range(1, len(cabec) + 1):
+            ws.cell(row=r, column=col).border = e["border_all"]
         r += 1
     for col, w in zip("ABCDEF", [15, 22, 42, 28, 16, 60]):
-        ws3.column_dimensions[col].width = w
-    ws3.freeze_panes = "A2"
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "A2"
     if r > 2:
-        ws3.auto_filter.ref = f"A1:{get_column_letter(len(cabec3))}{r-1}"
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(cabec))}{r-1}"
 
+
+def _gerar_xlsx(extratos: list[dict], anomalias: list[dict]) -> bytes:
+    """Gera planilha XLSX com 3 abas estilizadas: Resumo, Transacoes, Anomalias."""
+    wb = Workbook()
+    e = _xlsx_estilos()
+    _xlsx_aba_resumo(wb.active, extratos, anomalias, e)
+    _xlsx_aba_transacoes(wb, extratos, e)
+    _xlsx_aba_anomalias(wb, anomalias, e)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf.read()
+
 
 
 def _parse_pdf(content: bytes, filename: str) -> list[dict]:
@@ -1168,88 +1179,81 @@ def _fmt_csv(transacoes: list[dict]) -> str:
     return "\n".join(linhas)
 
 
+_REGRAS_ANTES_PIX: list[tuple[tuple[str, ...], str]] = [
+    (("INTERCREDIS", "TRANSF.CONTAS", "TRANSF. CONTAS", "TRANSF MESMA TIT",
+      "TRANSFERENCIA MESMA TITULARIDADE", "TRANSFERENCIA ENTRE CONTAS PROPRIAS"),
+     "Transferencia entre contas proprias"),
+    (("DAS ", "DARF", "RFB", "INSS", "FGTS", "DAE", "GPS", "GNRE", "DAR ",
+      "IRRF", "IRPJ", "CSLL", "ICMS", "ISS", "GUIA"),
+     "Tributo"),
+    (("IOF",), "Despesa Financeira - IOF"),
+    (("JUROS", "MORA"), "Despesa Financeira - Juros"),
+    (("MULTA",), "Despesa Financeira - Multa"),
+    (("PAGAMENTO TD", "LIBERACAO TD", "LIBERAÇÃO TD", "CRED.LIBERA",
+      "DESCONTO TITULO", "CREDITO ROTATIVO", "ANTECIPACAO RECEBIVEL"),
+     "Operacao de Credito - TD"),
+    (("EMPRESTIMO", "EMPRÉSTIMO", "FINANCIAMENTO", "CDC", "PARCELA EMP"),
+     "Pagamento de Emprestimo"),
+    (("CHEQUE ESPECIAL", "LIMITE CONTA"), "Despesa Financeira - Cheque Especial"),
+    (("SEGURO", "PRESTAMISTA", "PROTECAO", "PROTEÇÃO"), "Despesa - Seguro"),
+]
+_REGRAS_APOS_PIX: list[tuple[tuple[str, ...], str]] = [
+    (("COMPRA MASTERCARD", "COMPRA VISA", "COMPRA CARTAO", "COMPRA ELO",
+      "COMPRA HIPERCARD", "COMPRA AMEX", "COMPRA DEBITO", "DEBITO COMPRA"),
+     "Compra Cartao"),
+    (("FATURA CARTAO", "PAGTO FATURA", "PAGAMENTO CARTAO CRED"), "Pagamento Fatura Cartao"),
+    (("PEDAGIO", "PEDÁGIO", "SICOOB TAG", "SEM PARAR", "MOVE MAIS", "CONECTCAR"),
+     "Despesa - Pedagio"),
+    (("POSTO ", "COMBUSTIVEL", "GASOLINA", "ETANOL", "DIESEL", "SHELL", "IPIRANGA"),
+     "Despesa - Combustivel"),
+    (("TARIFA", "MENSALIDADE", "ANUIDADE", "CESTA ", "PACOTE ", "MANUTENCAO",
+      "MANUTENÇÃO CONTA"),
+     "Despesa Bancaria - Tarifa"),
+    (("BOLETO", "COBRAN", "COMPE", "COMPENSADO", "TITULO PAGO"), "Pagamento Boleto"),
+    (("SALARIO", "SALÁRIO", "FOLHA PGTO", "PAGAMENTO FOLHA", "PROVENTO", "ADIANTAMENTO SAL"),
+     "Folha de Pagamento"),
+    (("PRO LABORE", "PRÓ-LABORE", "PRO-LABORE", "RETIRADA SOCIO"),
+     "Pro-Labore / Retirada Socio"),
+    (("ALUGUEL", "CONDOMINIO", "CONDOMÍNIO"), "Despesa - Aluguel/Condominio"),
+    (("ENERGIA ELETRICA", "ENERGIA ELÉTRICA", "ENEL", "CEMIG", "COELBA", "COPEL",
+      "CELPE", "CELESC", "ELEKTRO", "LIGHT", "EQUATORIAL"),
+     "Despesa - Energia Eletrica"),
+    (("AGUA", "ÁGUA", "SABESP", "CEDAE", "COPASA", "EMBASA", "SANEPAR"), "Despesa - Agua"),
+    (("TELEFON", "VIVO", "CLARO", "OI ", "TIM ", "INTERNET", "OPERADORA"),
+     "Despesa - Telecom"),
+    (("SAQUE", "RETIRADA"), "Saque"),
+    (("DEPOSITO", "DEPÓSITO"), "Deposito em Dinheiro"),
+    (("ESTORNO", "DEVOLUC"), "Estorno"),
+]
+
+
 def _classificar(memo: str, nome: str) -> str:
     """Classificacao contabil heuristica multi-banco (Sicoob, BB, Itau, Bradesco, Santander, Caixa, Inter, Nubank, C6)."""
     s = f"{memo} {nome}".upper()
-    has = lambda *terms: any(t in s for t in terms)
+    match = lambda *t: any(x in s for x in t)
 
-    # Transferencias internas
-    if has("INTERCREDIS", "TRANSF.CONTAS", "TRANSF. CONTAS", "TRANSF MESMA TIT",
-           "TRANSFERENCIA MESMA TITULARIDADE", "TRANSFERENCIA ENTRE CONTAS PROPRIAS"):
-        return "Transferencia entre contas proprias"
-    # Tributos federais/estaduais
-    if has("DAS ", "DARF", "RFB", "INSS", "FGTS", "DAE", "GPS", "GNRE", "DAR ",
-           "IRRF", "IRPJ", "CSLL", "ICMS", "ISS", "GUIA"):
-        return "Tributo"
-    # IOF/Juros/Multas
-    if "IOF" in s: return "Despesa Financeira - IOF"
-    if has("JUROS", "MORA"): return "Despesa Financeira - Juros"
-    if has("MULTA"): return "Despesa Financeira - Multa"
-    # Operacoes de credito
-    if has("PAGAMENTO TD", "LIBERACAO TD", "LIBERAÇÃO TD", "CRED.LIBERA",
-           "DESCONTO TITULO", "CREDITO ROTATIVO", "ANTECIPACAO RECEBIVEL"):
-        return "Operacao de Credito - TD"
-    if has("EMPRESTIMO", "EMPRÉSTIMO", "FINANCIAMENTO", "CDC", "PARCELA EMP"):
-        return "Pagamento de Emprestimo"
-    if has("CHEQUE ESPECIAL", "LIMITE CONTA"):
-        return "Despesa Financeira - Cheque Especial"
-    # Seguros
-    if has("SEGURO", "PRESTAMISTA", "PROTECAO", "PROTEÇÃO"):
-        return "Despesa - Seguro"
-    # PIX (varios formatos por banco)
+    for termos, cat in _REGRAS_ANTES_PIX:
+        if any(t in s for t in termos):
+            return cat
+
     if "PIX" in s:
-        if has("EMITIDO", "ENVIADO", "PAGAMENTO PIX", "PIX SAIDA", "DEBITO PIX"):
+        if match("EMITIDO", "ENVIADO", "PAGAMENTO PIX", "PIX SAIDA", "DEBITO PIX"):
             return "Pagamento PIX - Fornecedor/Despesa"
-        if has("RECEB", "CREDITO PIX", "CRÉDITO PIX", "PIX ENTRADA", "PIX RECEBIDO"):
+        if match("RECEB", "CREDITO PIX", "CRÉDITO PIX", "PIX ENTRADA", "PIX RECEBIDO"):
             return "Receita PIX"
         return "PIX - A classificar"
-    # TED/DOC
-    if has("TED ", "DOC "):
-        if has("RECEB", "CREDITO", "CRÉDITO"):
+
+    if match("TED ", "DOC "):
+        if match("RECEB", "CREDITO", "CRÉDITO"):
             return "Receita TED/DOC"
         return "Pagamento TED/DOC"
-    # Cartao
-    if has("COMPRA MASTERCARD", "COMPRA VISA", "COMPRA CARTAO", "COMPRA ELO",
-           "COMPRA HIPERCARD", "COMPRA AMEX", "COMPRA DEBITO", "DEBITO COMPRA"):
-        return "Compra Cartao"
-    if has("FATURA CARTAO", "PAGTO FATURA", "PAGAMENTO CARTAO CRED"):
-        return "Pagamento Fatura Cartao"
-    # Combustivel/Pedagio/Transporte
-    if has("PEDAGIO", "PEDÁGIO", "SICOOB TAG", "SEM PARAR", "MOVE MAIS", "CONECTCAR"):
-        return "Despesa - Pedagio"
-    if has("POSTO ", "COMBUSTIVEL", "GASOLINA", "ETANOL", "DIESEL", "SHELL", "IPIRANGA"):
-        return "Despesa - Combustivel"
-    # Tarifas bancarias
-    if has("TARIFA", "MENSALIDADE", "ANUIDADE", "CESTA ", "PACOTE ", "MANUTENCAO",
-           "MANUTENÇÃO CONTA"):
-        return "Despesa Bancaria - Tarifa"
-    # Boleto/Compe
-    if has("BOLETO", "COBRAN", "COMPE", "COMPENSADO", "TITULO PAGO"):
-        return "Pagamento Boleto"
-    # Salarios/Folha
-    if has("SALARIO", "SALÁRIO", "FOLHA PGTO", "PAGAMENTO FOLHA", "PROVENTO", "ADIANTAMENTO SAL"):
-        return "Folha de Pagamento"
-    if has("PRO LABORE", "PRÓ-LABORE", "PRO-LABORE", "RETIRADA SOCIO"):
-        return "Pro-Labore / Retirada Socio"
-    # Aluguel/Imoveis
-    if has("ALUGUEL", "CONDOMINIO", "CONDOMÍNIO"):
-        return "Despesa - Aluguel/Condominio"
-    # Utilidades
-    if has("ENERGIA ELETRICA", "ENERGIA ELÉTRICA", "ENEL", "CEMIG", "COELBA", "COPEL",
-           "CELPE", "CELESC", "ELEKTRO", "LIGHT", "EQUATORIAL"):
-        return "Despesa - Energia Eletrica"
-    if has("AGUA", "ÁGUA", "SABESP", "CEDAE", "COPASA", "EMBASA", "SANEPAR"):
-        return "Despesa - Agua"
-    if has("TELEFON", "VIVO", "CLARO", "OI ", "TIM ", "INTERNET", "OPERADORA"):
-        return "Despesa - Telecom"
-    # Saques/Depositos
-    if has("SAQUE", "RETIRADA"):
-        return "Saque"
-    if has("DEPOSITO", "DEPÓSITO"):
-        return "Deposito em Dinheiro"
-    if has("ESTORNO", "DEVOLUC"):
-        return "Estorno"
+
+    for termos, cat in _REGRAS_APOS_PIX:
+        if any(t in s for t in termos):
+            return cat
+
     return "A classificar"
+
 
 
 def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
