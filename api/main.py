@@ -1750,7 +1750,7 @@ def root():
         "endpoints": [
             "/health", "/docs",
             "/conciliar/ofx",
-            "/export/html/{report_id}", "/export/xlsx/{report_id}",
+            "/export/html/{report_id}", "/export/xlsx/{report_id}", "/export/pdf/{report_id}",
             "/clientes", "/clientes/{id}",
             "/logo-base64",
         ],
@@ -2315,18 +2315,33 @@ def export_xlsx(rid: str):
 
 
 @app.get("/export/pdf/{rid}", dependencies=[Depends(auth)])
-def export_pdf(rid: str, auto: int = 0):
-    """Abre visualizacao HTML print-optimized; usuario usa Ctrl+P / botao para salvar como PDF."""
+def export_pdf(rid: str, html: bool = False):
+    """Baixa relatorio em PDF (weasyprint server-side). Use ?html=true para receber HTML imprimivel."""
     ds = _carregar_dataset(rid)
-    html = _render_pdf_html(ds["relatorio"], ds["anomalias"], ds["extratos"], rid)
-    # Se auto=1 foi passado na URL, o JS dentro do HTML dispara o dialogo de impressao
-    if auto:
-        html = html.replace("location.search).get('auto') === '1'", "true", 1)
-    return Response(
-        content=html,
-        media_type="text/html; charset=utf-8",
-        headers={"Content-Disposition": f'inline; filename="conciliacao_{rid}.pdf"'},
-    )
+    html_content = _render_pdf_html(ds["relatorio"], ds["anomalias"], ds["extratos"], rid)
+
+    if html:
+        return Response(
+            content=html_content,
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": f'inline; filename="conciliacao_{rid}.html"'},
+        )
+
+    try:
+        import weasyprint
+        pdf_bytes = weasyprint.HTML(string=html_content, base_url=None).write_pdf()
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="conciliacao_{rid}.pdf"'},
+        )
+    except Exception as exc:
+        log.warning("weasyprint falhou (%s) — retornando HTML imprimivel", exc)
+        return Response(
+            content=html_content,
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": f'inline; filename="conciliacao_{rid}.html"'},
+        )
 
 
 @app.post("/conciliar/csv")
@@ -2349,7 +2364,7 @@ async def conciliar_csv(
     client = _get_client()
     try:
         resp = client.messages.create(
-            model="claude-sonnet-4-5",
+            model="claude-sonnet-4-6",
             max_tokens=max_tokens,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
