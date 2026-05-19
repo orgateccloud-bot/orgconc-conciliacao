@@ -9,14 +9,22 @@
   <link href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
-    /* ── Reset & Tokens ─────────────────────────────────────────── */
+    /* ── Reset & Tokens (Aurora Blue) ────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
       --navy:    #0F172A;
       --navy70:  rgba(15,23,42,.7);
-      --blue:    #0369A1;
-      --blue10:  #E0F2FE;
-      --blue20:  #BAE6FD;
+
+      /* Azul flamejante (gradiente principal) */
+      --blue:        #0052FF;
+      --blue-soft:   #4D7CFF;
+      --sky:         #0EA5E9;
+      --aurora-1:    #93C5FD;  /* blob mais claro */
+      --aurora-2:    #60A5FA;
+      --aurora-3:    #3B82F6;
+      --blue10:      #DBEAFE;
+      --blue20:      #BFDBFE;
+
       --green:   #16A34A;
       --green10: #DCFCE7;
       --purple:  #7C3AED;
@@ -25,36 +33,118 @@
       --red10:   #FEE2E2;
       --orange:  #D97706;
       --orange10:#FEF3C7;
-      --bg:      #F8FAFC;
-      --surface: #FFFFFF;
-      --border:  #E2E8F0;
-      --text:    #0F172A;
-      --muted:   #64748B;
+
+      /* Superfícies — translúcidas para glass */
+      --bg:          #F0F7FF;
+      --bg-mesh:     radial-gradient(at 20% 10%, #DBEAFE 0%, transparent 50%),
+                     radial-gradient(at 80% 80%, #E0E7FF 0%, transparent 50%),
+                     radial-gradient(at 50% 50%, #F0F9FF 0%, transparent 60%);
+      --surface:     rgba(255,255,255,.72);
+      --surface-solid: #FFFFFF;
+      --border:      rgba(186,230,253,.5);
+      --border-solid: #E2E8F0;
+      --text:        #0F172A;
+      --muted:       #64748B;
+
       --sidebar-w: 240px;
-      --radius:  8px;
-      --shadow:  0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
-      --shadow-lg: 0 4px 16px rgba(0,0,0,.12);
+      --radius:    14px;
+      --radius-sm: 10px;
+      --shadow:    0 4px 20px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.04);
+      --shadow-lg: 0 18px 50px rgba(15,23,42,.10), 0 4px 14px rgba(15,23,42,.05);
+      --shadow-glow: 0 0 40px rgba(77,124,255,.20);
+
+      --easing:    cubic-bezier(0.16, 1, 0.3, 1);
     }
     html { font-size: 16px; }
     body {
       font-family: 'Inter', sans-serif;
       background: var(--bg);
+      background-image: var(--bg-mesh);
+      background-attachment: fixed;
       color: var(--text);
       line-height: 1.6;
       min-height: 100dvh;
       display: flex;
+      position: relative;
+      overflow-x: hidden;
     }
+
+    /* ── Aurora background (blobs oscilando) ──────────────────────── */
+    .aurora {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .aurora-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: .55;
+      will-change: transform;
+    }
+    .aurora-blob.b1 {
+      width: 520px; height: 520px;
+      background: radial-gradient(circle, var(--aurora-3), transparent 60%);
+      top: -120px; left: -80px;
+      animation: aurora-float-1 22s ease-in-out infinite;
+    }
+    .aurora-blob.b2 {
+      width: 460px; height: 460px;
+      background: radial-gradient(circle, var(--sky), transparent 60%);
+      top: 30%; right: -100px;
+      animation: aurora-float-2 28s ease-in-out infinite;
+      opacity: .42;
+    }
+    .aurora-blob.b3 {
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, var(--aurora-1), transparent 60%);
+      bottom: -180px; left: 35%;
+      animation: aurora-float-3 32s ease-in-out infinite;
+      opacity: .50;
+    }
+    @keyframes aurora-float-1 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33%      { transform: translate(120px, 60px) scale(1.1); }
+      66%      { transform: translate(40px, 180px) scale(.92); }
+    }
+    @keyframes aurora-float-2 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      40%      { transform: translate(-140px, 80px) scale(1.15); }
+      75%      { transform: translate(-60px, -120px) scale(.88); }
+    }
+    @keyframes aurora-float-3 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      35%      { transform: translate(-100px, -80px) scale(1.08); }
+      70%      { transform: translate(80px, -40px) scale(.95); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .aurora-blob { animation: none; }
+    }
+
+    /* Sidebar e main precisam ficar acima da aurora */
+    .sidebar, .main { position: relative; z-index: 1; }
 
     /* ── Sidebar ────────────────────────────────────────────────── */
     .sidebar {
       position: fixed;
       inset: 0 auto 0 0;
       width: var(--sidebar-w);
-      background: var(--navy);
+      background: linear-gradient(180deg, #0F172A 0%, #0B1B3D 60%, #0A2456 100%);
+      box-shadow: 4px 0 30px rgba(15,23,42,.18), inset -1px 0 0 rgba(77,124,255,.12);
       display: flex;
       flex-direction: column;
       z-index: 100;
       overflow-y: auto;
+    }
+    .sidebar::after {
+      content: "";
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      width: 1px;
+      background: linear-gradient(180deg, transparent, rgba(77,124,255,.35), transparent);
+      pointer-events: none;
     }
     .sidebar-logo {
       padding: 20px 20px 16px;
@@ -129,8 +219,10 @@
       min-height: 100dvh;
     }
     .topbar {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,.65);
+      backdrop-filter: blur(18px) saturate(180%);
+      -webkit-backdrop-filter: blur(18px) saturate(180%);
+      border-bottom: 1px solid rgba(186,230,253,.45);
       padding: 0 32px;
       height: 56px;
       display: flex;
@@ -160,12 +252,18 @@
     .section { display: none; }
     .section.active { display: block; }
 
-    /* ── Cards base ─────────────────────────────────────────────── */
+    /* ── Cards base (glassmorphism) ─────────────────────────────── */
     .card {
       background: var(--surface);
+      backdrop-filter: blur(18px) saturate(180%);
+      -webkit-backdrop-filter: blur(18px) saturate(180%);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
+      transition: box-shadow .3s var(--easing), transform .3s var(--easing);
+    }
+    .card:hover {
+      box-shadow: var(--shadow-lg);
     }
     .card-header {
       padding: 16px 20px 12px;
@@ -356,8 +454,18 @@
     }
     .btn:active { transform: scale(.98); }
     .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-    .btn-primary { background: var(--blue); color: #fff; }
-    .btn-primary:hover:not(:disabled) { opacity: .9; box-shadow: 0 2px 8px rgba(3,105,161,.3); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--blue) 0%, var(--blue-soft) 50%, var(--sky) 100%);
+      background-size: 200% 100%;
+      background-position: 0% 50%;
+      color: #fff;
+      box-shadow: 0 6px 18px rgba(0,82,255,.28), inset 0 1px 0 rgba(255,255,255,.2);
+      transition: background-position .6s var(--easing), box-shadow .25s var(--easing), transform .1s;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background-position: 100% 50%;
+      box-shadow: 0 10px 28px rgba(0,82,255,.38), 0 0 24px rgba(77,124,255,.35), inset 0 1px 0 rgba(255,255,255,.25);
+    }
     .btn-green  { background: var(--green);  color: #fff; }
     .btn-purple { background: var(--purple); color: #fff; }
     .btn-outline {
@@ -763,6 +871,13 @@
   </style>
 </head>
 <body>
+
+<!-- ── Aurora background (camadas oscilando) ──────────────────── -->
+<div class="aurora" aria-hidden="true">
+  <div class="aurora-blob b1"></div>
+  <div class="aurora-blob b2"></div>
+  <div class="aurora-blob b3"></div>
+</div>
 
 <!-- ── Sidebar ──────────────────────────────────────────────────── -->
 <aside class="sidebar" role="navigation" aria-label="Menu principal">

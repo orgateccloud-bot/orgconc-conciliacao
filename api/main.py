@@ -418,13 +418,13 @@ def _carregar_dataset(rid: str) -> dict:
 
 
 def _render_html(relatorio_md: str) -> str:
-    """Renderiza relatorio Markdown como HTML completo standalone (fundo branco, logo embutida)."""
+    """Renderiza relatorio Markdown como HTML standalone com tema Aurora Blue."""
     body = md_to_html(relatorio_md, extensions=["tables", "fenced_code"])
     from datetime import datetime
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     logo_html = (
         f'<img src="{_LOGO_DATA_URI}" alt="ORGATEC" style="width:64px;height:64px;'
-        f'filter:drop-shadow(0 0 14px rgba(255,255,255,0.4));">'
+        f'filter:drop-shadow(0 0 18px rgba(77,124,255,0.55));">'
         if _LOGO_DATA_URI else ""
     )
     return f"""<!DOCTYPE html>
@@ -432,60 +432,137 @@ def _render_html(relatorio_md: str) -> str:
 <head>
 <meta charset="UTF-8">
 <title>ORGATEC - Relatorio de Conciliacao Bancaria</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  html, body {{ background: #ffffff; }}
+  :root {{
+    --navy: #0F172A; --blue: #0052FF; --blue-soft: #4D7CFF; --sky: #0EA5E9;
+    --aurora-1: #93C5FD; --aurora-2: #60A5FA; --aurora-3: #3B82F6;
+    --bg: #F0F7FF; --surface: rgba(255,255,255,.78); --border: rgba(186,230,253,.55);
+    --text: #0F172A; --muted: #475569;
+  }}
+  html, body {{
+    background: var(--bg);
+    background-image:
+      radial-gradient(at 20% 10%, #DBEAFE 0%, transparent 50%),
+      radial-gradient(at 80% 80%, #E0E7FF 0%, transparent 50%),
+      radial-gradient(at 50% 50%, #F0F9FF 0%, transparent 60%);
+    background-attachment: fixed;
+  }}
   body {{
     font-family: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
-    color: #1a202c;
+    color: var(--text);
     line-height: 1.65;
     font-size: 14px;
     -webkit-font-smoothing: antialiased;
+    position: relative;
+    overflow-x: hidden;
+    min-height: 100vh;
+    padding: 28px 16px 40px;
   }}
-  .wrap {{ max-width: 980px; margin: 0 auto; background: #ffffff; }}
+
+  /* Aurora oscilando */
+  .aurora {{ position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }}
+  .aurora-blob {{ position: absolute; border-radius: 50%; filter: blur(80px); will-change: transform; }}
+  .aurora-blob.b1 {{
+    width: 520px; height: 520px;
+    background: radial-gradient(circle, var(--aurora-3), transparent 60%);
+    top: -120px; left: -80px; opacity: .45;
+    animation: aurora-1 22s ease-in-out infinite;
+  }}
+  .aurora-blob.b2 {{
+    width: 460px; height: 460px;
+    background: radial-gradient(circle, var(--sky), transparent 60%);
+    top: 30%; right: -100px; opacity: .35;
+    animation: aurora-2 28s ease-in-out infinite;
+  }}
+  .aurora-blob.b3 {{
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, var(--aurora-1), transparent 60%);
+    bottom: -180px; left: 35%; opacity: .42;
+    animation: aurora-3 32s ease-in-out infinite;
+  }}
+  @keyframes aurora-1 {{
+    0%,100% {{ transform: translate(0,0) scale(1); }}
+    33% {{ transform: translate(120px,60px) scale(1.1); }}
+    66% {{ transform: translate(40px,180px) scale(.92); }}
+  }}
+  @keyframes aurora-2 {{
+    0%,100% {{ transform: translate(0,0) scale(1); }}
+    40% {{ transform: translate(-140px,80px) scale(1.15); }}
+    75% {{ transform: translate(-60px,-120px) scale(.88); }}
+  }}
+  @keyframes aurora-3 {{
+    0%,100% {{ transform: translate(0,0) scale(1); }}
+    35% {{ transform: translate(-100px,-80px) scale(1.08); }}
+    70% {{ transform: translate(80px,-40px) scale(.95); }}
+  }}
+  @media (prefers-reduced-motion: reduce) {{ .aurora-blob {{ animation: none; }} }}
+
+  .wrap {{
+    max-width: 980px; margin: 0 auto;
+    background: var(--surface);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(15,23,42,.10), 0 4px 14px rgba(15,23,42,.04);
+    position: relative; z-index: 1;
+    overflow: hidden;
+  }}
 
   .hd {{
-    background: linear-gradient(135deg, #0a3a7a 0%, #1e6fd9 60%, #4dc8ff 100%);
+    background: linear-gradient(135deg, #0F172A 0%, #0B1B3D 40%, #0052FF 100%);
     color: white;
-    padding: 32px 44px;
+    padding: 30px 44px;
     display: flex;
     align-items: center;
     gap: 22px;
     position: relative;
     overflow: hidden;
   }}
+  .hd::before {{
+    content: "";
+    position: absolute;
+    right: -180px; top: -180px;
+    width: 420px; height: 420px;
+    background: radial-gradient(circle, rgba(77,124,255,0.45), transparent 60%);
+    filter: blur(20px);
+    pointer-events: none;
+  }}
   .hd::after {{
     content: "";
     position: absolute;
-    right: -120px; top: -120px;
+    left: -120px; bottom: -160px;
     width: 360px; height: 360px;
-    background: radial-gradient(circle, rgba(255,255,255,0.15), transparent 65%);
+    background: radial-gradient(circle, rgba(14,165,233,0.35), transparent 65%);
+    filter: blur(24px);
     pointer-events: none;
   }}
+  .hd > * {{ position: relative; z-index: 1; }}
   .hd .brand .nm {{
+    font-family: "Calistoga", serif;
     font-size: 28px;
-    font-weight: 800;
+    font-weight: 400;
     letter-spacing: 0.5px;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    text-shadow: 0 2px 12px rgba(0,0,0,0.25);
   }}
   .hd .brand .tg {{
     font-size: 11px;
     letter-spacing: 3px;
     text-transform: uppercase;
-    opacity: 0.92;
+    opacity: 0.85;
     margin-top: 3px;
   }}
   .hd .spacer {{ flex: 1; }}
   .hd .meta {{
     text-align: right;
     font-size: 11px;
-    background: rgba(255,255,255,0.12);
-    border: 1px solid rgba(255,255,255,0.25);
-    border-radius: 10px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.20);
+    border-radius: 12px;
     padding: 10px 16px;
-    backdrop-filter: blur(8px);
-    position: relative; z-index: 1;
+    backdrop-filter: blur(12px);
   }}
   .hd .meta .ttl {{
     font-weight: 700;
@@ -496,29 +573,34 @@ def _render_html(relatorio_md: str) -> str:
   }}
   .hd .meta .dt {{ font-size: 12.5px; margin-top: 3px; font-weight: 600; }}
 
-  .content {{ padding: 36px 44px 16px; background: #ffffff; }}
+  .content {{ padding: 36px 44px 24px; background: transparent; }}
 
   h1 {{
-    font-size: 24px;
-    color: #0a3a7a;
-    border-bottom: 3px solid #1e6fd9;
-    padding-bottom: 10px;
-    margin-bottom: 18px;
-    font-weight: 800;
+    font-family: "Calistoga", serif;
+    font-size: 26px;
+    font-weight: 400;
+    color: var(--navy);
+    background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--aurora-1);
     letter-spacing: -0.3px;
   }}
   h2 {{
     font-size: 17px;
-    color: #1e6fd9;
+    color: var(--blue);
     margin-top: 28px;
     margin-bottom: 10px;
     font-weight: 700;
-    padding-left: 12px;
-    border-left: 3px solid #4dc8ff;
+    padding-left: 14px;
+    border-left: 3px solid var(--sky);
   }}
   h3 {{
     font-size: 14px;
-    color: #0a3a7a;
+    color: var(--navy);
     margin-top: 18px;
     margin-bottom: 8px;
     font-weight: 700;
@@ -528,43 +610,48 @@ def _render_html(relatorio_md: str) -> str:
   li {{ margin-bottom: 5px; color: #2d3748; }}
 
   table {{
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     width: 100%;
     margin: 14px 0;
     font-size: 12.5px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(15,23,42,.06);
+    border-radius: 12px;
     overflow: hidden;
+    border: 1px solid var(--border);
   }}
-  th, td {{ border: 1px solid #e2e8f0; padding: 9px 12px; text-align: left; }}
+  th, td {{ border-bottom: 1px solid #E2E8F0; padding: 10px 12px; text-align: left; }}
   th {{
-    background: linear-gradient(180deg, #0a3a7a, #1e6fd9);
+    background: linear-gradient(180deg, var(--navy) 0%, #1E3A8A 100%);
     color: white;
     font-weight: 600;
     font-size: 12px;
     letter-spacing: 0.3px;
+    border-bottom: none;
   }}
-  td {{ color: #2d3748; background: #ffffff; }}
-  tr:nth-child(even) td {{ background: #f8fafc; }}
-  tr:hover td {{ background: #eff6ff; }}
+  td {{ color: #2d3748; background: rgba(255,255,255,0.6); }}
+  tr:nth-child(even) td {{ background: rgba(240,247,255,0.5); }}
+  tr:hover td {{ background: rgba(219,234,254,0.6); }}
+  tr:last-child td {{ border-bottom: none; }}
 
   code {{
-    background: #eff6ff;
-    color: #1e6fd9;
+    background: rgba(219,234,254,0.6);
+    color: var(--blue);
     padding: 2px 7px;
-    border-radius: 4px;
+    border-radius: 6px;
     font-size: 12px;
     font-family: "JetBrains Mono", "Consolas", monospace;
     font-weight: 500;
   }}
-  strong {{ color: #0a3a7a; font-weight: 700; }}
+  strong {{ color: var(--navy); font-weight: 700; }}
   em {{ color: #4a5568; }}
 
   .ft {{
-    background: #f7fafc;
-    border-top: 1px solid #e2e8f0;
+    background: rgba(240,247,255,0.7);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border);
     padding: 16px 44px;
-    color: #718096;
+    color: var(--muted);
     font-size: 11px;
     display: flex;
     justify-content: space-between;
@@ -572,46 +659,30 @@ def _render_html(relatorio_md: str) -> str:
     gap: 8px;
   }}
   .ft .pill {{
-    background: #eff6ff;
-    color: #1e6fd9;
-    padding: 3px 10px;
+    background: linear-gradient(135deg, var(--blue), var(--sky));
+    color: #fff;
+    padding: 4px 12px;
     border-radius: 999px;
     font-weight: 600;
     font-size: 10.5px;
     letter-spacing: 0.5px;
+    box-shadow: 0 2px 8px rgba(0,82,255,0.25);
   }}
-  @media print {{ body {{ background: white; }} .wrap {{ box-shadow: none; }} .shimmer {{ display: none; }} }}
 
-  /* Camada branca oscilante */
-  @keyframes oscila {{
-    0%   {{ transform: translateX(-120%) skewX(-18deg); opacity: 0; }}
-    15%  {{ opacity: 1; }}
-    85%  {{ opacity: 1; }}
-    100% {{ transform: translateX(220%) skewX(-18deg); opacity: 0; }}
-  }}
-  .shimmer {{
-    position: fixed;
-    top: 0; left: 0;
-    width: 35%; height: 100%;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(255,255,255,0.055) 40%,
-      rgba(255,255,255,0.11) 50%,
-      rgba(255,255,255,0.055) 60%,
-      transparent 100%
-    );
-    animation: oscila 7s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    pointer-events: none;
-    z-index: 9999;
-  }}
-  @media (prefers-reduced-motion: reduce) {{
-    .shimmer {{ display: none; }}
+  @media print {{
+    html, body {{ background: white !important; background-image: none !important; }}
+    .aurora {{ display: none !important; }}
+    .wrap {{ box-shadow: none !important; backdrop-filter: none !important; background: white !important; }}
+    h1 {{ -webkit-text-fill-color: var(--navy) !important; color: var(--navy) !important; }}
   }}
 </style>
 </head>
 <body>
-  <div class="shimmer" aria-hidden="true"></div>
+  <div class="aurora" aria-hidden="true">
+    <div class="aurora-blob b1"></div>
+    <div class="aurora-blob b2"></div>
+    <div class="aurora-blob b3"></div>
+  </div>
   <div class="wrap">
     <div class="hd">
       {logo_html}
@@ -2070,8 +2141,10 @@ def _render_pdf_html(relatorio_md: str, anomalias: list, extratos: list, report_
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
   :root {{
-    --navy: #0F172A; --blue: #0369A1; --green: #16A34A;
-    --red: #DC2626;  --orange: #D97706; --border: #E2E8F0;
+    --navy: #0F172A; --blue: #0052FF; --blue-soft: #4D7CFF; --sky: #0EA5E9;
+    --aurora-1: #DBEAFE; --aurora-2: #BFDBFE;
+    --green: #16A34A; --red: #DC2626; --orange: #D97706;
+    --border: #E2E8F0;
   }}
   @page {{
     size: A4;
@@ -2087,7 +2160,10 @@ def _render_pdf_html(relatorio_md: str, anomalias: list, extratos: list, report_
     font-size: 11pt;
     color: #1a202c;
     line-height: 1.6;
-    background: #fff;
+    background:
+      radial-gradient(at 15% 8%, var(--aurora-2) 0%, transparent 45%),
+      radial-gradient(at 85% 90%, #E0E7FF 0%, transparent 45%),
+      #F0F7FF;
   }}
 
   /* ── Print button (esconde ao imprimir) ── */
@@ -2110,16 +2186,33 @@ def _render_pdf_html(relatorio_md: str, anomalias: list, extratos: list, report_
   }}
   .btn-pdf:hover {{ opacity: .9; }}
 
-  .wrap {{ max-width: 800px; margin: 56px auto 40px; background: #fff; }}
+  .wrap {{
+    max-width: 800px; margin: 56px auto 40px;
+    background: rgba(255,255,255,.86);
+    border: 1px solid rgba(186,230,253,.6);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(15,23,42,.10);
+    overflow: hidden;
+  }}
 
   /* ── Header ── */
   .hd {{
-    background: var(--navy);
+    background: linear-gradient(135deg, var(--navy) 0%, #0B1B3D 45%, var(--blue) 100%);
     color: #fff;
     padding: 24px 32px;
     display: flex; align-items: center; gap: 16px;
-    border-radius: 8px 8px 0 0;
+    border-radius: 16px 16px 0 0;
+    position: relative;
+    overflow: hidden;
   }}
+  .hd::after {{
+    content: ""; position: absolute;
+    right: -100px; top: -100px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(77,124,255,.5), transparent 65%);
+    pointer-events: none;
+  }}
+  .hd > * {{ position: relative; z-index: 1; }}
   .logo {{ width: 48px; height: 48px; }}
   .hd-brand h1 {{ font-size: 20pt; font-weight: 700; }}
   .hd-brand p  {{ font-size: 9pt; opacity: .65; text-transform: uppercase; letter-spacing: .12em; }}
