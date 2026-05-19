@@ -69,6 +69,9 @@ class Transacao(Base):
     predicoes:   Mapped[list["MlPredicao"]]   = relationship(back_populates="transacao")
 
 
+# DEPRECATED: tabela criada no schema inicial mas sem endpoints/CRUD ativos.
+# Mantida por enquanto para nao quebrar o schema do Supabase. Remover via
+# migration Alembic quando houver decisao final sobre ML.
 class MlPredicao(Base):
     __tablename__ = "ml_predicoes"
 
@@ -84,6 +87,9 @@ class MlPredicao(Base):
     transacao: Mapped["Transacao | None"] = relationship(back_populates="predicoes")
 
 
+# DEPRECATED: spaced-repetition planejada para "aprender" classificacoes do usuario.
+# Modulo api/db/fsrs.py foi removido. Tabela permanece no Supabase ate
+# migration de drop ser criada (apos confirmar com produto que feature foi cortada).
 class FsrsMemoria(Base):
     __tablename__ = "fsrs_memorias"
 

@@ -243,6 +243,89 @@ def test_upload_extensao_invalida():
     assert "nao suportada" in r.json()["detail"].lower() or "suport" in r.json()["detail"].lower()
 
 
+# ── Hardening: /conciliar/csv exige auth quando ORGCONC_AUTH_TOKEN ativo ──
+
+def test_conciliar_csv_exige_auth_quando_token_definido():
+    """/conciliar/csv NAO pode ser publico quando AUTH_TOKEN existe."""
+    with patch("api.main.AUTH_TOKEN", "segredo-de-teste"):
+        r = client.post(
+            "/conciliar/csv",
+            files=[
+                ("extrato", ("e.csv", b"data,valor\n2026-01-01,100", "text/csv")),
+                ("razao",   ("r.csv", b"data,valor\n2026-01-01,100", "text/csv")),
+            ],
+        )
+    assert r.status_code == 401, f"Esperado 401, recebido {r.status_code}: {r.text[:200]}"
+
+
+# ── Hardening: persistencia no response ───────────────────────────────────
+
+def test_conciliacao_simulacao_inclui_status_persistencia():
+    """O response do /conciliar/ofx deve trazer chave 'persistencia' com status."""
+    r = client.post(
+        "/conciliar/ofx?simular=true",
+        files=[("arquivos", ("test.ofx", OFX_SAMPLE, "application/x-ofx"))],
+    )
+    assert r.status_code == 200
+    j = r.json()
+    assert "persistencia" in j
+    assert j["persistencia"]["status"] in ("ok", "skip", "error")
+
+
+# ── Hardening: persistencia retorna error quando BD falha ─────────────────
+
+def test_persistencia_retorna_error_quando_bd_falha():
+    """_salvar_no_banco NAO pode engolir excecao silenciosamente."""
+    import asyncio
+    from api.main import _salvar_no_banco
+
+    with patch("api.main.DB_DISPONIVEL", True), \
+         patch("api.main.SessionLocal", side_effect=RuntimeError("conexao recusada")):
+        resultado = asyncio.run(
+            _salvar_no_banco("teste-rid", [], [], "simulacao")
+        )
+    assert resultado["status"] == "error"
+    assert "conexao" in resultado["mensagem"].lower() or resultado["erro"] == "RuntimeError"
+
+
+# ── Hardening: CSP endurecida ─────────────────────────────────────────────
+
+def test_csp_inclui_diretivas_endurecidas():
+    """CSP deve incluir connect-src, form-action, upgrade-insecure-requests."""
+    r = client.get("/health")
+    csp = r.headers.get("content-security-policy", "")
+    assert "connect-src 'self'" in csp
+    assert "form-action 'self'" in csp
+    assert "upgrade-insecure-requests" in csp
+
+
+# ── Hardening: marked.js pinado com SRI ───────────────────────────────────
+
+def test_frontend_usa_marked_com_sri():
+    """O dashboard nao pode mais carregar marked sem integrity hash."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert "marked@" in html, "marked.js deve estar pinado em uma versao explicita"
+    assert "integrity=\"sha384-" in html, "marked.js deve ter SRI hash"
+    assert "crossorigin=\"anonymous\"" in html
+
+
+# ── Hardening: limite agregado de upload ──────────────────────────────────
+
+def test_limite_agregado_de_upload_retorna_413():
+    """Soma dos uploads deve exceder MAX_UPLOAD_TOTAL_BYTES -> 413."""
+    # Baixa o limite agregado para 1KB para o teste e envia 3 OFX validos de >400B
+    with patch("api.main.MAX_UPLOAD_TOTAL_BYTES", 1024), \
+         patch("api.main.MAX_UPLOAD_TOTAL_MB", 0):
+        files = [
+            ("arquivos", (f"e{i}.ofx", OFX_SAMPLE.encode("latin-1"), "application/x-ofx"))
+            for i in range(3)  # 3x ~700B = ~2KB > 1KB
+        ]
+        r = client.post("/conciliar/ofx?simular=true", files=files)
+    assert r.status_code == 413, f"Esperado 413, recebido {r.status_code}: {r.text[:200]}"
+    assert "excede" in r.json()["detail"].lower() or "mb" in r.json()["detail"].lower()
+
+
 def test_gerar_xlsx_estrutura():
     txs = _parse_ofx(OFX_SAMPLE)
     extrato = {"conta": "AG 1234-5 / CC 9999-9", "qtd": len(txs), "transacoes": txs, "arquivo": "test.ofx"}

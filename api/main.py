@@ -65,6 +65,9 @@ CORS_ORIGINS = [
 ]
 MAX_UPLOAD_MB = int(os.environ.get("ORGCONC_MAX_UPLOAD_MB", "10"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+# Soma agregada de todos os arquivos por requisicao (anti-OOM)
+MAX_UPLOAD_TOTAL_MB = int(os.environ.get("ORGCONC_MAX_UPLOAD_TOTAL_MB", "50"))
+MAX_UPLOAD_TOTAL_BYTES = MAX_UPLOAD_TOTAL_MB * 1024 * 1024
 DATA_DIR = Path(os.environ.get("ORGCONC_DATA_DIR", "./data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -127,9 +130,12 @@ _CSP = (
     "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
     "font-src 'self' fonts.gstatic.com; "
     "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "form-action 'self'; "
     "object-src 'none'; "
     "frame-ancestors 'none'; "
-    "base-uri 'self'"
+    "base-uri 'self'; "
+    "upgrade-insecure-requests"
 )
 
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -210,9 +216,10 @@ async def _salvar_no_banco(
     anomalias: list[dict],
     modo: str,
     cliente_id: Optional[str] = None,
-) -> None:
+) -> dict:
+    """Persiste conciliacao no banco. Retorna dict com status: ok|skip|error."""
     if not DB_DISPONIVEL:
-        return
+        return {"status": "skip", "motivo": "db_indisponivel"}
     import uuid as _uuid
     from datetime import date
     try:
@@ -255,8 +262,10 @@ async def _salvar_no_banco(
                 ]
                 db.add_all(txs)
             log.info("Conciliacao %s salva no banco (%d transacoes)", report_id, len(txs))
-    except Exception:
+        return {"status": "ok", "transacoes_persistidas": len(txs)}
+    except Exception as exc:
         log.exception("Falha ao salvar no banco (conciliacao %s) — JSON preservado", report_id)
+        return {"status": "error", "erro": type(exc).__name__, "mensagem": str(exc)[:200]}
 
 
 async def read_limited(up: UploadFile, max_bytes: int = MAX_UPLOAD_BYTES) -> bytes:
@@ -1879,8 +1888,15 @@ async def conciliar_ofx(
         raise HTTPException(status_code=400, detail="Envie entre 1 e 50 arquivos")
 
     extratos_parsed = []
+    total_lido = 0
     for up in arquivos:
         content = await read_limited(up)
+        total_lido += len(content)
+        if total_lido > MAX_UPLOAD_TOTAL_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Soma dos uploads excede {MAX_UPLOAD_TOTAL_MB} MB",
+            )
         try:
             txs = _parse_arquivo(content, up.filename)
         except HTTPException:
@@ -1907,7 +1923,7 @@ async def conciliar_ofx(
         anomalias = _detectar_anomalias(extratos_parsed)
         relatorio = _conciliacao_local(extratos_parsed, anomalias)
         rid = _salvar_dataset(extratos_parsed, anomalias, relatorio)
-        await _salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao", cliente_id)
+        db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao", cliente_id)
         return JSONResponse({
             "modo": "simulacao_local",
             "report_id": rid,
@@ -1918,6 +1934,7 @@ async def conciliar_ofx(
             "anomalias": anomalias,
             "relatorio_md": relatorio,
             "relatorio_html": _render_html(relatorio),
+            "persistencia": db_status,
         })
 
     # ── Monta prompt comum ─────────────────────────────────────────────────
@@ -1956,7 +1973,7 @@ async def conciliar_ofx(
         )
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = _salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado)
-        await _salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
+        db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
 
         return JSONResponse({
             "modo": "multi_modelo",
@@ -1982,6 +1999,7 @@ async def conciliar_ofx(
             "relatorios_individuais": {
                 r["label"]: r["texto"] for r in resultados if r["texto"]
             },
+            "persistencia": db_status,
         })
 
     # ── Modo single model (Sonnet 4.6) ────────────────────────────────────
@@ -2009,7 +2027,7 @@ async def conciliar_ofx(
     relatorio = "\n".join(b.text for b in resp.content if b.type == "text")
     anomalias = _detectar_anomalias(extratos_parsed)
     rid = _salvar_dataset(extratos_parsed, anomalias, relatorio)
-    await _salvar_no_banco(rid, extratos_parsed, anomalias, "llm", cliente_id)
+    db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "llm", cliente_id)
 
     return JSONResponse({
         "modo": "claude_llm",
@@ -2026,6 +2044,7 @@ async def conciliar_ofx(
         "stop_reason": resp.stop_reason,
         "relatorio_md": relatorio,
         "relatorio_html": _render_html(relatorio),
+        "persistencia": db_status,
     })
 
 
@@ -2344,15 +2363,20 @@ def export_pdf(rid: str, html: bool = False):
         )
 
 
-@app.post("/conciliar/csv")
+@app.post("/conciliar/csv", dependencies=[Depends(auth)])
+@limiter.limit("20/minute")
 async def conciliar_csv(
+    request: Request,
     extrato: UploadFile = File(..., description="CSV do extrato bancario"),
     razao: UploadFile = File(..., description="CSV do razao contabil"),
     max_tokens: int = 16000,
 ):
     """Cruza extrato bancario CSV contra razao contabil CSV."""
-    extrato_text = (await extrato.read()).decode("utf-8", errors="ignore")
-    razao_text = (await razao.read()).decode("utf-8", errors="ignore")
+    # Limita tamanho de upload via read_limited (mesmo guard do /conciliar/ofx)
+    extrato_bytes = await read_limited(extrato)
+    razao_bytes = await read_limited(razao)
+    extrato_text = extrato_bytes.decode("utf-8", errors="ignore")
+    razao_text = razao_bytes.decode("utf-8", errors="ignore")
 
     prompt = (
         "Realize a conciliacao bancaria entre o extrato e o razao contabil "
