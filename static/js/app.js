@@ -540,16 +540,19 @@ function atualizarHistorico() {
 /* ── Charts (Chart.js) ──────────────────────────────────────────── */
 function paletaCharts() {
   const tema = document.documentElement.getAttribute('data-theme') || 'light';
+  // Paleta corporativa de auditoria: navy + slate + cinzas + 1 vermelho institucional
   return tema === 'dark'
     ? {
-        text: '#e6edf7', muted: '#9aa6c0', grid: 'rgba(255,255,255,.08)',
-        cores: ['#4dc8ff','#1e6fd9','#6fe3ff','#38e1a3','#ffb84d','#ff5c6c','#a78bfa','#ffe066','#f472b6','#22d3ee'],
-        critico: '#ff5c6c', alerta: '#ffb84d', atencao: '#ffe066',
+        text: '#E5E7EB', muted: '#94A3B8', grid: 'rgba(229,231,235,.06)',
+        cores: ['#60A5FA','#3B82F6','#1E40AF','#94A3B8','#64748B','#475569',
+                '#34D399','#F59E0B','#F87171','#A78BFA'],
+        critico: '#F87171', alerta: '#FBBF24', atencao: '#FCD34D',
       }
     : {
-        text: '#1f2b4d', muted: '#5a6b8a', grid: 'rgba(15,30,70,.08)',
-        cores: ['#1e6fd9','#0a3a7a','#4dc8ff','#10b981','#f59e0b','#ef4444','#7c3aed','#eab308','#ec4899','#06b6d4'],
-        critico: '#dc2626', alerta: '#d97706', atencao: '#ca8a04',
+        text: '#0F1419', muted: '#6B7280', grid: 'rgba(15,30,70,.05)',
+        cores: ['#1E3A8A','#2563EB','#3B82F6','#475569','#64748B','#94A3B8',
+                '#047857','#B45309','#B91C1C','#6D28D9'],
+        critico: '#B91C1C', alerta: '#B45309', atencao: '#D4A017',
       };
 }
 
