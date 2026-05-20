@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import io
+import logging
 from datetime import datetime
 from pathlib import Path
+
+log = logging.getLogger("orgconc.excel")
 
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XLImage
@@ -74,8 +77,8 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
             img = XLImage(str(_LOGO_PATH))
             img.width = 64; img.height = 64
             ws.add_image(img, "A1")
-        except Exception:
-            pass
+        except Exception as _e:
+            log.debug("Logo XLSX ignorada (nao encontrada ou formato invalido): %s", _e)
     ws.row_dimensions[1].height = 30
     ws.row_dimensions[2].height = 24
     ws.row_dimensions[3].height = 10

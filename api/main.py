@@ -67,7 +67,7 @@ try:
     from api.db import models
     from api.db import clientes as crud_clientes
     _DB_IMPORTS_OK = True
-except Exception:
+except Exception:  # nosec B110 — importação opcional; banco não é requisito
     pass
 
 AUTH_TOKEN = os.environ.get("ORGCONC_AUTH_TOKEN", "").strip()
@@ -460,8 +460,10 @@ def _salvar_dataset(extratos: list[dict], anomalias: list[dict], relatorio: str)
     # Limpa datasets antigos: mantem so os 50 mais recentes
     existing = sorted(DATA_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     for old in existing[50:]:
-        try: old.unlink()
-        except OSError: pass
+        try:
+            old.unlink()
+        except OSError as _e:
+            log.debug("Limpeza de dataset antigo falhou (ignorado): %s", _e)
     log.info("Dataset salvo: %s (%d transacoes, %d anomalias)", rid,
              sum(e["qtd"] for e in extratos), len(anomalias))
     return rid
@@ -469,10 +471,13 @@ def _salvar_dataset(extratos: list[dict], anomalias: list[dict], relatorio: str)
 
 def _carregar_dataset(rid: str) -> dict:
     """Carrega dataset persistido."""
-    # Sanitiza o ID para evitar path traversal
     if not re.fullmatch(r"[a-f0-9]{12}", rid):
         raise HTTPException(status_code=400, detail="ID invalido")
-    path = DATA_DIR / f"{rid}.json"
+    path = (DATA_DIR / f"{rid}.json").resolve()
+    # Defesa adicional: garante que o path resolvido ainda está dentro de DATA_DIR
+    # (protege contra symlinks criados no diretório de dados)
+    if not str(path).startswith(str(DATA_DIR.resolve()) + os.sep):
+        raise HTTPException(status_code=400, detail="ID invalido")
     if not path.exists():
         raise HTTPException(status_code=404, detail="Relatorio nao encontrado ou expirado")
     return json.loads(path.read_text(encoding="utf-8"))
@@ -533,6 +538,8 @@ def root():
 @app.get("/health")
 @limiter.limit("60/minute")
 async def health(request: Request):
+    if _IS_PROD:
+        return {"status": "ok", "versao": "1.0.0"}
     db_status = "nao_configurado"
     if DB_DISPONIVEL:
         try:
@@ -584,7 +591,7 @@ async def auth_login(request: Request, payload: LoginPayload):
         raise HTTPException(status_code=401, detail="Credenciais invalidas")
 
     token = emitir_token(sub=admin_email, email=admin_email, role="admin")
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer"}  # nosec B105 — OAuth2 token_type, não senha
 
 
 @app.get("/auth/me", tags=["auth"])
@@ -613,7 +620,22 @@ async def auth_hash_helper(request: Request, payload: HashPayload):
 
 # ── Clientes ──────────────────────────────────────────────────────────────
 
-@app.post("/clientes", dependencies=[Depends(auth)], status_code=201, tags=["clientes"])
+class ClienteResponse(BaseModel):
+    """Schema de resposta público para clientes — define explicitamente os campos expostos."""
+    id: str
+    nome: str
+    cnpj: Optional[str] = None
+    email: Optional[str] = None
+    telefone: Optional[str] = None
+    plano: str
+    ativo: bool
+    criado_em: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+@app.post("/clientes", dependencies=[Depends(auth)], status_code=201, tags=["clientes"],
+          response_model=ClienteResponse)
 @limiter.limit("20/minute")
 async def criar_cliente(request: Request, payload: ClienteCreate):
     """Cadastra um novo cliente."""
@@ -635,7 +657,8 @@ async def criar_cliente(request: Request, payload: ClienteCreate):
     }
 
 
-@app.get("/clientes", dependencies=[Depends(auth)], tags=["clientes"])
+@app.get("/clientes", dependencies=[Depends(auth)], tags=["clientes"],
+         response_model=list[ClienteResponse])
 @limiter.limit("30/minute")
 async def listar_clientes(request: Request, apenas_ativos: bool = True):
     """Lista todos os clientes."""
@@ -650,7 +673,8 @@ async def listar_clientes(request: Request, apenas_ativos: bool = True):
     ]
 
 
-@app.get("/clientes/{cliente_id}", dependencies=[Depends(auth)], tags=["clientes"])
+@app.get("/clientes/{cliente_id}", dependencies=[Depends(auth)], tags=["clientes"],
+         response_model=ClienteResponse)
 @limiter.limit("30/minute")
 async def buscar_cliente(request: Request, cliente_id: str):
     """Busca um cliente pelo ID."""

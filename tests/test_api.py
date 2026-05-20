@@ -931,3 +931,39 @@ def test_export_pdf_sem_auth_retorna_401():
     assert r.status_code == 401, (
         f"/export/pdf sem token deveria retornar 401, retornou {r.status_code}"
     )
+
+
+# ── Trilha 5: path traversal, health prod, response schema ───────────────
+
+def test_carregar_dataset_rid_invalido_retorna_400():
+    """IDs inválidos devem ser rejeitados (path traversal bloqueado).
+
+    '../etc/passwd' retorna 404 porque o router ASGI normaliza '..' antes de
+    chegar no handler — a traversal é bloqueada pelo roteador, não pela nossa
+    validação de regex. IDs com formato errado retornam 400 pela nossa validação.
+    """
+    for rid_invalido in ["../etc/passwd", "../../secret"]:
+        r = client.get(f"/export/html/{rid_invalido}")
+        assert r.status_code in (400, 404, 422), (
+            f"Traversal '{rid_invalido}' deveria ser bloqueado (400/404/422), "
+            f"retornou {r.status_code}"
+        )
+    for rid_invalido in ["AAAABBBBCCCC", "abc123"]:
+        r = client.get(f"/export/html/{rid_invalido}")
+        assert r.status_code == 400, (
+            f"rid '{rid_invalido}' deveria ser rejeitado com 400, retornou {r.status_code}"
+        )
+
+
+def test_health_em_prod_nao_expoe_config():
+    """Em produção, /health não deve expor api_key_configured nem banco_dados."""
+    with patch("api.main._IS_PROD", True):
+        r = client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert "api_key_configured" not in body, (
+        "/health expõe api_key_configured em produção — risk de reconhecimento"
+    )
+    assert "banco_dados" not in body, (
+        "/health expõe banco_dados em produção"
+    )
