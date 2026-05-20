@@ -1,0 +1,61 @@
+import { Logo } from "@/components/Logo";
+import { useTheme } from "@/lib/theme";
+import { Moon, Sun, Menu } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+interface Props {
+  title: string;
+  dbStatus: "online" | "offline" | "checking";
+  onToggleSidebar?: () => void;
+}
+
+export function Topbar({ title, dbStatus, onToggleSidebar }: Props) {
+  const { tema, toggle } = useTheme();
+
+  const dbColor = {
+    online:   "bg-success/10 text-success border-success/20",
+    offline:  "bg-danger/10 text-danger border-danger/20",
+    checking: "bg-muted text-muted-foreground border-border",
+  }[dbStatus];
+
+  return (
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-card/95 backdrop-blur px-4 lg:px-6">
+      <div className="flex items-center gap-3">
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="lg:hidden p-1.5 rounded-md hover:bg-secondary"
+            aria-label="Abrir menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
+        <Logo size={32} />
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold font-mono ${dbColor}`}
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              dbStatus === "online" ? "bg-success" : dbStatus === "offline" ? "bg-danger" : "bg-muted-foreground"
+            }`}
+          />
+          DB: {dbStatus}
+        </span>
+
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={toggle}
+          aria-label={tema === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
+          className="h-9 w-9"
+        >
+          {tema === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </Button>
+      </div>
+    </header>
+  );
+}
