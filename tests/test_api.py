@@ -840,3 +840,31 @@ def test_render_html_sanitiza_xss_em_relatorio_md():
     html = _render_html(payload_md)
     assert '<script' not in html.lower()
     assert 'Conteudo legitimo' in html
+
+
+# ── Trilha 2 — segurança ────────────────────────────────────────────────────
+
+def test_cors_sem_wildcard():
+    """CORS: allow_origins nunca deve ser ['*'] — wildcard fallback removido."""
+    from api.main import CORS_ORIGINS
+    assert "*" not in CORS_ORIGINS, (
+        "CORS_ORIGINS contém '*' — todas as origens estariam autorizadas"
+    )
+
+
+def test_security_headers_presentes():
+    """Middleware de segurança injeta headers obrigatórios em toda resposta."""
+    r = client.get("/health")
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert r.headers.get("x-frame-options") == "DENY"
+    assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+
+
+def test_auth_hash_bloqueado_em_prod():
+    """POST /auth/hash deve retornar 404 quando _IS_PROD=True."""
+    from unittest.mock import patch
+    with patch("api.main._IS_PROD", True):
+        r = client.post("/auth/hash", json={"senha": "senha123"})
+    assert r.status_code == 404, (
+        f"/auth/hash acessivel em producao — retornou {r.status_code}"
+    )

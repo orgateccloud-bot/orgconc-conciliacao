@@ -57,7 +57,7 @@ from api.services.excel import _gerar_xlsx
 # --- Config via .env (deve rodar ANTES dos imports de banco) ---
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 if _env_path.exists():
-    load_dotenv(_env_path, override=True)
+    load_dotenv(_env_path, override=False)  # shell vars (docker/CI) têm precedência
 
 # Imports de banco (opcionais — ativos somente se DATABASE_URL estiver configurado)
 _DB_IMPORTS_OK = False
@@ -124,7 +124,7 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(
     title="ORGATEC · Conciliacao Bancaria API",
     description="Cruza extratos OFX/PDF/XML contra razao contabil. Gera HTML/XLSX/PDF.",
-    version="0.4.0",
+    version="1.0.0",
     lifespan=_lifespan,
 )
 app.state.limiter = limiter
@@ -132,7 +132,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS if CORS_ORIGINS else ["*"],
+    allow_origins=CORS_ORIGINS,  # lista vazia nega todos — nunca "*"
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["X-Request-ID"],
@@ -156,6 +156,9 @@ _CSP = (
     "upgrade-insecure-requests"
 )
 
+_IS_PROD = os.environ.get("ORGCONC_ENV", "development").strip().lower() in ("production", "prod")
+
+
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
         response = await call_next(request)
@@ -164,6 +167,8 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        if _IS_PROD:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
 app.add_middleware(_SecurityHeadersMiddleware)
@@ -509,7 +514,7 @@ def animate_demo():
 def root():
     return {
         "service": "Conciliacao Bancaria API",
-        "version": "0.4.0",
+        "version": "1.0.0",
         "endpoints": [
             "/health", "/docs",
             "/conciliar/ofx",
@@ -533,7 +538,7 @@ async def health():
             db_status = "erro"
     return {
         "status": "ok",
-        "versao": "0.4.0",
+        "versao": "1.0.0",
         "api_key_configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "banco_dados": db_status,
     }
@@ -581,12 +586,14 @@ async def auth_me(user: TokenPayload = Depends(current_user)):
 
 
 @app.post("/auth/hash", tags=["auth"], include_in_schema=False)
-async def auth_hash_helper(payload: dict):
+@limiter.limit("5/minute")
+async def auth_hash_helper(request: Request, payload: dict):
     """Helper de DEV: gera bcrypt hash de uma senha (uso: setup inicial).
 
-    Disponivel apenas quando ORGCONC_AUTH_TOKEN esta vazio (modo dev).
+    Disponivel apenas em development/staging sem AUTH_TOKEN.
+    Bloqueado em producao e quando ORGCONC_AUTH_TOKEN estiver configurado.
     """
-    if AUTH_TOKEN:
+    if _IS_PROD or AUTH_TOKEN:
         raise HTTPException(status_code=404, detail="Indisponivel")
     senha = payload.get("senha", "")
     if not senha or len(senha) < 8:
