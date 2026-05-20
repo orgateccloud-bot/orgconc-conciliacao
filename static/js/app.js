@@ -977,6 +977,7 @@ function bindEventos() {
       'close-modal-backdrop':() => { if (e.target === el) fecharModal(); },
       'clear-history':       () => limparHistorico(),
       'toggle-accordion':    () => toggleAccordion(el),
+      'load-demo':           () => carregarDemo(),
     };
     if (handlers[acao]) handlers[acao]();
   });
@@ -1016,6 +1017,80 @@ function bindEventos() {
   });
 }
 
+/* ── Dataset demo (injecao para preview/apresentacao) ──────────── */
+function _datasetDemo() {
+  // Conjunto realista de 12 transacoes de uma empresa media + 5 anomalias
+  // que exercitam todos os componentes visuais (KPIs, audit layers,
+  // charts, ranking de risco, anomalias por severidade).
+  const tx = [
+    { data: '2026-05-02', valor:  48500.00, memo: 'TED Recebido ACME Industria S/A',         nome: 'ACME Industria',     categoria: 'Recebimentos'    },
+    { data: '2026-05-03', valor: -12450.00, memo: 'Folha Salarial Mai/26',                   nome: 'Funcionarios',       categoria: 'Folha'           },
+    { data: '2026-05-04', valor:  -3280.00, memo: 'DARF IRRF 1708 Mai/26',                   nome: 'Receita Federal',    categoria: 'Tributos'        },
+    { data: '2026-05-05', valor:  23700.00, memo: 'Recebimento Cliente XYZ Holdings',        nome: 'XYZ Holdings',       categoria: 'Recebimentos'    },
+    { data: '2026-05-06', valor:  -8900.00, memo: 'Pagamento Fornecedor Office Supplies',    nome: 'Office Supplies',    categoria: 'Fornecedores'    },
+    { data: '2026-05-07', valor:    -42.50, memo: 'Tarifa TED bancaria',                     nome: 'Sicoob',             categoria: 'Taxas'           },
+    { data: '2026-05-09', valor:  15600.00, memo: 'Recebimento ACME 2a parcela',             nome: 'ACME Industria',     categoria: 'Recebimentos'    },
+    { data: '2026-05-10', valor:  -5400.00, memo: 'Aluguel Imovel comercial',                nome: 'Imobiliaria Beta',   categoria: 'Fornecedores'    },
+    { data: '2026-05-13', valor:  -1280.00, memo: 'Energia Eletrica',                        nome: 'Equatorial Energia', categoria: 'Fornecedores'    },
+    { data: '2026-05-14', valor:   9800.00, memo: 'Recebimento Beta Servicos',               nome: 'Beta Servicos',      categoria: 'Recebimentos'    },
+    { data: '2026-05-16', valor:  -2150.00, memo: 'GPS INSS Mai/26',                         nome: 'INSS',               categoria: 'Tributos'        },
+    { data: '2026-05-17', valor:  -7320.00, memo: 'TED Transferencia Sicoob -> Itau',        nome: 'Conta Itau',         categoria: 'Transferências'  },
+  ];
+  return {
+    report_id: 'demo' + Math.random().toString(36).slice(2, 8),
+    modo: 'multi_modelo',
+    modelo_label: 'Multi (Demonstração)',
+    score_consenso: 0.91,
+    extratos: [{
+      arquivo: 'sicoob-7846-mai2026.ofx',
+      conta: 'Sicoob 7846-0',
+      qtd: tx.length,
+      transacoes: tx,
+    }],
+    anomalias: [
+      { severidade: 'critico', titulo: 'Duplicidade suspeita',     conta: 'Sicoob 7846-0', detalhe: 'TED ACME R$ 48.500 lancado 2x em janelas de 48h',  valor: 48500 },
+      { severidade: 'critico', titulo: 'Transferencia sem par',    conta: 'Sicoob 7846-0', detalhe: 'TED R$ 7.320 saida sem entrada equivalente em Itau', valor: 7320 },
+      { severidade: 'alerta',  titulo: 'Movimento atipico',        conta: 'Sicoob 7846-0', detalhe: 'Recebimento R$ 23.700 acima de 3 desvios-padrao',   valor: 23700 },
+      { severidade: 'alerta',  titulo: 'Recorrencia incomum',      conta: 'Sicoob 7846-0', detalhe: 'ACME pagou 2x em 7 dias (incomum no historico)',     valor: 15600 },
+      { severidade: 'atencao', titulo: 'Tarifa elevada',           conta: 'Sicoob 7846-0', detalhe: 'TED R$ 42,50 acima da media de R$ 12,80',           valor: 42.5  },
+    ],
+    relatorio_md: [
+      '# Relatório de Conciliação — Demonstração',
+      '',
+      '## Resumo executivo',
+      '',
+      'Análise consolidada de **12 transações** da conta Sicoob 7846-0 no período de 02/05/2026 a 17/05/2026,',
+      'totalizando **R$ 97.600,00 em créditos** e **R$ 40.822,50 em débitos** (líquido positivo de **R$ 56.777,50**).',
+      '',
+      '## Achados',
+      '',
+      '- **5 anomalias detectadas** (2 críticas, 2 de alerta, 1 de atenção).',
+      '- **Duplicidade suspeita** de TED ACME no valor de R$ 48.500 — recomenda-se reconciliação imediata.',
+      '- **Transferência inter-contas** Sicoob → Itaú no valor de R$ 7.320 sem contrapartida observada.',
+      '',
+      '## Plano de ação',
+      '',
+      '1. Validar com financeiro a duplicidade ACME (R$ 48.500).',
+      '2. Conferir extrato Itaú para confirmar transferência R$ 7.320.',
+      '3. Revisar política de tarifas TED com o banco.',
+      '',
+      '> Dataset de demonstração — não representa movimentação real.',
+    ].join('\n'),
+    stop_reason: 'demo',
+  };
+}
+
+function carregarDemo() {
+  if (typeof Chart === 'undefined') { toast('Aguarde o carregamento dos gráficos...', 'info'); return; }
+  const data = _datasetDemo();
+  document.getElementById('card-mode')?.classList.add('hidden');
+  document.getElementById('card-upload')?.classList.add('hidden');
+  document.getElementById('card-cta')?.classList.add('hidden');
+  document.getElementById('loading-panel')?.classList.remove('active');
+  renderResultado(data);
+  toast('Dados de demonstração carregados — 12 tx · 5 anomalias.', 'info');
+}
+
 /* ── Init ───────────────────────────────────────────────────────── */
 verificarHealth();
 atualizarHistorico();
@@ -1026,3 +1101,19 @@ window.addEventListener('keydown', e => {
     toggleTema();
   }
 });
+
+// Auto-carregar demo se ?demo=true ou ?demo=1
+(function _autoDemo() {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    const v = p.get('demo');
+    if (v === 'true' || v === '1' || v === 'on') {
+      // Aguarda Chart.js carregar antes de injetar
+      const tryLoad = () => {
+        if (typeof Chart !== 'undefined') carregarDemo();
+        else setTimeout(tryLoad, 200);
+      };
+      setTimeout(tryLoad, 100);
+    }
+  } catch {}
+})();
