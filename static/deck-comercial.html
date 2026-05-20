@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Orgatec · Deck Comercial 2026</title>
+<meta name="viewport" content="width=1920, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ── Design tokens ───────────────────────────────────────────── */
+  :root {
+    --bg:        #EAF4FA;
+    --cloud:    #F4F9FC;
+    --surface:  #fff;
+    --pale:     #B8DDEE;
+    --ink:      #0E2A47;
+    --ink-soft: #3F5A78;
+    --navy:     #1A3A6B;
+    --blue:     #5BA9D6;
+    --azure:    #7BC8E0;
+    --rule:     rgba(14,42,71,.14);
+    --glow:     rgba(91,169,214,.30);
+
+    --serif: "Instrument Serif", Georgia, serif;
+    --sans:  "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono:  "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #0a1828;
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow-x: hidden;
+  }
+  button { font-family: inherit; }
+  ::selection { background: var(--blue); color: white; }
+
+  /* ── Palco ───────────────────────────────────────────────────── */
+  .deck-stage {
+    width: 1920px;
+    height: 1080px;
+    max-width: 95vw;
+    max-height: calc(95vw * 0.5625);
+    position: relative;
+    box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 8px 24px rgba(0,0,0,.35);
+    border-radius: 8px;
+    overflow: hidden;
+    transform-origin: top center;
+  }
+  @media (max-width: 1980px) {
+    .deck-stage {
+      transform: scale(var(--deck-scale, 1));
+      transform-origin: top center;
+    }
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    width: 1920px;
+    height: 1080px;
+    padding: 96px;
+    background: var(--bg);
+    color: var(--ink);
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .slide.active { display: flex; }
+
+  /* ── Header padrão de slide ──────────────────────────────────── */
+  .slide-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 72px;
+  }
+  .slide-num {
+    font-family: var(--mono);
+    font-size: 18px;
+    letter-spacing: .16em;
+    color: var(--blue);
+    text-transform: uppercase;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 18px;
+    letter-spacing: .2em;
+    color: var(--blue);
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .eyebrow .sep { color: var(--rule); font-weight: 300; }
+  .eyebrow .accent { color: var(--ink-soft); }
+
+  /* ── Rodapé ──────────────────────────────────────────────────── */
+  .slide-foot {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 56px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--ink-soft);
+    font-family: var(--mono);
+    font-size: 16px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  /* ── Logo (mark + wordmark) ──────────────────────────────────── */
+  .logo-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .logo-mark { width: 52px; height: 52px; }
+  .logo-mark.lg { width: 96px; height: 96px; }
+  .logo-mark.xl { width: 220px; height: 220px; }
+  .wordmark {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: 36px;
+    letter-spacing: -.03em;
+    color: var(--ink);
+  }
+  .wordmark.lg { font-size: 96px; }
+  .wordmark.xl { font-size: 180px; }
+
+  /* ── Tipografia hero ─────────────────────────────────────────── */
+  .h1-hero {
+    font-family: var(--sans);
+    font-weight: 200;
+    font-size: 200px;
+    letter-spacing: -.05em;
+    line-height: .9;
+    color: var(--ink);
+    margin: 0;
+  }
+  .h1-hero em {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 400;
+    color: var(--blue);
+    font-size: inherit;
+  }
+  .h1 {
+    font-family: var(--sans);
+    font-weight: 200;
+    font-size: 128px;
+    letter-spacing: -.04em;
+    line-height: .95;
+    color: var(--ink);
+    margin: 0;
+  }
+  .h1 em {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 400;
+    color: var(--blue);
+  }
+  .h2 {
+    font-family: var(--sans);
+    font-weight: 300;
+    font-size: 88px;
+    letter-spacing: -.03em;
+    line-height: 1.02;
+    color: var(--ink);
+    margin: 0;
+  }
+  .lead {
+    font-family: var(--sans);
+    font-weight: 300;
+    font-size: 30px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    max-width: 1080px;
+  }
+  .label-eyebrow {
+    font-family: var(--mono);
+    font-size: 16px;
+    letter-spacing: .22em;
+    color: var(--blue);
+    text-transform: uppercase;
+  }
+  .accent-stamp {
+    font-family: var(--mono);
+    font-size: 16px;
+    letter-spacing: .18em;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+  }
+
+  /* ── Stat cards ──────────────────────────────────────────────── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+    margin-top: 48px;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 20px;
+    padding: 36px 40px;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .stat .top {
+    font-family: var(--mono);
+    font-size: 14px;
+    letter-spacing: .2em;
+    color: var(--blue);
+    text-transform: uppercase;
+  }
+  .stat .n {
+    font-family: var(--mono);
+    font-size: 80px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--ink);
+    letter-spacing: -.04em;
+  }
+  .stat .l {
+    font-size: 22px;
+    color: var(--ink-soft);
+    line-height: 1.3;
+    margin-top: 4px;
+  }
+  .stat.grad-blue {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+    border: none;
+    box-shadow: 0 20px 50px var(--glow);
+  }
+  .stat.grad-blue .top { color: rgba(255,255,255,.7); }
+  .stat.grad-blue .n   { color: #fff; }
+  .stat.grad-blue .l   { color: rgba(255,255,255,.78); }
+
+  /* ── Service cards ───────────────────────────────────────────── */
+  .svc-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: 1fr 1fr;
+    gap: 22px;
+    flex: 1;
+  }
+  .svc {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 24px;
+    padding: 32px;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: border-color .15s ease;
+  }
+  .svc .num {
+    font-family: var(--mono);
+    font-size: 18px;
+    letter-spacing: .16em;
+    color: var(--blue);
+    text-transform: uppercase;
+  }
+  .svc h3 {
+    font-weight: 600;
+    font-size: 30px;
+    letter-spacing: -.015em;
+    line-height: 1.1;
+    margin: 18px 0 12px;
+    color: var(--ink);
+  }
+  .svc p {
+    font-size: 18px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* ── Quote ───────────────────────────────────────────────────── */
+  .quote {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 96px;
+    letter-spacing: -.02em;
+    line-height: 1.05;
+    max-width: 1480px;
+    color: var(--ink);
+  }
+  .quote::before {
+    content: "“";
+    color: var(--blue);
+    font-size: 1.1em;
+    line-height: 0;
+    margin-right: -.1em;
+  }
+  .quote .blue { color: var(--blue); }
+  .quote-sig {
+    margin-top: 56px;
+    font-family: var(--mono);
+    font-size: 20px;
+    letter-spacing: .12em;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+  }
+
+  /* ── Step list ───────────────────────────────────────────────── */
+  .steps {
+    margin-top: 24px;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 80px 1fr 1.4fr 180px;
+    gap: 48px;
+    align-items: baseline;
+    padding: 44px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .step:last-child { border-bottom: 1px solid var(--rule); }
+  .step .num {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--blue);
+    letter-spacing: .08em;
+  }
+  .step h3 {
+    font-weight: 600;
+    font-size: 36px;
+    letter-spacing: -.02em;
+    line-height: 1.1;
+    margin: 0;
+    color: var(--ink);
+  }
+  .step p {
+    font-size: 20px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+  .step .when {
+    font-family: var(--mono);
+    font-size: 16px;
+    letter-spacing: .14em;
+    color: var(--blue);
+    text-align: right;
+    text-transform: uppercase;
+  }
+
+  /* ── Diferencial cards ───────────────────────────────────────── */
+  .diff-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 26px;
+    margin-top: 20px;
+  }
+  .diff {
+    background: var(--cloud);
+    border-radius: 24px;
+    padding: 40px 36px 36px;
+    min-height: 360px;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid transparent;
+    transition: border-color .15s ease;
+  }
+  .diff .num {
+    font-family: var(--mono);
+    font-size: 16px;
+    letter-spacing: .2em;
+    color: var(--blue);
+    text-transform: uppercase;
+    margin-bottom: 32px;
+  }
+  .diff h3 {
+    font-weight: 700;
+    font-size: 44px;
+    letter-spacing: -.025em;
+    line-height: 1.05;
+    margin: 0 0 16px;
+    color: var(--ink);
+  }
+  .diff p {
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* ── Case cards ──────────────────────────────────────────────── */
+  .cases {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-top: 20px;
+  }
+  .case {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 24px;
+    padding: 44px 40px;
+    min-height: 480px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .case .label {
+    font-family: var(--mono);
+    font-size: 16px;
+    letter-spacing: .18em;
+    color: var(--blue);
+    text-transform: uppercase;
+  }
+  .case .big {
+    font-family: var(--sans);
+    font-weight: 200;
+    font-size: 120px;
+    line-height: .95;
+    letter-spacing: -.045em;
+    color: var(--ink);
+  }
+  .case .big .unit {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 56px;
+    color: var(--blue);
+    vertical-align: top;
+    margin-left: 4px;
+  }
+  .case p {
+    font-size: 22px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* ── Pricing cards ───────────────────────────────────────────── */
+  .pricing {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-top: 24px;
+  }
+  .price-card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 28px;
+    padding: 44px 40px 40px;
+    min-height: 540px;
+    display: flex;
+    flex-direction: column;
+  }
+  .price-card .tag {
+    font-family: var(--mono);
+    font-size: 14px;
+    letter-spacing: .22em;
+    color: var(--blue);
+    text-transform: uppercase;
+  }
+  .price-card h3 {
+    font-weight: 700;
+    font-size: 56px;
+    letter-spacing: -.03em;
+    margin: 12px 0 8px;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .price-card .scope {
+    font-family: var(--sans);
+    font-weight: 400;
+    font-size: 19px;
+    color: var(--ink-soft);
+    margin-bottom: 28px;
+  }
+  .price-card .price {
+    font-family: var(--mono);
+    font-size: 72px;
+    font-weight: 700;
+    color: var(--blue);
+    letter-spacing: -.04em;
+    line-height: 1;
+  }
+  .price-card .price .per {
+    font-size: 22px;
+    color: var(--ink-soft);
+    font-weight: 400;
+    letter-spacing: 0;
+    margin-left: 4px;
+  }
+  .price-card .desc {
+    margin-top: 28px;
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+  .price-card .badge {
+    position: absolute;
+    top: 28px;
+    right: 28px;
+    background: var(--blue);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .22em;
+    padding: 6px 12px;
+    border-radius: 999px;
+    text-transform: uppercase;
+  }
+  .price-card.featured {
+    background: linear-gradient(160deg, var(--navy) 0%, #0d4f7a 100%);
+    border: none;
+    color: #fff;
+    box-shadow: 0 30px 80px var(--glow);
+  }
+  .price-card.featured .tag   { color: var(--azure); }
+  .price-card.featured h3     { color: #fff; }
+  .price-card.featured .scope { color: rgba(255,255,255,.7); }
+  .price-card.featured .price { color: var(--azure); }
+  .price-card.featured .price .per { color: rgba(255,255,255,.65); }
+  .price-card.featured .desc  { color: rgba(255,255,255,.85); }
+
+  /* ── Timeline 3 etapas ───────────────────────────────────────── */
+  .timeline {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 48px;
+    margin-top: 48px;
+    position: relative;
+  }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 32px;
+    height: 3px;
+    background: var(--rule);
+  }
+  .tl-step {
+    position: relative;
+    padding-top: 80px;
+  }
+  .tl-dot {
+    position: absolute;
+    top: 14px; left: 0;
+    width: 40px; height: 40px;
+    background: var(--surface);
+    border: 3px solid var(--blue);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px var(--glow);
+  }
+  .tl-dot svg { width: 18px; height: 18px; color: var(--blue); }
+  .tl-step .num {
+    font-family: var(--mono);
+    font-size: 16px;
+    letter-spacing: .2em;
+    color: var(--blue);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .tl-step h3 {
+    font-weight: 600;
+    font-size: 42px;
+    letter-spacing: -.025em;
+    line-height: 1.05;
+    margin: 0 0 16px;
+    color: var(--ink);
+  }
+  .tl-step p {
+    font-size: 20px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    margin: 0 0 28px;
+  }
+  .tl-step .when {
+    display: inline-block;
+    background: var(--cloud);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 14px;
+    letter-spacing: .18em;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--rule);
+    text-transform: uppercase;
+  }
+
+  /* ── Slide 10: encerramento ──────────────────────────────────── */
+  .closing {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 36px;
+  }
+  .closing .arrow-h {
+    font-family: var(--sans);
+    font-weight: 200;
+    font-size: 140px;
+    letter-spacing: -.04em;
+    line-height: 1;
+    color: var(--ink);
+    margin: 0;
+  }
+  .closing .arrow-h em {
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--blue);
+  }
+  .closing .brand-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .cta {
+    margin-top: 8px;
+    background: var(--ink);
+    color: #fff;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 28px;
+    padding: 24px 56px;
+    border-radius: 999px;
+    border: none;
+    letter-spacing: -.01em;
+    cursor: pointer;
+    box-shadow: 0 12px 32px rgba(14,42,71,.25);
+  }
+  .contact {
+    font-family: var(--mono);
+    font-size: 22px;
+    letter-spacing: .08em;
+    color: var(--ink-soft);
+  }
+  .final-tag {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 38px;
+    color: var(--ink-soft);
+    margin-top: 8px;
+  }
+
+  /* ── Slide 1 specific layout ─────────────────────────────────── */
+  .cover-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .cover-tag {
+    margin-top: 56px;
+    font-family: var(--mono);
+    font-size: 22px;
+    letter-spacing: .14em;
+    color: var(--blue);
+    text-transform: uppercase;
+  }
+  .cover-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-top: -56px;
+  }
+  .cover-grid-mark {
+    position: absolute;
+    right: 96px;
+    bottom: 200px;
+    width: 380px;
+    height: 380px;
+    background:
+      radial-gradient(circle at center, var(--glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* ── Slide 2 quote-line ──────────────────────────────────────── */
+  .twoline {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* ── Coordenadas decorativas ─────────────────────────────────── */
+  .corner-mark {
+    position: absolute;
+    width: 14px; height: 14px;
+    color: var(--blue);
+    opacity: .55;
+  }
+  .corner-mark::before, .corner-mark::after {
+    content: ""; position: absolute;
+    background: currentColor;
+  }
+  .corner-mark::before { left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-50%); }
+  .corner-mark::after  { top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-50%); }
+
+  /* ── Navegação (palco escuro) ────────────────────────────────── */
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 32px;
+    color: #cfdcec;
+    font-family: var(--mono);
+    font-size: 16px;
+    letter-spacing: .14em;
+  }
+  .nav button {
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.14);
+    color: #cfdcec;
+    padding: 12px 22px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 14px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    transition: all .15s ease;
+  }
+  .nav button:hover {
+    background: rgba(91,169,214,.16);
+    border-color: rgba(91,169,214,.5);
+    color: #fff;
+  }
+  .nav .counter {
+    min-width: 90px;
+    text-align: center;
+    color: var(--blue);
+  }
+  .nav .reset {
+    color: rgba(207,220,236,.55);
+    font-size: 12px;
+  }
+
+  /* ── Responsive scale ────────────────────────────────────────── */
+  @media (max-width: 1980px) {
+    body { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<deck-stage class="deck-stage" id="stage">
+  <!-- ════════ SLIDE 01 ─ CAPA ════════ -->
+  <section class="slide active" data-slide="1">
+    <header class="slide-head cover-head">
+      <span class="logo-row">
+        <svg class="logo-mark" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6">
+            <ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)" />
+            <ellipse cx="32" cy="32" rx="7" ry="24" />
+            <ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)" />
+          </g>
+        </svg>
+        <span class="wordmark">orgatec</span>
+      </span>
+      <span class="accent-stamp">Deck Comercial · 2026</span>
+    </header>
+
+    <div class="cover-grid-mark" aria-hidden="true"></div>
+
+    <div class="cover-body">
+      <div class="cover-tag">→ Apresentação institucional · 04 / 2026</div>
+      <h1 class="h1-hero" style="margin-top: 56px;">
+        Contabilidade<br>que <em>respira.</em><br>
+        <span style="display:block;font-size:.6em;color:var(--ink-soft);font-weight:300;letter-spacing:-.03em;margin-top:24px;">
+          E que conta cada número.
+        </span>
+      </h1>
+    </div>
+
+    <footer class="slide-foot">
+      <span>SP / BR · 1986–2026</span>
+      <span><b style="color:var(--ink);">01</b> / 10</span>
+    </footer>
+  </section>
+
+  <!-- ════════ SLIDE 02 ─ QUEM SOMOS ════════ -->
+  <section class="slide" data-slide="2">
+    <header class="slide-head">
+      <div class="eyebrow">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 13.5"/></svg>
+        02 · Quem somos
+      </div>
+      <span class="slide-num">▲ Desde 1986</span>
+    </header>
+
+    <div class="twoline">
+      <div class="label-eyebrow">→ 40 anos traduzindo planilhas em decisão</div>
+      <h2 class="h1" style="margin-top:36px;">
+        Quatro décadas auditando<br>
+        o que outros só <em>anotam.</em>
+      </h2>
+      <p class="lead" style="margin-top:36px;">
+        Fundada em 1986 por Helena Ribeiro, a Orgatec atende empresas que tratam a contabilidade
+        como instrumento de gestão — não como obrigação. Equipe sênior, processos auditados e um
+        portal versionado que dá a cada cliente o controle do próprio dado.
+      </p>
+    </div>
+
+    <div class="stats">
+      <div class="stat grad-blue">
+        <div class="top">▲ Histórico</div>
+        <div>
+          <div class="n">40 <span style="font-family:var(--serif);font-style:italic;font-weight:400;color:rgba(255,255,255,.85);font-size:.6em;">anos</span></div>
+          <div class="l">1986 — 2026 · presença ininterrupta no mercado paulista</div>
+        </div>
+      </div>
+      <div class="stat">
+        <div class="top">→ Carteira</div>
+        <div>
+          <div class="n">820<span style="font-family:var(--serif);font-style:italic;color:var(--blue);font-size:.55em;margin-left:2px;">+</span></div>
+          <div class="l">Clientes ativos · pequenas, médias e holdings</div>
+        </div>
+      </div>
+      <div class="stat">
+        <div class="top">→ Equipe</div>
+        <div>
+          <div class="n">142</div>
+          <div class="l">Profissionais · 38 sêniores, 14 sócios CRC ativos</div>
+        </div>
+      </div>
+      <div class="stat grad-blue">
+        <div class="top">▲ Volume 2025</div>
+        <div>
+          <div class="n">R$ 4,8<span style="font-family:var(--serif);font-style:italic;font-weight:400;color:rgba(255,255,255,.85);font-size:.6em;">B</span></div>
+          <div class="l">Patrimônio auditado · 312 demonstrativos emitidos</div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="slide-foot">
+      <span class="logo-row">
+        <svg class="logo-mark" style="width:24px;height:24px;" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6"><ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)"/><ellipse cx="32" cy="32" rx="7" ry="24"/><ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)"/></g>
+        </svg>
+        <span style="font-family:var(--mono);text-transform:uppercase;">orgatec / quem somos</span>
+      </span>
+      <span><b style="color:var(--ink);">02</b> / 10</span>
+    </footer>
+  </section>
+
+  <!-- ════════ SLIDE 03 ─ MANIFESTO ════════ -->
+  <section class="slide" data-slide="3">
+    <header class="slide-head">
+      <div class="eyebrow">03 · Manifesto <span class="sep">|</span> <span class="accent">▲ Por que existimos</span></div>
+      <span class="slide-num">▲ 1986</span>
+    </header>
+
+    <div style="flex:1; display:flex; flex-direction:column; justify-content:center; max-width:1480px;">
+      <p class="quote">
+        A contabilidade é a linguagem mais antiga<br>
+        do mundo dos negócios. Mas o jeito de falar<br>
+        essa língua envelheceu — virou <span class="blue">peso.</span><br>
+        Devolvemos o <span class="blue">ar.</span>
+      </p>
+      <div class="quote-sig">— Helena Ribeiro, sócia-fundadora</div>
+    </div>
+
+    <footer class="slide-foot">
+      <span class="logo-row">
+        <svg class="logo-mark" style="width:24px;height:24px;" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6"><ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)"/><ellipse cx="32" cy="32" rx="7" ry="24"/><ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)"/></g>
+        </svg>
+        <span style="font-family:var(--mono);text-transform:uppercase;">orgatec / manifesto</span>
+      </span>
+      <span><b style="color:var(--ink);">03</b> / 10</span>
+    </footer>
+  </section>
+
+  <!-- ════════ SLIDE 04 ─ SERVIÇOS ════════ -->
+  <section class="slide" data-slide="4">
+    <header class="slide-head">
+      <div class="eyebrow">04 · Serviços <span class="sep">|</span> <span class="accent">▲ Oito frentes</span></div>
+      <span class="slide-num">→ Oito frentes, uma equipe</span>
+    </header>
+
+    <h2 class="h2" style="margin-bottom: 56px;">Tudo que sua empresa precisa,<br>sob um mesmo <em style="font-family:var(--serif);font-style:italic;color:var(--blue);">CRC.</em></h2>
+
+    <div class="svc-grid">
+      <div class="svc"><div class="num">01 · Auditoria</div><div><h3>Auditoria independente</h3><p>Pareceres com origem rastreável e revisor sênior.</p></div></div>
+      <div class="svc"><div class="num">02 · Tributos</div><div><h3>Planejamento tributário</h3><p>Reforma, regime ideal e elisão lícita.</p></div></div>
+      <div class="svc"><div class="num">03 · Contábil</div><div><h3>Contabilidade geral</h3><p>Escrituração, conciliação e fechamentos D+5.</p></div></div>
+      <div class="svc"><div class="num">04 · Consultoria</div><div><h3>Consultoria fiscal</h3><p>ICMS, PIS / COFINS e regimes especiais.</p></div></div>
+      <div class="svc"><div class="num">05 · DP</div><div><h3>Folha & DP</h3><p>eSocial, FGTS digital e SLA por evento.</p></div></div>
+      <div class="svc"><div class="num">06 · BPO</div><div><h3>BPO financeiro</h3><p>Contas, conciliação e gerencial mensal.</p></div></div>
+      <div class="svc"><div class="num">07 · Legalização</div><div><h3>Abertura & legalização</h3><p>Constituição, alterações e compliance.</p></div></div>
+      <div class="svc"><div class="num">08 · IR</div><div><h3>Imposto de renda</h3><p>PF, PJ, holdings e exterior.</p></div></div>
+    </div>
+
+    <footer class="slide-foot">
+      <span class="logo-row">
+        <svg class="logo-mark" style="width:24px;height:24px;" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6"><ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)"/><ellipse cx="32" cy="32" rx="7" ry="24"/><ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)"/></g>
+        </svg>
+        <span style="font-family:var(--mono);text-transform:uppercase;">orgatec / serviços</span>
+      </span>
+      <span><b style="color:var(--ink);">04</b> / 10</span>
+    </footer>
+  </section>
+
+  <!-- ════════ SLIDE 05 ─ MÉTODO ════════ -->
+  <section class="slide" data-slide="5">
+    <header class="slide-head">
+      <div class="eyebrow">05 · Método <span class="sep">|</span> <span class="accent">▲ Como trabalhamos</span></div>
+      <span class="slide-num">→ Quatro etapas</span>
+    </header>
+
+    <h2 class="h2" style="max-width:1480px;">Zero surpresa<br>no fim do <em style="font-family:var(--serif);font-style:italic;color:var(--blue);">trimestre.</em></h2>
+
+    <div class="steps">
+      <div class="step">
+        <span class="num">01</span>
+        <h3>Diagnóstico</h3>
+        <p>Lemos os últimos 24 meses, mapeamos riscos e desenhamos plano com prazos.</p>
+        <span class="when">Semana 1</span>
+      </div>
+      <div class="step">
+        <span class="num">02</span>
+        <h3>Estruturação</h3>
+        <p>Migração assistida, plano de contas calibrado, portal liberado.</p>
+        <span class="when">Semana 2–3</span>
+      </div>
+      <div class="step">
+        <span class="num">03</span>
+        <h3>Operação</h3>
+        <p>Fechamento mensal em D+5, obrigações em dia, gerencial no D+1 útil.</p>
+        <span class="when">Mensal</span>
+      </div>
+      <div class="step">
+        <span class="num">04</span>
+        <h3>Estratégia</h3>
+        <p>Reuniões trimestrais com a liderança. Lemos o resultado, ajustamos rota.</p>
+        <span class="when">Trimestral</span>
+      </div>
+    </div>
+
+    <footer class="slide-foot">
+      <span class="logo-row">
+        <svg class="logo-mark" style="width:24px;height:24px;" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6"><ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)"/><ellipse cx="32" cy="32" rx="7" ry="24"/><ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)"/></g>
+        </svg>
+        <span style="font-family:var(--mono);text-transform:uppercase;">orgatec / método</span>
+      </span>
+      <span><b style="color:var(--ink);">05</b> / 10</span>
+    </footer>
+  </section>
+
+  <!-- ════════ SLIDE 06 ─ DIFERENCIAIS ════════ -->
+  <section class="slide" data-slide="6">
+    <header class="slide-head">
+      <div class="eyebrow">06 · Diferenciais <span class="sep">|</span> <span class="accent">▲ Por que Orgatec</span></div>
+      <span class="slide-num">→ O que nos separa do mercado</span>
+    </header>
+
+    <h2 class="h2" style="margin-bottom:8px;">Quatro promessas<br><em style="font-family:var(--serif);font-style:italic;color:var(--blue);">auditáveis.</em></h2>
+
+    <div class="diff-grid">
+      <div class="diff">
+        <div class="num">01 · Atendimento</div>
+        <h3>Sócio<br>no projeto</h3>
+        <p>Um sócio responde por cada conta. Sem analista perdido na fila.</p>
+      </div>
+      <div class="diff">
+        <div class="num">02 · SLA</div>
+        <h3>99,4%<br>de SLA</h3>
+        <p>Resposta em até 22min nos canais oficiais. Métrica pública.</p>
+      </div>
+      <div class="diff">
+        <div class="num">03 · Tecnologia</div>
+        <h3>Portal<br>versionado</h3>
+        <p>Cada documento com hash. Auditável a qualquer momento.</p>
+      </div>
+      <div class="diff">
+        <div class="num">04 · Relacionamento</div>
+        <h3>Estratégia<br>incluída</h3>
+        <p>Trimestral com C-level. Não cobramos hora — cobramos relação.</p>
+      </div>
+    </div>
+
+    <footer class="slide-foot">
+      <span class="logo-row">
+        <svg class="logo-mark" style="width:24px;height:24px;" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6"><ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)"/><ellipse cx="32" cy="32" rx="7" ry="24"/><ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)"/></g>
+        </svg>
+        <span style="font-family:var(--mono);text-transform:uppercase;">orgatec / diferenciais</span>
+      </span>
+      <span><b style="color:var(--ink);">06</b> / 10</span>
+    </footer>
+  </section>
+
+  <!-- ════════ SLIDE 07 ─ CASES ════════ -->
+  <section class="slide" data-slide="7">
+    <header class="slide-head">
+      <div class="eyebrow">07 · Cases <span class="sep">|</span> <span class="accent">▲ Alguns clientes</span></div>
+      <span class="slide-num">→ Quem confia em nós</span>
+    </header>
+
+    <h2 class="h2" style="margin-bottom:8px;">Da indústria centenária<br>ao <em style="font-family:var(--serif);font-style:italic;color:var(--blue);">scale-up</em> de Série C.</h2>
+
+    <div class="cases">
+      <div class="case">
+        <span class="label">Indústria · Case 01</span>
+        <div class="big">−38<span class="unit">%</span></div>
+        <p>De carga tributária após reestruturação societária e mudança de regime para uma indústria com 4 plantas no Brasil.</p>
+      </div>
+      <div class="case">
+        <span class="label">Scale-up · Case 02</span>
+        <div class="big">D+3<span class="unit">úteis</span></div>
+        <p>De fechamento mensal — antes era D+22. Mesma equipe interna, com fluxos auditáveis no portal Orgatec.</p>
+      </div>
+      <div class="case">
+        <span class="label">Holding · Case 03</span>
+        <div class="big">R$ 12<span class="unit">M</span></div>
+        <p>Recuperados em créditos tributários esquecidos em 18 meses de operação de uma holding multifamiliar.</p>
+      </div>
+    </div>
+
+    <footer class="slide-foot">
+      <span class="logo-row">
+        <svg class="logo-mark" style="width:24px;height:24px;" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6"><ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)"/><ellipse cx="32" cy="32" rx="7" ry="24"/><ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)"/></g>
+        </svg>
+        <span style="font-family:var(--mono);text-transform:uppercase;">orgatec / cases</span>
+      </span>
+      <span><b style="color:var(--ink);">07</b> / 10</span>
+    </footer>
+  </section>
+
+  <!-- ════════ SLIDE 08 ─ INVESTIMENTO ════════ -->
+  <section class="slide" data-slide="8">
+    <header class="slide-head">
+      <div class="eyebrow">08 · Investimento <span class="sep">|</span> <span class="accent">▲ Faixas</span></div>
+      <span class="slide-num">→ Modelos comerciais</span>
+    </header>
+
+    <h2 class="h2" style="margin-bottom:12px;">Três pacotes,<br>sem <em style="font-family:var(--serif);font-style:italic;color:var(--blue);">letras miúdas.</em></h2>
+
+    <div class="pricing">
+      <div class="price-card">
+        <span class="tag">Essencial</span>
+        <h3>Essencial</h3>
+        <div class="scope">Contábil + fiscal</div>
+        <div class="price">R$ 4,8k<span class="per">/ mês</span></div>
+        <p class="desc">Para PMEs até R$ 12M de receita. Obrigações, fechamento mensal e suporte por chat com SLA padrão.</p>
+      </div>
+      <div class="price-card featured">
+        <span class="badge">Mais pedido</span>
+        <span class="tag">Completo</span>
+        <h3>Completo</h3>
+        <div class="scope">Contábil + fiscal + BPO + DP</div>
+        <div class="price">R$ 12k<span class="per">/ mês</span></div>
+        <p class="desc">Para empresas em crescimento. Sócio responsável, SLA 99,4%, gerencial mensal e revisão trimestral com C-level.</p>
+      </div>
+      <div class="price-card">
+        <span class="tag">Auditoria</span>
+        <h3>Auditoria</h3>
+        <div class="scope">Independente · pareceres sob medida</div>
+        <div class="price" style="font-size:38px;line-height:1.15;letter-spacing:-.02em;">Engagement<br>por escopo</div>
+        <p class="desc">Cronograma e equipe sênior definidos no kick-off. Honorários fixos com revisor independente.</p>
+      </div>
+    </div>
+
+    <footer class="slide-foot">
+      <span class="logo-row">
+        <svg class="logo-mark" style="width:24px;height:24px;" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6"><ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)"/><ellipse cx="32" cy="32" rx="7" ry="24"/><ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)"/></g>
+        </svg>
+        <span style="font-family:var(--mono);text-transform:uppercase;">orgatec / investimento</span>
+      </span>
+      <span><b style="color:var(--ink);">08</b> / 10</span>
+    </footer>
+  </section>
+
+  <!-- ════════ SLIDE 09 ─ PRÓXIMOS PASSOS ════════ -->
+  <section class="slide" data-slide="9">
+    <header class="slide-head">
+      <div class="eyebrow">09 · Próximos passos <span class="sep">|</span> <span class="accent">▲ Para começar</span></div>
+      <span class="slide-num">→ Em 14 dias você está rodando</span>
+    </header>
+
+    <h2 class="h2" style="margin-bottom:8px;">Três conversas.<br>Uma <em style="font-family:var(--serif);font-style:italic;color:var(--blue);">migração</em> sem dor.</h2>
+
+    <div class="timeline">
+      <div class="tl-step">
+        <span class="tl-dot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <div class="num">01 · Diagnóstico</div>
+        <h3>Conversa de diagnóstico</h3>
+        <p>30 min com um sócio. Sem proposta na primeira reunião — primeiro entendemos seu cenário fiscal e operacional.</p>
+        <span class="when">Esta semana</span>
+      </div>
+      <div class="tl-step">
+        <span class="tl-dot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <div class="num">02 · Proposta</div>
+        <h3>Proposta sob medida</h3>
+        <p>Em até 5 dias úteis após o diagnóstico, com escopo, SLA e honorários por escrito. Sem letras miúdas.</p>
+        <span class="when">+ 5 dias</span>
+      </div>
+      <div class="tl-step">
+        <span class="tl-dot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <div class="num">03 · Migração</div>
+        <h3>Kick-off & migração</h3>
+        <p>Plano de transição assistido. Sua contabilidade atual segue ativa até estabilização. Risco zero.</p>
+        <span class="when">+ 14 dias</span>
+      </div>
+    </div>
+
+    <footer class="slide-foot">
+      <span class="logo-row">
+        <svg class="logo-mark" style="width:24px;height:24px;" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6"><ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)"/><ellipse cx="32" cy="32" rx="7" ry="24"/><ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)"/></g>
+        </svg>
+        <span style="font-family:var(--mono);text-transform:uppercase;">orgatec / próximos passos</span>
+      </span>
+      <span><b style="color:var(--ink);">09</b> / 10</span>
+    </footer>
+  </section>
+
+  <!-- ════════ SLIDE 10 ─ ENCERRAMENTO ════════ -->
+  <section class="slide" data-slide="10">
+    <header class="slide-head">
+      <div class="eyebrow">10 · Obrigado <span class="sep">|</span> <span class="accent">▲ Fale com a gente</span></div>
+      <span class="slide-num">→ Fim</span>
+    </header>
+
+    <div class="closing">
+      <p class="arrow-h">→ Vamos <em>respirar</em> juntos?</p>
+
+      <div class="brand-block">
+        <svg class="logo-mark xl" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6">
+            <ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)" />
+            <ellipse cx="32" cy="32" rx="7" ry="24" />
+            <ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)" />
+          </g>
+        </svg>
+        <span class="wordmark xl">orgatec.</span>
+      </div>
+
+      <button class="cta" type="button" onclick="window.location.href='mailto:contato@orgatec.com.br'">
+        Agendar diagnóstico →
+      </button>
+
+      <div class="contact">contato@orgatec.com.br · +55 11 3128-4090</div>
+      <div class="final-tag">contabilidade que respira.</div>
+    </div>
+
+    <footer class="slide-foot">
+      <span class="logo-row">
+        <svg class="logo-mark" style="width:24px;height:24px;" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#5BA9D6"><ellipse cx="20" cy="32" rx="6" ry="22" transform="rotate(-14 20 32)"/><ellipse cx="32" cy="32" rx="7" ry="24"/><ellipse cx="44" cy="32" rx="6" ry="22" transform="rotate(14 44 32)"/></g>
+        </svg>
+        <span style="font-family:var(--mono);text-transform:uppercase;">orgatec / 2026</span>
+      </span>
+      <span><b style="color:var(--ink);">10</b> / 10</span>
+    </footer>
+  </section>
+</deck-stage>
+
+<!-- ── Navegação no palco escuro ────────────────────────────────── -->
+<nav class="nav" aria-label="Navegação do deck">
+  <button type="button" id="prev" aria-label="Slide anterior">← Anterior</button>
+  <span class="counter"><span id="cur">01</span> / 10</span>
+  <button type="button" id="next" aria-label="Próximo slide">Próximo →</button>
+  <button type="button" id="reset" class="reset" aria-label="Voltar ao primeiro slide">↺ Reset</button>
+</nav>
+
+<script src="js/deck.js"></script>
+
+</body>
+</html>
