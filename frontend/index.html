@@ -6,7 +6,7 @@
   <title>ORGATEC · Conciliação Bancária</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
           integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi"
           crossorigin="anonymous"></script>
@@ -1798,6 +1798,622 @@
       border-top: 1px solid var(--border) !important;
       margin: 20px 0 !important;
     }
+
+    /* ══════════════════════════════════════════════════════════════
+       DIREÇÃO LEVE · 2026.05
+       Padrão visual do deck-comercial. Override final que substitui
+       paleta + tipografia + componentes-chave. Mantém estrutura HTML.
+       ══════════════════════════════════════════════════════════════ */
+
+    :root, [data-theme="light"], [data-theme="dark"] {
+      /* Paleta canônica do deck */
+      --bg:        #EAF4FA;
+      --cloud:     #F4F9FC;
+      --surface:   #FFFFFF;
+      --surface-solid: #FFFFFF;
+      --surface-2:    #F4F9FC;
+      --surface-3:    #E6F0F7;
+      --pale:      #B8DDEE;
+      --ink:       #0E2A47;
+      --text:      #0E2A47;
+      --text-2:    #3F5A78;
+      --ink-soft:  #3F5A78;
+      --muted:     #3F5A78;
+      --navy:      #1A3A6B;
+      --blue:      #5BA9D6;
+      --azure:     #7BC8E0;
+      --sky:       #7BC8E0;
+      --aurora-1:  transparent;
+      --aurora-2:  transparent;
+      --aurora-3:  transparent;
+      --blue-soft: #7BC8E0;
+      --blue10:    #DCEEF7;
+      --blue20:    #B8DDEE;
+      --rule:      rgba(14,42,71,.14);
+      --border:    rgba(14,42,71,.14);
+      --border-solid: rgba(14,42,71,.14);
+      --glow:      rgba(91,169,214,.30);
+
+      --shadow:    0 1px 2px rgba(14,42,71,.05), 0 1px 3px rgba(14,42,71,.06);
+      --shadow-lg: 0 4px 6px rgba(14,42,71,.05), 0 10px 15px rgba(14,42,71,.08);
+
+      /* Famílias */
+      --font-sans:  "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+      --font-serif: "Instrument Serif", Georgia, serif;
+      --font-mono:  "JetBrains Mono", ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans) !important;
+      background: var(--bg) !important;
+      background-image: none !important;
+      color: var(--ink) !important;
+    }
+
+    /* Aurora animada off (já estava, reforça) */
+    .aurora, .aurora-blob { display: none !important; }
+
+    /* ── Tipografia base Direção Leve ─────────────────────────── */
+    h1, h2, h3, h4, h5, h6 {
+      font-family: var(--font-sans) !important;
+      color: var(--ink) !important;
+      letter-spacing: -0.01em;
+    }
+    em, .accent-italic {
+      font-family: var(--font-serif) !important;
+      font-style: italic !important;
+      color: var(--blue) !important;
+      font-weight: 400 !important;
+    }
+    code, kbd, .mono { font-family: var(--font-mono) !important; }
+
+    /* Eyebrow + caption mono uppercase */
+    .eyebrow-deck {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      letter-spacing: 0.20em;
+      color: var(--blue);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .atlas-caption,
+    .deck-caption {
+      font-family: var(--font-mono) !important;
+      font-size: 11px;
+      letter-spacing: 0.20em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+    }
+
+    /* Page header em layout slide-style */
+    .page-header h1 {
+      font-family: var(--font-sans) !important;
+      font-weight: 200 !important;
+      font-size: 4rem !important;
+      line-height: 0.95 !important;
+      letter-spacing: -0.045em !important;
+      color: var(--ink) !important;
+      margin-bottom: 8px !important;
+    }
+    .page-header p {
+      font-family: var(--font-sans) !important;
+      color: var(--ink-soft) !important;
+      font-size: 1.05rem !important;
+      line-height: 1.5 !important;
+    }
+    /* Adiciona eyebrow antes do título da página */
+    .page-header > div::before {
+      content: attr(data-eyebrow);
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      letter-spacing: 0.20em;
+      color: var(--blue);
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+
+    /* Topbar deck */
+    .topbar-title {
+      font-family: var(--font-sans) !important;
+      font-weight: 300 !important;
+      font-size: 1.05rem !important;
+      letter-spacing: -0.005em !important;
+      color: var(--ink) !important;
+    }
+    .badge-db {
+      background: var(--cloud) !important;
+      color: var(--ink) !important;
+      border: 1px solid var(--rule) !important;
+      font-family: var(--font-mono) !important;
+      font-weight: 600 !important;
+      letter-spacing: 0.12em !important;
+      text-transform: uppercase !important;
+      font-size: 10px !important;
+      padding: 4px 10px !important;
+    }
+    .badge-db.offline {
+      background: #fef2f2 !important;
+      color: #b91c1c !important;
+      border-color: #fecaca !important;
+    }
+
+    /* Sidebar deck */
+    .sidebar-logo h1 {
+      font-family: var(--font-sans) !important;
+      font-weight: 700 !important;
+      font-size: 1.05rem !important;
+      letter-spacing: -0.02em !important;
+      color: var(--ink) !important;
+    }
+    .sidebar-logo span {
+      font-family: var(--font-mono) !important;
+      font-size: 10px !important;
+      letter-spacing: 0.18em !important;
+      color: var(--ink-soft) !important;
+      text-transform: uppercase !important;
+    }
+    .sidebar-nav .nav-item {
+      font-family: var(--font-sans) !important;
+      color: var(--ink-soft) !important;
+    }
+    .sidebar-nav .nav-item.active {
+      background: var(--blue10) !important;
+      color: var(--navy) !important;
+      box-shadow: inset 2px 0 0 var(--blue) !important;
+    }
+    .nav-section {
+      font-family: var(--font-mono) !important;
+      font-size: 10px !important;
+      letter-spacing: 0.20em !important;
+      color: var(--ink-soft) !important;
+      opacity: 0.7;
+    }
+    .version-badge {
+      font-family: var(--font-mono) !important;
+      background: var(--cloud) !important;
+      color: var(--ink-soft) !important;
+      border: 1px solid var(--rule) !important;
+      letter-spacing: 0.10em !important;
+    }
+
+    /* ── Steps deck-style ─────────────────────────────────────── */
+    .step {
+      border: 1px solid var(--rule) !important;
+      background: var(--surface) !important;
+      border-radius: 999px !important;
+      padding: 8px 18px !important;
+      color: var(--ink-soft) !important;
+      font-family: var(--font-sans) !important;
+    }
+    .step.active {
+      background: var(--blue10) !important;
+      border-color: var(--blue) !important;
+      color: var(--navy) !important;
+    }
+    .step.done {
+      background: #DCFCE7 !important;
+      border-color: #16A34A !important;
+      color: #15803D !important;
+    }
+    .step-num {
+      font-family: var(--font-mono) !important;
+      background: transparent !important;
+      color: inherit !important;
+    }
+    .step-line {
+      background: var(--rule) !important;
+    }
+
+    /* ── Mode cards como SERVICE cards do deck ────────────────── */
+    .mode-card {
+      background: var(--surface) !important;
+      border: 1px solid var(--rule) !important;
+      border-radius: 24px !important;
+      padding: 32px !important;
+      min-height: 240px !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 16px !important;
+      transition: border-color .15s ease, box-shadow .15s ease !important;
+    }
+    .mode-card:hover { border-color: var(--blue) !important; }
+    .mode-card.selected {
+      border-color: var(--blue) !important;
+      box-shadow: 0 0 0 1px var(--blue), 0 12px 32px var(--glow) !important;
+    }
+    .mode-card .mode-icon {
+      background: var(--cloud) !important;
+      border: 1px solid var(--rule) !important;
+      color: var(--blue) !important;
+      box-shadow: none !important;
+      filter: none !important;
+      width: 56px !important;
+      height: 56px !important;
+      border-radius: 14px !important;
+    }
+    .mode-card.green .mode-icon  { color: #16A34A !important; }
+    .mode-card.cyan .mode-icon   { color: var(--azure) !important; }
+    .mode-card.purple .mode-icon { color: var(--navy) !important; }
+    .mode-card.green.selected   { border-color: #16A34A !important; box-shadow: 0 0 0 1px #16A34A, 0 12px 32px rgba(22,163,74,.20) !important; }
+    .mode-card.cyan.selected    { border-color: var(--azure) !important; box-shadow: 0 0 0 1px var(--azure), 0 12px 32px rgba(123,200,224,.30) !important; }
+    .mode-card.purple.selected  { border-color: var(--navy) !important; box-shadow: 0 0 0 1px var(--navy), 0 12px 32px rgba(26,58,107,.20) !important; }
+    .mode-card.green.selected .check-icon  { background: #16A34A !important; }
+    .mode-card.cyan.selected .check-icon   { background: var(--azure) !important; }
+    .mode-card.purple.selected .check-icon { background: var(--navy) !important; }
+    .mode-card .check-icon { background: var(--blue) !important; box-shadow: none !important; }
+    .mode-card h3 {
+      font-family: var(--font-sans) !important;
+      font-weight: 600 !important;
+      font-size: 30px !important;
+      letter-spacing: -0.02em !important;
+      line-height: 1.1 !important;
+      color: var(--ink) !important;
+      margin: 0 !important;
+    }
+    .mode-card p {
+      font-family: var(--font-sans) !important;
+      font-size: 15px !important;
+      line-height: 1.5 !important;
+      color: var(--ink-soft) !important;
+      margin: 0 !important;
+    }
+    .mode-card::before {
+      content: attr(data-mode-num) "  ·  " attr(data-mode-cat);
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      color: var(--blue);
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-bottom: -8px;
+    }
+    .mode-card.green::before  { content: "01  ·  HEURÍSTICO"; }
+    .mode-card.cyan::before   { content: "02  ·  HAIKU 4.5"; }
+    .mode-card.blue::before   { content: "03  ·  SONNET 4.6"; }
+    .mode-card.purple::before { content: "04  ·  MULTI-MODELO"; }
+    .mode-badge {
+      font-family: var(--font-mono) !important;
+      font-size: 10px !important;
+      letter-spacing: 0.18em !important;
+      font-weight: 700 !important;
+      text-transform: uppercase !important;
+      border-radius: 4px !important;
+      padding: 4px 10px !important;
+      align-self: flex-start;
+    }
+    .mode-badge.green  { background: #DCFCE7 !important; color: #15803D !important; }
+    .mode-badge.cyan   { background: var(--blue10) !important; color: var(--navy) !important; }
+    .mode-badge.blue   { background: var(--blue10) !important; color: var(--navy) !important; }
+    .mode-badge.purple { background: #EDE9FE !important; color: #5B21B6 !important; }
+
+    /* ── KPI cards como STAT cards do deck ────────────────────── */
+    .kpi-card {
+      background: var(--surface) !important;
+      border: 1px solid var(--rule) !important;
+      border-radius: 20px !important;
+      padding: 28px 32px !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      min-height: 160px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: space-between !important;
+    }
+    .kpi-card::before { display: none !important; }
+    .kpi-card .kpi-label {
+      font-family: var(--font-mono) !important;
+      font-size: 11px !important;
+      letter-spacing: 0.22em !important;
+      color: var(--blue) !important;
+      text-transform: uppercase !important;
+      font-weight: 600 !important;
+    }
+    .kpi-card .kpi-value {
+      font-family: var(--font-mono) !important;
+      font-weight: 700 !important;
+      font-size: 56px !important;
+      letter-spacing: -0.04em !important;
+      color: var(--ink) !important;
+      line-height: 1 !important;
+    }
+    .kpi-card .kpi-value.blue,
+    .kpi-card .kpi-value.purple,
+    .kpi-card .kpi-value.green { color: var(--ink) !important; }
+    .kpi-card .kpi-sub {
+      font-family: var(--font-sans) !important;
+      font-size: 14px !important;
+      color: var(--ink-soft) !important;
+    }
+    /* 2 KPIs em destaque com gradient navy → blue (1º e 4º) */
+    .kpi-grid .kpi-card:nth-child(4n+1),
+    .kpi-grid .kpi-card:nth-child(4n) {
+      background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%) !important;
+      border: none !important;
+      box-shadow: 0 20px 50px var(--glow) !important;
+      color: #fff !important;
+    }
+    .kpi-grid .kpi-card:nth-child(4n+1) .kpi-label,
+    .kpi-grid .kpi-card:nth-child(4n) .kpi-label   { color: rgba(255,255,255,.75) !important; }
+    .kpi-grid .kpi-card:nth-child(4n+1) .kpi-value,
+    .kpi-grid .kpi-card:nth-child(4n) .kpi-value   { color: #fff !important; }
+    .kpi-grid .kpi-card:nth-child(4n+1) .kpi-sub,
+    .kpi-grid .kpi-card:nth-child(4n) .kpi-sub     { color: rgba(255,255,255,.78) !important; }
+
+    /* ── Audit layers como DIFF cards do deck ─────────────────── */
+    .audit-layer {
+      background: var(--cloud) !important;
+      border: 1px solid var(--rule) !important;
+      border-radius: 24px !important;
+      padding: 32px 28px 28px !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      min-height: 200px !important;
+    }
+    .audit-layer::after { display: block !important; left: 0 !important; }
+    .audit-layer .lbl {
+      font-family: var(--font-mono) !important;
+      font-size: 11px !important;
+      letter-spacing: 0.20em !important;
+      color: var(--blue) !important;
+      font-weight: 600 !important;
+      margin-bottom: 24px !important;
+      display: block;
+    }
+    .audit-layer .val {
+      font-family: var(--font-sans) !important;
+      font-weight: 200 !important;
+      font-size: 56px !important;
+      letter-spacing: -0.045em !important;
+      color: var(--ink) !important;
+      line-height: 1 !important;
+    }
+    .audit-layer .sub {
+      font-family: var(--font-sans) !important;
+      font-size: 13px !important;
+      color: var(--ink-soft) !important;
+      margin-top: 6px !important;
+    }
+
+    /* ── Chart cards ──────────────────────────────────────────── */
+    .chart-card {
+      background: var(--surface) !important;
+      border: 1px solid var(--rule) !important;
+      border-radius: 24px !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+    }
+    .chart-card::before, .chart-card::after { display: none !important; }
+    .chart-card h3 {
+      font-family: var(--font-mono) !important;
+      font-size: 11px !important;
+      letter-spacing: 0.20em !important;
+      color: var(--blue) !important;
+      text-transform: uppercase !important;
+      font-weight: 700 !important;
+      border-bottom: 1px solid var(--rule) !important;
+      padding-bottom: 12px !important;
+      margin-bottom: 16px !important;
+    }
+
+    /* Section titles também em mono uppercase */
+    .section-title {
+      font-family: var(--font-mono) !important;
+      font-size: 11px !important;
+      letter-spacing: 0.20em !important;
+      color: var(--blue) !important;
+      text-transform: uppercase !important;
+      font-weight: 700 !important;
+      border-bottom: 1px solid var(--rule) !important;
+      padding-bottom: 12px !important;
+      margin-bottom: 20px !important;
+    }
+
+    /* ── Botões ────────────────────────────────────────────────── */
+    .btn-primary {
+      background: var(--ink) !important;
+      border-color: var(--ink) !important;
+      color: #fff !important;
+      font-family: var(--font-sans) !important;
+      font-weight: 600 !important;
+      border-radius: 999px !important;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: var(--navy) !important;
+      transform: none !important;
+    }
+    .btn-green {
+      background: #16A34A !important;
+      border-color: #16A34A !important;
+      color: #fff !important;
+      font-family: var(--font-sans) !important;
+      font-weight: 600 !important;
+      border-radius: 999px !important;
+    }
+    .btn-purple {
+      background: var(--navy) !important;
+      border-color: var(--navy) !important;
+      color: #fff !important;
+      font-family: var(--font-sans) !important;
+      font-weight: 600 !important;
+      border-radius: 999px !important;
+    }
+    .btn-outline {
+      background: var(--surface) !important;
+      border: 1px solid var(--rule) !important;
+      color: var(--ink) !important;
+      font-family: var(--font-sans) !important;
+      font-weight: 500 !important;
+      border-radius: 999px !important;
+    }
+
+    /* Export chips (HTML/Excel/PDF) */
+    .btn-export {
+      font-family: var(--font-mono) !important;
+      font-weight: 600 !important;
+      letter-spacing: 0.10em !important;
+      text-transform: uppercase !important;
+      font-size: 11px !important;
+      border-radius: 999px !important;
+      padding: 9px 18px !important;
+    }
+    .btn-export-html { background: var(--blue10) !important; color: var(--navy) !important; border-color: var(--blue20) !important; }
+    .btn-export-html:hover { background: var(--navy) !important; color: #fff !important; border-color: var(--navy) !important; }
+    .btn-export-xlsx { background: #DCFCE7 !important; color: #15803D !important; border-color: #BBF7D0 !important; }
+    .btn-export-xlsx:hover { background: #16A34A !important; color: #fff !important; border-color: #16A34A !important; }
+    .btn-export-pdf  { background: #FEE2E2 !important; color: #B91C1C !important; border-color: #FECACA !important; }
+    .btn-export-pdf:hover  { background: #B91C1C !important; color: #fff !important; border-color: #B91C1C !important; }
+
+    /* ── Cards de upload e gerais ─────────────────────────────── */
+    .card, .upload-zone, .drop {
+      box-shadow: none !important;
+      border-radius: 24px !important;
+    }
+    .upload-zone, .drop {
+      background: var(--cloud) !important;
+      border: 1.5px dashed var(--blue20) !important;
+    }
+    .upload-zone:hover, .upload-zone.drag-over,
+    .drop:hover, .drop.drag-over {
+      border-color: var(--blue) !important;
+      background: var(--blue10) !important;
+    }
+    .card-header h2 {
+      font-family: var(--font-sans) !important;
+      font-weight: 300 !important;
+      font-size: 1.75rem !important;
+      letter-spacing: -0.02em !important;
+      color: var(--ink) !important;
+    }
+    .card-header p {
+      font-family: var(--font-sans) !important;
+      color: var(--ink-soft) !important;
+    }
+
+    /* ── Anomalia items / ranking ─────────────────────────────── */
+    .anomalia-item, .anom { background: var(--surface) !important; border-radius: 14px !important; }
+    .sev-badge, .anom-tag {
+      font-family: var(--font-mono) !important;
+      font-size: 10px !important;
+      letter-spacing: 0.18em !important;
+    }
+    #ranking-risco .risco-item {
+      background: var(--surface) !important;
+      border: 1px solid var(--rule) !important;
+      border-radius: 8px !important;
+      box-shadow: none !important;
+    }
+    .risco-pos {
+      font-family: var(--font-mono) !important;
+      background: var(--blue10) !important;
+      color: var(--navy) !important;
+      border: 1px solid var(--blue20) !important;
+    }
+    .risco-val { font-family: var(--font-mono) !important; }
+
+    /* ── Logo wrappers limpos ─────────────────────────────────── */
+    .sidebar-logo .brand-img,
+    .topbar-logo {
+      background: transparent !important;
+      border: none !important;
+      padding: 0 !important;
+    }
+
+    /* ── Tema toggle ──────────────────────────────────────────── */
+    .theme-toggle {
+      background: var(--surface) !important;
+      border: 1px solid var(--rule) !important;
+      color: var(--ink) !important;
+      border-radius: 999px !important;
+    }
+    .theme-toggle:hover {
+      background: var(--cloud) !important;
+      transform: none !important;
+    }
+
+    /* ── Toast ────────────────────────────────────────────────── */
+    .toast {
+      background: var(--surface) !important;
+      border: 1px solid var(--rule) !important;
+      box-shadow: 0 12px 32px rgba(14,42,71,.16) !important;
+      border-radius: 14px !important;
+      font-family: var(--font-sans) !important;
+    }
+    .toast.success { border-left: 3px solid #16A34A !important; }
+    .toast.error   { border-left: 3px solid #DC2626 !important; }
+    .toast.info    { border-left: 3px solid var(--blue) !important; }
+
+    /* ── Rodapé mono da página (slide-foot style) ─────────────── */
+    .page::after {
+      content: "orgatec · "  attr(data-section) "  ·  v0.5.0";
+      position: absolute;
+      bottom: 24px;
+      left: 32px;
+      right: 32px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      opacity: 0.55;
+      pointer-events: none;
+    }
+    .page { position: relative; padding-bottom: 80px !important; }
+
+    /* ── Tabela ───────────────────────────────────────────────── */
+    table th {
+      font-family: var(--font-mono) !important;
+      font-size: 10px !important;
+      letter-spacing: 0.18em !important;
+      color: var(--ink-soft) !important;
+      background: var(--cloud) !important;
+      border-bottom: 1px solid var(--rule) !important;
+      text-transform: uppercase !important;
+      font-weight: 700 !important;
+    }
+    table td {
+      font-family: var(--font-sans) !important;
+      border-bottom: 1px solid var(--rule) !important;
+      color: var(--ink) !important;
+    }
+    table tr:nth-child(even) td { background: var(--cloud) !important; }
+    table tr:hover td { background: var(--blue10) !important; }
+
+    /* ── Relatório (markdown) ─────────────────────────────────── */
+    #relatorio, .report-body {
+      background: var(--surface) !important;
+      border: 1px solid var(--rule) !important;
+      color: var(--ink) !important;
+      font-family: var(--font-sans) !important;
+    }
+    #relatorio h1, .report-body h1 {
+      font-family: var(--font-sans) !important;
+      font-weight: 200 !important;
+      letter-spacing: -0.03em !important;
+      border-bottom: 2px solid var(--blue) !important;
+    }
+    #relatorio h2, .report-body h2 {
+      font-family: var(--font-sans) !important;
+      font-weight: 400 !important;
+      letter-spacing: -0.02em !important;
+    }
+    #relatorio h3, .report-body h3 {
+      font-family: var(--font-sans) !important;
+      font-weight: 600 !important;
+    }
+
+    /* Quote/citação dentro do relatório ganha serif italic */
+    #relatorio blockquote, .report-body blockquote {
+      font-family: var(--font-serif) !important;
+      font-style: italic !important;
+      font-size: 1.25rem !important;
+      color: var(--ink) !important;
+      border-left: 3px solid var(--blue) !important;
+    }
   </style>
 </head>
 <body>
@@ -1881,11 +2497,11 @@
   </header>
 
   <!-- ── CONCILIAÇÃO ─────────────────────────────────────────────── -->
-  <div class="page section active" id="section-conciliacao">
+  <div class="page section active" id="section-conciliacao" data-section="conciliação">
     <div class="page-header">
-      <div>
-        <h1>Nova Conciliação</h1>
-        <p>Carregue extratos bancários e escolha o modo de análise</p>
+      <div data-eyebrow="01 · Nova carta de conciliação">
+        <h1>Nova <em>Conciliação.</em></h1>
+        <p>Carregue extratos bancários e escolha o modo de análise.</p>
       </div>
     </div>
 
@@ -2163,11 +2779,11 @@
   </div>
 
   <!-- ── CLIENTES ────────────────────────────────────────────────── -->
-  <div class="page section" id="section-clientes">
+  <div class="page section" id="section-clientes" data-section="clientes">
     <div class="page-header">
-      <div>
-        <h1>Clientes</h1>
-        <p>Gerencie os clientes cadastrados no sistema</p>
+      <div data-eyebrow="02 · Cadastro fiscal">
+        <h1>Clientes <em>ativos.</em></h1>
+        <p>Gerencie os clientes cadastrados no sistema.</p>
       </div>
       <button class="btn btn-primary btn-sm" data-action="open-cliente" aria-label="Cadastrar novo cliente">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
@@ -2201,11 +2817,11 @@
   </div>
 
   <!-- ── RELATÓRIOS ─────────────────────────────────────────────── -->
-  <div class="page section" id="section-relatorios">
+  <div class="page section" id="section-relatorios" data-section="relatórios">
     <div class="page-header">
-      <div>
-        <h1>Histórico de Relatórios</h1>
-        <p>Relatórios gerados nesta sessão</p>
+      <div data-eyebrow="03 · Arquivos de bordo">
+        <h1>Histórico de <em>Relatórios.</em></h1>
+        <p>Cartas batimétricas geradas e exports persistidos.</p>
       </div>
     </div>
     <div id="relatorios-lista">
