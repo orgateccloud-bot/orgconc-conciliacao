@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
@@ -88,6 +88,10 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 _DB_URL = os.environ.get("DATABASE_URL", "").strip()
 DB_DISPONIVEL = _DB_IMPORTS_OK and bool(_DB_URL) and not re.search(r"\[.+?\]", _DB_URL)
 
+# Calculado aqui (antes do FastAPI()) para gate de docs_url/redoc_url/openapi_url.
+# O import de _IS_PROD de auth.py acontece depois — mas a lógica é idêntica.
+_IS_PROD_EARLY = os.environ.get("ORGCONC_ENV", "development").strip().lower() in ("production", "prod")
+
 # --- Logging estruturado JSON com request_id ---
 from api.services.logging_estruturado import (
     configurar_logging,
@@ -113,6 +117,11 @@ SYSTEM_PROMPT = (
 async def _lifespan(app: FastAPI):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.warning("ANTHROPIC_API_KEY nao configurada — /conciliar/ofx (sem simular) nao funcionara")
+    if _IS_PROD_EARLY and any("localhost" in o or "127.0.0.1" in o for o in CORS_ORIGINS):
+        log.warning(
+            "CORS_ORIGINS contem localhost/127.0.0.1 em producao. "
+            "Configure ORGCONC_CORS_ORIGINS com dominios reais."
+        )
     if DB_DISPONIVEL:
         try:
             _parsed = _urlparse(_DB_URL)
@@ -132,9 +141,26 @@ app = FastAPI(
     description="Cruza extratos OFX/PDF/XML contra razao contabil. Gera HTML/XLSX/PDF.",
     version="1.0.0",
     lifespan=_lifespan,
+    docs_url=None if _IS_PROD_EARLY else "/docs",
+    redoc_url=None if _IS_PROD_EARLY else "/redoc",
+    openapi_url=None if _IS_PROD_EARLY else "/openapi.json",
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    log.warning(
+        "security_event",
+        extra={
+            "event": "rate_limit_exceeded",
+            "path": request.url.path,
+            "ip": request.client.host if request.client else "unknown",
+        },
+    )
+    return JSONResponse(status_code=429, content={"detail": f"Rate limit excedido: {exc.detail}"})
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 
 @app.exception_handler(Exception)
@@ -162,6 +188,21 @@ app.add_middleware(
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response as StarletteResponse
+
+_MAX_BODY_BYTES = int(os.environ.get("ORGCONC_MAX_BODY_BYTES", str(512 * 1024)))  # 512 KB
+
+
+class _MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
+        if request.method in ("POST", "PUT", "PATCH"):
+            cl = request.headers.get("content-length")
+            if cl and int(cl) > _MAX_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": f"Body excede {_MAX_BODY_BYTES} bytes"},
+                )
+        return await call_next(request)
+
 
 _CSP = (
     "default-src 'self'; "
@@ -194,6 +235,7 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(_SecurityHeadersMiddleware)
+app.add_middleware(_MaxBodySizeMiddleware)
 
 
 from api.services.auth import (
@@ -609,6 +651,14 @@ async def auth_login(request: Request, payload: LoginPayload):
     )
     senha_ok = verificar_senha(payload.senha, admin_hash)
     if not email_ok or not senha_ok:
+        log.warning(
+            "security_event",
+            extra={
+                "event": "login_failed",
+                "email": payload.email,
+                "ip": request.client.host if request.client else "unknown",
+            },
+        )
         raise HTTPException(status_code=401, detail="Credenciais invalidas")
 
     token = emitir_token(sub=admin_email, email=admin_email, role="admin")

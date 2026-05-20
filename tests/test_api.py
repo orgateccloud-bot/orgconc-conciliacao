@@ -1009,3 +1009,74 @@ def test_export_retorna_cache_control_no_store():
     assert "no-store" in cc, (
         f"/export/html sem 'no-store' no Cache-Control: '{cc}'"
     )
+
+
+# ── Trilha 7: audit log · legacy token em prod · /docs em prod · body limit ──
+
+def test_docs_em_prod_retorna_404():
+    """Em produção /docs deve retornar 404 (Swagger UI desabilitado)."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient as _TC
+
+    prod_app = FastAPI(
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+
+    @prod_app.get("/ping")
+    def _ping():
+        return {"ok": True}
+
+    c = _TC(prod_app)
+    r = c.get("/docs")
+    assert r.status_code == 404, f"/docs deveria ser 404 em prod, got {r.status_code}"
+
+
+def test_openapi_em_prod_retorna_404():
+    """Em produção /openapi.json deve retornar 404 (schema não exposto)."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient as _TC
+
+    prod_app = FastAPI(
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    c = _TC(prod_app)
+    r = c.get("/openapi.json")
+    assert r.status_code == 404, f"/openapi.json deveria ser 404 em prod, got {r.status_code}"
+
+
+def test_legacy_token_rejeitado_em_prod():
+    """Bearer com token legado deve ser rejeitado (401) quando _IS_PROD=True."""
+    from api.services.auth import auth_optional
+    from fastapi import HTTPException
+
+    legacy = "token-legado-teste-seguro"
+    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", legacy), \
+         patch("api.services.auth._IS_PROD", True):
+        try:
+            auth_optional(authorization=f"Bearer {legacy}")
+            raise AssertionError("Token legado aceito em produção — deve levantar HTTPException 401")
+        except HTTPException as e:
+            assert e.status_code == 401, f"Esperado 401, got {e.status_code}"
+
+
+def test_body_gigante_retorna_413():
+    """POST com Content-Length > _MAX_BODY_BYTES deve retornar 413."""
+    import api.main as _m
+    original = _m._MAX_BODY_BYTES
+    try:
+        _m._MAX_BODY_BYTES = 100
+        payload = "x" * 200
+        r = client.post(
+            "/auth/login",
+            content=payload,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(payload))},
+        )
+        assert r.status_code == 413, (
+            f"Body gigante deveria retornar 413, got {r.status_code}"
+        )
+    finally:
+        _m._MAX_BODY_BYTES = original

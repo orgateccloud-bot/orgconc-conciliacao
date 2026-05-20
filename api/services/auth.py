@@ -121,8 +121,10 @@ def decodificar_token(token: str) -> TokenPayload:
         claims = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALG])
         return TokenPayload(**claims)
     except jwt.ExpiredSignatureError:
+        log.warning("security_event", extra={"event": "token_expired"})
         raise HTTPException(status_code=401, detail="Token expirado")
     except jwt.InvalidTokenError as e:
+        log.warning("security_event", extra={"event": "token_invalid", "error": type(e).__name__})
         raise HTTPException(status_code=401, detail=f"Token invalido: {type(e).__name__}")
 
 
@@ -141,8 +143,14 @@ def auth_optional(authorization: Optional[str] = Header(None)) -> Optional[Token
     token = authorization.split(" ", 1)[1].strip()
 
     # Aceita token legacy (compatibilidade ate migrar 100%)
-    if _LEGACY_SERVICE_TOKEN and _secrets.compare_digest(token, _LEGACY_SERVICE_TOKEN):
-        return TokenPayload(sub="legacy-service", role="service")
+    if _LEGACY_SERVICE_TOKEN:
+        match = _secrets.compare_digest(token, _LEGACY_SERVICE_TOKEN)
+        if match and _IS_PROD:
+            log.error("security_event", extra={"event": "legacy_token_rejected_prod"})
+            raise HTTPException(status_code=401, detail="Token invalido")
+        if match:
+            log.warning("security_event", extra={"event": "legacy_token_used_dev"})
+            return TokenPayload(sub="legacy-service", role="service")
 
     return decodificar_token(token)
 
