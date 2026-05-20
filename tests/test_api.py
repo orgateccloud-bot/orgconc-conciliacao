@@ -1211,3 +1211,89 @@ def test_magic_bytes_xml_detectado():
     xml_content = b"<?xml version='1.0'?><root/>"
     ext = _detectar_tipo(xml_content, "extrato.pdf")  # extensão errada
     assert ext == ".xml", f"Magic bytes XML não detectado — ext retornada: {ext}"
+
+
+# ── Trilha 10: /ui/ — CSP compliance + SRI + XSS hardening ─────────────────
+
+def _static_index_html() -> str:
+    from pathlib import Path
+    p = Path(__file__).resolve().parent.parent / "static" / "index.html"
+    return p.read_text(encoding="utf-8")
+
+
+def test_static_ui_sem_inline_script_block():
+    """static/index.html não pode ter <script> com código inline (CSP bloqueia)."""
+    import re
+    html = _static_index_html()
+    # Match qualquer <script ...>...</script> com conteúdo não-vazio entre as tags
+    matches = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>", html)
+    for body in matches:
+        assert not body.strip(), (
+            f"Bloco <script> inline detectado em static/index.html — "
+            f"CSP estrito bloqueia. Conteúdo (primeiros 100 chars): {body.strip()[:100]}"
+        )
+
+
+def test_static_ui_sem_inline_event_handlers():
+    """static/index.html não pode ter onclick=/onchange=/onload= (CSP bloqueia)."""
+    import re
+    html = _static_index_html()
+    handlers = re.findall(r"\son(click|change|load|submit|input|focus|blur)=", html, re.IGNORECASE)
+    assert not handlers, (
+        f"Handlers inline detectados em static/index.html: {handlers[:5]}. "
+        "Migre para addEventListener em /ui/js/ui.js."
+    )
+
+
+def test_static_ui_marked_pinado_com_sri():
+    """marked deve estar pinado (marked@X.Y.Z) com integrity SRI + crossorigin."""
+    html = _static_index_html()
+    assert "marked@12.0.2" in html, "marked.js deve estar pinado em uma versão explícita (12.0.2)"
+    # Verifica que a tag de marked tem integrity + crossorigin
+    import re
+    m = re.search(r'<script[^>]*marked@12\.0\.2[^>]*?>', html, re.DOTALL)
+    assert m, "Tag de marked não encontrada"
+    tag = m.group(0)
+    assert 'integrity="sha384-' in tag, f"marked sem SRI: {tag}"
+    assert 'crossorigin="anonymous"' in tag, f"marked sem crossorigin: {tag}"
+
+
+def test_static_ui_dompurify_pinado_com_sri():
+    """dompurify deve estar pinado com SRI."""
+    html = _static_index_html()
+    assert "dompurify@3.2.4" in html, "dompurify deve estar pinado (3.2.4)"
+    import re
+    m = re.search(r'<script[^>]*dompurify@3\.2\.4[^>]*?>', html, re.DOTALL)
+    assert m, "Tag de dompurify não encontrada"
+    tag = m.group(0)
+    assert 'integrity="sha384-' in tag, f"dompurify sem SRI: {tag}"
+    assert 'crossorigin="anonymous"' in tag, f"dompurify sem crossorigin: {tag}"
+
+
+def test_static_ui_html2pdf_pinado_com_sri():
+    """html2pdf deve estar pinado com SRI."""
+    html = _static_index_html()
+    assert "html2pdf.js/0.10.1" in html, "html2pdf deve estar pinado (0.10.1)"
+    import re
+    m = re.search(r'<script[^>]*html2pdf\.js/0\.10\.1[^>]*?>', html, re.DOTALL)
+    assert m, "Tag de html2pdf não encontrada"
+    tag = m.group(0)
+    assert 'integrity="sha384-' in tag, f"html2pdf sem SRI: {tag}"
+    assert 'crossorigin="anonymous"' in tag, f"html2pdf sem crossorigin: {tag}"
+
+
+def test_static_ui_carrega_js_externo():
+    """static/index.html deve carregar /ui/js/ui.js (externalização do inline)."""
+    html = _static_index_html()
+    assert '/ui/js/ui.js' in html, (
+        "Tag <script src='/ui/js/ui.js' defer> esperada — sem ela a página não funciona."
+    )
+
+
+def test_static_ui_js_servido_em_200():
+    """O arquivo static/js/ui.js deve ser servido em /ui/js/ui.js."""
+    r = client.get("/ui/js/ui.js")
+    assert r.status_code == 200, f"/ui/js/ui.js retornou {r.status_code}"
+    assert "atualizarLista" in r.text or "addEventListener" in r.text, (
+        "Conteúdo de ui.js não parece ser o JS extraído"
+    )
