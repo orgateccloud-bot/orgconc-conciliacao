@@ -33,7 +33,7 @@ export function Topbar({ title, dbStatus, onToggleSidebar }: Props) {
           </button>
         )}
         <Logo size={32} />
-        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-lg font-light tracking-tight text-foreground">{title}</h2>
       </div>
 
       <div className="flex items-center gap-2">

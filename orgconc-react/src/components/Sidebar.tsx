@@ -24,8 +24,8 @@ export function Sidebar({ secao, onChange }: Props) {
       <div className="flex items-center gap-3 px-5 py-5 border-b">
         <Logo size={56} />
         <div className="flex flex-col">
-          <h1 className="text-base font-bold tracking-tight text-foreground leading-tight">ORGATEC</h1>
-          <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-muted-foreground mt-0.5">
+          <h1 className="font-bold text-lg tracking-tight text-foreground leading-tight" style={{ letterSpacing: "-0.025em" }}>ORGATEC</h1>
+          <span className="text-[10px] font-semibold tracking-[0.18em] uppercase text-muted-foreground mt-0.5 font-mono">
             Conciliação Bancária
           </span>
         </div>

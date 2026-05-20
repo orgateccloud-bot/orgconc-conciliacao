@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,65 +6,91 @@
 
 @layer base {
   :root {
-    /* Paleta light derivada do logo Orgatec (navy → blue → cyan) */
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    /* Direção Leve — paleta canônica do deck-comercial */
+    /* #EAF4FA */
+    --background: 200 60% 95%;
+    --foreground: 213 68% 16%;        /* #0E2A47 */
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 213 68% 16%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 213 68% 16%;
 
-    /* Primary: blue do logo */
-    --primary: 221 83% 53%;
+    /* Primary: navy institucional #1A3A6B */
+    --primary: 215 60% 26%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 214 32% 96%;
-    --secondary-foreground: 222 47% 11%;
+    /* Secondary: cloud #F4F9FC */
+    --secondary: 204 50% 97%;
+    --secondary-foreground: 213 68% 16%;
 
-    --muted: 214 32% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 204 50% 97%;
+    --muted-foreground: 213 32% 36%;  /* #3F5A78 ink-soft */
 
-    /* Accent: cyan do logo */
-    --accent: 189 94% 53%;
-    --accent-foreground: 222 47% 11%;
+    /* Accent: blue céu #5BA9D6 */
+    --accent: 201 60% 60%;
+    --accent-foreground: 213 68% 16%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 73% 46%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 221 83% 53%;
+    --border: 213 68% 16% / 0.14;
+    --input: 213 68% 16% / 0.14;
+    --ring: 201 60% 60%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
+
+    /* Tokens diretos do deck (raw hex via CSS vars) */
+    --d-bg:       #EAF4FA;
+    --d-cloud:    #F4F9FC;
+    --d-surface:  #FFFFFF;
+    --d-pale:     #B8DDEE;
+    --d-ink:      #0E2A47;
+    --d-ink-soft: #3F5A78;
+    --d-navy:     #1A3A6B;
+    --d-blue:     #5BA9D6;
+    --d-azure:    #7BC8E0;
+    --d-rule:     rgba(14,42,71,.14);
+    --d-glow:     rgba(91,169,214,.30);
   }
 
   .dark {
-    /* Paleta dark — navy escuro do logo */
-    --background: 222 47% 7%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 9%;
-    --popover-foreground: 210 40% 98%;
+    --background: 213 68% 6%;
+    --foreground: 200 60% 95%;
+    --card: 213 50% 10%;
+    --card-foreground: 200 60% 95%;
+    --popover: 213 50% 10%;
+    --popover-foreground: 200 60% 95%;
 
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 11%;
+    --primary: 201 60% 60%;
+    --primary-foreground: 213 68% 16%;
 
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 213 40% 14%;
+    --secondary-foreground: 200 60% 95%;
 
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 213 40% 14%;
+    --muted-foreground: 213 22% 65%;
 
-    --accent: 188 95% 68%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 201 60% 60%;
+    --accent-foreground: 213 68% 16%;
 
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 63% 50%;
+    --destructive-foreground: 200 60% 95%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 217 91% 60%;
+    --border: 200 60% 95% / 0.10;
+    --input: 200 60% 95% / 0.10;
+    --ring: 201 60% 60%;
+
+    --d-bg:       #0a1828;
+    --d-cloud:    #0f2237;
+    --d-surface:  #142a44;
+    --d-pale:     #1a3a6b;
+    --d-ink:      #EAF4FA;
+    --d-ink-soft: #94a3b8;
+    --d-navy:     #5BA9D6;
+    --d-blue:     #7BC8E0;
+    --d-azure:    #B8DDEE;
+    --d-rule:     rgba(184,221,238,.14);
+    --d-glow:     rgba(91,169,214,.20);
   }
 }
 
@@ -88,21 +114,59 @@
   }
 }
 
-/* Tracking de labels cartográficos */
-.atlas-label {
-  font-size: 0.6875rem;
-  letter-spacing: 0.18em;
+/* Eyebrow do deck (mono uppercase blue) */
+.eyebrow,
+.atlas-label,
+.deck-label {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.8125rem;
+  letter-spacing: 0.20em;
   text-transform: uppercase;
   font-weight: 600;
-  color: hsl(var(--muted-foreground));
+  color: var(--d-blue);
 }
 
+.deck-caption,
 .atlas-caption {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.625rem;
-  letter-spacing: 0.2em;
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground));
+  color: var(--d-ink-soft);
+}
+
+/* Hero tipográfico do deck */
+.h1-hero {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 200;
+  font-size: clamp(3.5rem, 8vw, 8rem);
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+  color: var(--d-ink);
+}
+.h1-hero em,
+.h1 em,
+.h2 em {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--d-blue);
+}
+.h1 {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 200;
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  color: var(--d-ink);
+}
+.h2 {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 300;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--d-ink);
 }
 
 /* Linha de costa: hairline gradient para bordas de sidebar/topbar */

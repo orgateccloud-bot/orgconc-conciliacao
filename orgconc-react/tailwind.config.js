@@ -38,24 +38,31 @@ module.exports = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Paleta Orgatec extraída do logo (navy → blue → cyan)
+        // Paleta Direção Leve (deck-comercial)
         brand: {
-          navy:   "#1E3A8A",
-          blue:   "#2563EB",
-          sky:    "#0EA5E9",
-          cyan:   "#22D3EE",
-          dark:   "#0B1E3F",   // navy mais escuro do gradient
-          ink:    "#0F172A",   // texto principal
+          bg:       "#EAF4FA",
+          cloud:    "#F4F9FC",
+          surface:  "#FFFFFF",
+          pale:     "#B8DDEE",
+          ink:      "#0E2A47",
+          "ink-soft": "#3F5A78",
+          navy:     "#1A3A6B",
+          blue:     "#5BA9D6",
+          azure:    "#7BC8E0",
+          // alias de compatibilidade
+          cyan:     "#7BC8E0",
+          dark:     "#0E2A47",
+          sky:      "#7BC8E0",
         },
-        // Cores semânticas mantidas para compatibilidade
         success: "#16A34A",
         warning: "#D97706",
         danger:  "#DC2626",
       },
       backgroundImage: {
-        "brand-gradient":      "linear-gradient(135deg, #1E3A8A 0%, #2563EB 50%, #22D3EE 100%)",
-        "brand-gradient-soft": "linear-gradient(135deg, #DBEAFE 0%, #BFDBFE 50%, #CFFAFE 100%)",
-        "brand-vertical":      "linear-gradient(180deg, #0B1E3F 0%, #1E3A8A 50%, #2563EB 100%)",
+        "brand-gradient":      "linear-gradient(135deg, #1A3A6B 0%, #5BA9D6 100%)",
+        "brand-gradient-soft": "linear-gradient(135deg, #EAF4FA 0%, #B8DDEE 100%)",
+        "brand-vertical":      "linear-gradient(180deg, #0E2A47 0%, #1A3A6B 100%)",
+        "featured-card":       "linear-gradient(160deg, #1A3A6B 0%, #0d4f7a 100%)",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -63,8 +70,9 @@ module.exports = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
-        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+        sans:  ["Manrope", "system-ui", "-apple-system", "sans-serif"],
+        serif: ["Instrument Serif", "Georgia", "serif"],
+        mono:  ["JetBrains Mono", "ui-monospace", "monospace"],
       },
       boxShadow: {
         xs: "0 1px 2px rgba(15,23,42,.05)",
