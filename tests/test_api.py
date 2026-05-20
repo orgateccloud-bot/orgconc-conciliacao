@@ -1143,3 +1143,71 @@ def test_db_error_em_prod_omite_mensagem():
     assert "mensagem" not in result, (
         f"'mensagem' exposto em produção — vazamento de erro DB: {result}"
     )
+
+
+# ── Trilha 9: WeasyPrint SSRF · parser error · plano max_length · magic bytes ──
+
+def test_sanitize_img_src_https_removido():
+    """img src com URL remota deve ser removido — SSRF guard para WeasyPrint."""
+    from api.services.sanitize import sanitize_html
+    out = sanitize_html('<img src="https://evil.com/track.png" alt="x">')
+    assert 'src="https://evil.com' not in out, (
+        f"img src remoto não bloqueado pelo sanitizer: {out}"
+    )
+
+
+def test_sanitize_img_src_http_removido():
+    """img src HTTP deve ser removido (sem downgrade para plaintext)."""
+    from api.services.sanitize import sanitize_html
+    out = sanitize_html('<img src="http://evil.com/track.png" alt="x">')
+    assert "http://evil.com" not in out, f"img src HTTP não bloqueado: {out}"
+
+
+def test_sanitize_img_data_uri_mantido():
+    """img src com data URI (base64) deve ser preservado."""
+    from api.services.sanitize import sanitize_html
+    data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    out = sanitize_html(f'<img src="{data_uri}" alt="logo">')
+    assert "data:image/png" in out, f"data URI removido indevidamente: {out}"
+
+
+def test_sanitize_link_http_bloqueado():
+    """a href com HTTP deve ser removido (sem downgrade)."""
+    from api.services.sanitize import sanitize_html
+    out = sanitize_html('<a href="http://example.com">link</a>')
+    assert "http://example.com" not in out, f"href HTTP não bloqueado: {out}"
+
+
+def test_sanitize_link_https_mantido():
+    """a href com HTTPS deve ser preservado."""
+    from api.services.sanitize import sanitize_html
+    out = sanitize_html('<a href="https://example.com">link</a>')
+    assert "https://example.com" in out, f"href HTTPS removido indevidamente: {out}"
+
+
+def test_plano_muito_longo_retorna_422():
+    """POST /clientes com plano > 20 chars deve retornar 422."""
+    r = client.post(
+        "/clientes",
+        json={"nome": "Empresa X", "plano": "a" * 21},
+        headers={"Authorization": "Bearer dummy"},
+    )
+    assert r.status_code == 422, (
+        f"plano de 21 chars deveria retornar 422, got {r.status_code}"
+    )
+
+
+def test_magic_bytes_pdf_nomeado_como_ofx():
+    """Arquivo PDF nomeado .ofx deve ser detectado por magic bytes e processado como PDF."""
+    from api.parsers import _detectar_tipo
+    pdf_header = b"%PDF-1.4 content here"
+    ext = _detectar_tipo(pdf_header, "extrato.ofx")
+    assert ext == ".pdf", f"Magic bytes PDF não detectado — ext retornada: {ext}"
+
+
+def test_magic_bytes_xml_detectado():
+    """Arquivo XML deve ser detectado por magic bytes."""
+    from api.parsers import _detectar_tipo
+    xml_content = b"<?xml version='1.0'?><root/>"
+    ext = _detectar_tipo(xml_content, "extrato.pdf")  # extensão errada
+    assert ext == ".xml", f"Magic bytes XML não detectado — ext retornada: {ext}"

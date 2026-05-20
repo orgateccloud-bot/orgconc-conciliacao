@@ -291,7 +291,7 @@ class ClienteCreate(BaseModel):
     cnpj: Optional[str] = Field(None, max_length=18)
     email: Optional[str] = Field(None, max_length=254)
     telefone: Optional[str] = Field(None, max_length=20)
-    plano: str = Field("basico", max_length=50)
+    plano: str = Field("basico", max_length=20)
 
     def model_post_init(self, __context) -> None:
         if self.cnpj:
@@ -306,7 +306,7 @@ class ClienteUpdate(BaseModel):
     nome: Optional[str] = Field(None, max_length=255)
     email: Optional[str] = Field(None, max_length=254)
     telefone: Optional[str] = Field(None, max_length=20)
-    plano: Optional[str] = Field(None, max_length=50)
+    plano: Optional[str] = Field(None, max_length=20)
     ativo: Optional[bool] = None
 
     def model_post_init(self, __context) -> None:

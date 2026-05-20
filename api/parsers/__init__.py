@@ -251,19 +251,37 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
                             "valor": valor, "memo": desc.strip(),
                             "nome": "", "checknum": "",
                         })
-    except Exception as e:
+    except Exception:
         log.exception("Erro parseando PDF %s", filename)
-        raise HTTPException(status_code=400, detail=f"PDF invalido ou corrompido: {e}")
+        raise HTTPException(status_code=400, detail="PDF invalido ou corrompido")
 
     log.info("PDF %s: %d transacoes extraidas", filename, len(transacoes))
     return transacoes
 
 
-# ── Router por extensao ──────────────────────────────────────────────────────
+# ── Router por extensao + magic bytes ───────────────────────────────────────
+
+# Assinaturas de magic bytes para validar tipo real do arquivo
+_MAGIC_BYTES: list[tuple[bytes, str]] = [
+    (b"%PDF",       ".pdf"),
+    (b"<?xml",      ".xml"),
+    (b"<OFX",       ".ofx"),
+    (b"OFXHEADER",  ".ofx"),
+]
+
+
+def _detectar_tipo(content: bytes, filename: str) -> str:
+    """Retorna extensao baseada em magic bytes (fallback: extensao do filename)."""
+    head = content[:16].lstrip()
+    for magic, ext in _MAGIC_BYTES:
+        if head.startswith(magic):
+            return ext
+    return Path(filename).suffix.lower()
+
 
 def _parse_arquivo(content: bytes, filename: str) -> list[dict]:
-    """Detecta tipo do arquivo e roteia para o parser correto."""
-    ext = Path(filename).suffix.lower()
+    """Detecta tipo do arquivo por magic bytes e roteia para o parser correto."""
+    ext = _detectar_tipo(content, filename)
     if ext == ".ofx":
         return _parse_ofx(content.decode("latin-1", errors="ignore"))
     if ext == ".pdf":
