@@ -135,6 +135,21 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Captura exceções não tratadas. Sanitiza resposta em prod; expõe tipo em dev."""
+    log.exception("Unhandled exception in %s %s", request.method, request.url.path)
+    if _IS_PROD:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Erro interno no servidor. Contate suporte."},
+        )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {exc}"},
+    )
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -172,6 +187,10 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         if _IS_PROD:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # Tokens e relatórios financeiros não devem ser cacheados por proxies/CDN/navegador
+        if request.url.path.startswith(("/auth/", "/export/")):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
         return response
 
 app.add_middleware(_SecurityHeadersMiddleware)
@@ -521,9 +540,8 @@ def animate_demo():
 
 @app.get("/")
 def root():
-    return {
+    resp: dict = {
         "service": "Conciliacao Bancaria API",
-        "version": "1.0.0",
         "endpoints": [
             "/health", "/docs",
             "/conciliar/ofx",
@@ -533,6 +551,9 @@ def root():
             "/logo-base64",
         ],
     }
+    if not _IS_PROD:
+        resp["version"] = "1.0.0"
+    return resp
 
 
 @app.get("/health")

@@ -82,11 +82,13 @@ def verificar_senha(senha: str, hash_armazenado: str) -> bool:
 class TokenPayload(BaseModel):
     """Claims tipados do JWT."""
     sub: str          # subject (cliente_id ou identificador)
+    jti: Optional[str] = None   # JWT ID — identificador único para revogação futura
     email: Optional[str] = None
     cliente_id: Optional[str] = None
     role: str = "user"
     exp: Optional[int] = None
     iat: Optional[int] = None
+    nbf: Optional[int] = None
 
 
 def emitir_token(
@@ -100,6 +102,7 @@ def emitir_token(
     agora = datetime.now(timezone.utc)
     payload = {
         "sub": sub,
+        "jti": _secrets.token_urlsafe(16),  # JWT ID único — suporta revogação futura
         "iat": int(agora.timestamp()),
         "nbf": int(agora.timestamp()),  # não válido antes do momento de emissão
         "exp": int((agora + timedelta(minutes=ttl_min or _JWT_TTL_MIN)).timestamp()),

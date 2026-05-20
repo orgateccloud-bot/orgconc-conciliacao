@@ -967,3 +967,45 @@ def test_health_em_prod_nao_expoe_config():
     assert "banco_dados" not in body, (
         "/health expõe banco_dados em produção"
     )
+
+
+# ── Trilha 6: Cache-Control, exception handler, JWT jti, version info ────
+
+def test_auth_login_retorna_cache_control_no_store():
+    """POST /auth/login deve retornar Cache-Control: no-store para evitar cache de tokens."""
+    r = client.post("/auth/login", json={"email": "x@y.com", "senha": "qualquer"})
+    # Independente do status (401/503), o header deve estar presente
+    cc = r.headers.get("cache-control", "")
+    assert "no-store" in cc, (
+        f"/auth/login sem 'no-store' no Cache-Control: '{cc}'"
+    )
+
+
+def test_jwt_contem_jti():
+    """Tokens emitidos devem conter claim jti (JWT ID único)."""
+    import jwt as pyjwt
+    from api.services.auth import emitir_token
+    token = emitir_token(sub="test@x.com", email="test@x.com")
+    claims = pyjwt.decode(token, options={"verify_signature": False})
+    assert "jti" in claims, "Claim jti ausente no token"
+    assert len(claims["jti"]) >= 16, "jti deve ter pelo menos 16 chars"
+
+
+def test_root_em_prod_nao_expoe_versao():
+    """GET / em produção não deve retornar campo version (fingerprinting)."""
+    with patch("api.main._IS_PROD", True):
+        r = client.get("/")
+    assert r.status_code == 200
+    body = r.json()
+    assert "version" not in body, (
+        f"GET / expõe 'version' em produção: {body}"
+    )
+
+
+def test_export_retorna_cache_control_no_store():
+    """GET /export/* deve retornar Cache-Control: no-store (relatórios financeiros)."""
+    r = client.get("/export/html/abc123456789")
+    cc = r.headers.get("cache-control", "")
+    assert "no-store" in cc, (
+        f"/export/html sem 'no-store' no Cache-Control: '{cc}'"
+    )
