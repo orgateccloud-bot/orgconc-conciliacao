@@ -13,9 +13,9 @@ from alembic import context
 # Adiciona raiz do projeto ao path para importar modelos
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Carrega .env para DATABASE_URL
+# Carrega .env SEM override — variaveis ja exportadas no shell tem precedencia
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 # Importa Base e modelos para autogenerate
 from api.db.client import Base
@@ -24,8 +24,11 @@ from api.db import models  # noqa: F401 — registra tabelas no metadata
 config = context.config
 
 # Sobrescreve sqlalchemy.url com DATABASE_URL do .env (driver async)
-_db_url = os.getenv("DATABASE_URL", "")
+_db_url = os.getenv("DATABASE_URL", "").strip()
 if _db_url:
+    # Normaliza prefixo postgres:// (Heroku/Railway/Render) -> postgresql://
+    if _db_url.startswith("postgres://"):
+        _db_url = _db_url.replace("postgres://", "postgresql://", 1)
     _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     config.set_main_option("sqlalchemy.url", _db_url)
 

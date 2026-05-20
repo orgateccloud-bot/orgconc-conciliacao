@@ -33,6 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from markdown import markdown as md_to_html
+from api.services.sanitize import sanitize_html
 import contextlib
 from pydantic import BaseModel
 from sqlalchemy import text as sql_text
@@ -469,9 +470,16 @@ def _carregar_dataset(rid: str) -> dict:
 
 
 def _render_html(relatorio_md: str) -> str:
-    """Renderiza relatorio Markdown como HTML standalone via template Jinja2."""
+    """Renderiza relatorio Markdown como HTML standalone via template Jinja2.
+
+    Defesa em profundidade contra XSS: sanitiza o HTML gerado pelo markdown
+    com bleach (allowlist de tags/atributos) antes de passar ao template
+    Jinja2 que usa `{{ body|safe }}`. Bloqueia scripts inline, atributos
+    on*, javascript:, iframe/object/embed/style.
+    """
     from datetime import datetime
     body = md_to_html(relatorio_md, extensions=["tables", "fenced_code"])
+    body = sanitize_html(body)
     return _jinja.get_template("relatorio.html").render(
         body=body,
         agora=datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -877,9 +885,13 @@ def logo_base64():
 
 
 def _render_pdf_html(relatorio_md: str, anomalias: list, extratos: list, report_id: str) -> str:
-    """Renderiza HTML print-optimized do relatorio via Jinja2."""
+    """Renderiza HTML print-optimized do relatorio via Jinja2.
+
+    Sanitiza body com bleach antes do template (defesa contra XSS no PDF).
+    """
     from datetime import datetime
     body = md_to_html(relatorio_md, extensions=["tables", "fenced_code"])
+    body = sanitize_html(body)
     total_tx   = sum(e.get("qtd", 0) for e in extratos)
     total_cred = sum(t["valor"] for e in extratos for t in e.get("transacoes", []) if t["valor"] > 0)
     total_deb  = sum(t["valor"] for e in extratos for t in e.get("transacoes", []) if t["valor"] < 0)

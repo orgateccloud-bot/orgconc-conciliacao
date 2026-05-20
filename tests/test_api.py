@@ -806,3 +806,37 @@ def test_db_conciliacao_salva_no_banco():
             row = cur.fetchone()
     assert row is not None, f"Conciliacao {rid} nao encontrada no banco"
     assert row[1] == 4  # OFX_SAMPLE tem 4 transacoes
+
+
+# ── Sanitizacao XSS ─────────────────────────────────────────────────────────
+
+def test_sanitize_remove_script_tag():
+    """Defesa contra XSS: <script> e removido antes do template renderizar."""
+    from api.services.sanitize import sanitize_html
+    out = sanitize_html('<p>ok</p><script>alert(1)</script>')
+    assert '<script' not in out.lower()
+    assert 'alert(1)' in out  # texto preservado, mas inerte
+
+
+def test_sanitize_remove_javascript_uri():
+    """Defesa contra XSS: javascript: URIs sao removidas de href."""
+    from api.services.sanitize import sanitize_html
+    out = sanitize_html('<a href="javascript:alert(1)">bad</a><a href="https://x.com">ok</a>')
+    assert 'javascript:' not in out.lower()
+    assert 'href="https://x.com"' in out
+
+
+def test_sanitize_remove_event_handlers():
+    """Defesa contra XSS: atributos on* sao removidos."""
+    from api.services.sanitize import sanitize_html
+    out = sanitize_html('<p onclick="alert(1)">x</p><img src="x" onerror="alert(1)">')
+    assert 'onclick' not in out.lower()
+    assert 'onerror' not in out.lower()
+
+
+def test_render_html_sanitiza_xss_em_relatorio_md():
+    """End-to-end: relatorio_md com payload XSS nao gera script no HTML final."""
+    payload_md = "# Relatorio\n\n<script>alert('xss')</script>\n\nConteudo legitimo."
+    html = _render_html(payload_md)
+    assert '<script' not in html.lower()
+    assert 'Conteudo legitimo' in html

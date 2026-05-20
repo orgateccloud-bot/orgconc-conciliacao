@@ -30,20 +30,34 @@ log = logging.getLogger("orgconc.auth")
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
+# Ambiente: production rejeita JWT secret fraco/ausente e bloqueia anonimo
+_ENV = os.environ.get("ORGCONC_ENV", "development").strip().lower()
+_IS_PROD = _ENV in ("production", "prod")
+
 _JWT_SECRET = os.environ.get("ORGCONC_JWT_SECRET", "").strip()
 if not _JWT_SECRET:
+    if _IS_PROD:
+        raise RuntimeError(
+            "ORGCONC_JWT_SECRET e OBRIGATORIO em producao (>= 32 chars). "
+            "Gere com: openssl rand -hex 32"
+        )
     _JWT_SECRET = _secrets.token_urlsafe(48)
     log.warning(
         "ORGCONC_JWT_SECRET nao configurado — gerei um aleatorio. "
         "Tokens nao sobreviverao restart. Configure no .env em producao."
     )
 elif len(_JWT_SECRET) < 32:
+    if _IS_PROD:
+        raise RuntimeError(
+            f"ORGCONC_JWT_SECRET fraco ({len(_JWT_SECRET)} chars). "
+            "Em producao deve ter >= 32 chars. Gere com: openssl rand -hex 32"
+        )
     log.warning("ORGCONC_JWT_SECRET tem menos de 32 chars — fraco. Aumente.")
 
 _JWT_TTL_MIN = int(os.environ.get("ORGCONC_JWT_TTL_MIN", "120"))
 _JWT_ALG = "HS256"
 
-# Token legacy de servico (mantem retrocompat)
+# Token legacy de servico (mantem retrocompat em dev/staging)
 _LEGACY_SERVICE_TOKEN = os.environ.get("ORGCONC_AUTH_TOKEN", "").strip()
 
 # Hashing (passlib)
@@ -134,14 +148,23 @@ def current_user(
 ) -> TokenPayload:
     """Auth obrigatoria. Retorna TokenPayload ou levanta 401.
 
-    Se ORGCONC_AUTH_TOKEN estiver vazio E nenhum Authorization for enviado,
-    libera como 'anonymous' (modo dev). Em producao SEMPRE configurar
-    ORGCONC_AUTH_TOKEN ou usar /auth/login.
+    Em ORGCONC_ENV=production: SEMPRE exige header Authorization Bearer
+    (rejeita modo anonimo, mesmo sem ORGCONC_AUTH_TOKEN configurado).
+
+    Em development/staging: se nem Authorization nem ORGCONC_AUTH_TOKEN
+    estiverem definidos, libera como 'anonymous' (facilita dev local).
     """
     if payload is not None:
         return payload
+    # Producao: anonimo SEMPRE bloqueado
+    if _IS_PROD:
+        raise HTTPException(status_code=401, detail="Token Bearer obrigatorio em producao")
+    # Dev/staging com token legacy configurado: exige header
     if _LEGACY_SERVICE_TOKEN:
-        # Modo "auth obrigatoria": exige header
         raise HTTPException(status_code=401, detail="Token Bearer ausente")
-    # Modo dev sem auth configurada: usuario anonimo
+    # Dev/staging sem auth configurada: usuario anonimo (apenas para conveniencia local)
+    log.warning(
+        "Acesso anonimo liberado (ORGCONC_ENV=%s, sem ORGCONC_AUTH_TOKEN). "
+        "Configure auth antes de promover para producao.", _ENV
+    )
     return TokenPayload(sub="anonymous", role="anonymous")
