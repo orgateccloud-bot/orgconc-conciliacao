@@ -28,7 +28,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from anthropic import Anthropic, APIStatusError
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -37,6 +37,7 @@ from api.services.sanitize import sanitize_html
 import contextlib
 from pydantic import BaseModel, Field
 from urllib.parse import urlparse as _urlparse
+from uuid import UUID
 from sqlalchemy import text as sql_text
 
 # Parsers extraidos para api/parsers/
@@ -370,6 +371,8 @@ async def _salvar_no_banco(
         return {"status": "ok", "transacoes_persistidas": len(txs)}
     except Exception as exc:
         log.exception("Falha ao salvar no banco (conciliacao %s) — JSON preservado", report_id)
+        if _IS_PROD:
+            return {"status": "error", "erro": type(exc).__name__}
         return {"status": "error", "erro": type(exc).__name__, "mensagem": str(exc)[:200]}
 
 
@@ -560,6 +563,13 @@ def _render_html(relatorio_md: str) -> str:
         agora=datetime.now().strftime("%d/%m/%Y %H:%M"),
         logo_data_uri=_LOGO_DATA_URI,
     )
+
+
+def _sanitizar_filename(nome: Optional[str]) -> str:
+    """Remove control chars (incl. newlines) do nome de arquivo para uso em prompts LLM."""
+    nome = (nome or "upload").strip()
+    nome = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", nome)  # strip control + C1 chars
+    return nome[:128]
 
 
 @app.get("/app", include_in_schema=False)
@@ -801,11 +811,11 @@ _MODELOS_VALIDOS = {
 async def conciliar_ofx(
     request: Request,
     arquivos: List[UploadFile] = File(..., description="1 a 50 arquivos (.ofx, .pdf ou .xml)"),
-    max_tokens: int = 16000,
+    max_tokens: int = Query(16000, ge=1, le=32768),
     simular: bool = False,
     multi_modelo: bool = False,
     modelo: str = "sonnet",
-    cliente_id: Optional[str] = None,
+    cliente_id: Optional[UUID] = Query(None),
 ):
     """Cruza ate 50 extratos bancarios (OFX, PDF ou XML).
 
@@ -834,23 +844,24 @@ async def conciliar_ofx(
                 status_code=413,
                 detail=f"Soma dos uploads excede {MAX_UPLOAD_TOTAL_MB} MB",
             )
+        safe_name = _sanitizar_filename(up.filename)
         try:
             txs = _parse_arquivo(content, up.filename)
         except HTTPException:
             raise
         except Exception as e:
-            log.exception("Falha parseando %s", up.filename)
+            log.exception("Falha parseando %s", safe_name)
             raise HTTPException(
                 status_code=400,
-                detail=f"Falha ao parsear {up.filename}: {type(e).__name__}",
+                detail=f"Falha ao parsear {safe_name}: {type(e).__name__}",
             )
         if not txs:
             raise HTTPException(
                 status_code=400,
-                detail=f"Nao foi possivel extrair transacoes de {up.filename}",
+                detail=f"Nao foi possivel extrair transacoes de {safe_name}",
             )
         extratos_parsed.append({
-            "arquivo": up.filename,
+            "arquivo": safe_name,
             "conta": txs[0]["conta"],
             "qtd": len(txs),
             "transacoes": txs,
@@ -860,7 +871,7 @@ async def conciliar_ofx(
         anomalias = _detectar_anomalias(extratos_parsed)
         relatorio = _conciliacao_local(extratos_parsed, anomalias)
         rid = _salvar_dataset(extratos_parsed, anomalias, relatorio)
-        db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao", cliente_id)
+        db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao", str(cliente_id) if cliente_id else None)
         return JSONResponse({
             "modo": "simulacao_local",
             "report_id": rid,
@@ -910,7 +921,7 @@ async def conciliar_ofx(
         )
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = _salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado)
-        db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
+        db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", str(cliente_id) if cliente_id else None)
 
         return JSONResponse({
             "modo": "multi_modelo",
@@ -966,7 +977,7 @@ async def conciliar_ofx(
     relatorio = "\n".join(b.text for b in resp.content if b.type == "text")
     anomalias = _detectar_anomalias(extratos_parsed)
     rid = _salvar_dataset(extratos_parsed, anomalias, relatorio)
-    db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "llm", cliente_id)
+    db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "llm", str(cliente_id) if cliente_id else None)
 
     return JSONResponse({
         "modo": "claude_llm",
@@ -1089,7 +1100,7 @@ async def conciliar_csv(
     request: Request,
     extrato: UploadFile = File(..., description="CSV do extrato bancario"),
     razao: UploadFile = File(..., description="CSV do razao contabil"),
-    max_tokens: int = 16000,
+    max_tokens: int = Query(16000, ge=1, le=32768),
 ):
     """Cruza extrato bancario CSV contra razao contabil CSV."""
     # Limita tamanho de upload via read_limited (mesmo guard do /conciliar/ofx)
@@ -1097,12 +1108,14 @@ async def conciliar_csv(
     razao_bytes = await read_limited(razao)
     extrato_text = extrato_bytes.decode("utf-8", errors="ignore")
     razao_text = razao_bytes.decode("utf-8", errors="ignore")
+    safe_extrato = _sanitizar_filename(extrato.filename)
+    safe_razao = _sanitizar_filename(razao.filename)
 
     prompt = (
         "Realize a conciliacao bancaria entre o extrato e o razao contabil "
         "abaixo. Liste conciliados, divergencias, duplicidades e pendencias.\n\n"
-        f"=== EXTRATO BANCARIO ({extrato.filename}) ===\n{extrato_text}\n\n"
-        f"=== RAZAO CONTABIL ({razao.filename}) ===\n{razao_text}"
+        f"=== EXTRATO BANCARIO ({safe_extrato}) ===\n{extrato_text}\n\n"
+        f"=== RAZAO CONTABIL ({safe_razao}) ===\n{razao_text}"
     )
 
     client = _get_client()
@@ -1120,8 +1133,8 @@ async def conciliar_csv(
     relatorio = "\n".join(b.text for b in resp.content if b.type == "text")
 
     return JSONResponse({
-        "extrato": extrato.filename,
-        "razao": razao.filename,
+        "extrato": safe_extrato,
+        "razao": safe_razao,
         "usage": {
             "input_tokens": resp.usage.input_tokens,
             "output_tokens": resp.usage.output_tokens,

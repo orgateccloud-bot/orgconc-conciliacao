@@ -1080,3 +1080,66 @@ def test_body_gigante_retorna_413():
         )
     finally:
         _m._MAX_BODY_BYTES = original
+
+
+# ── Trilha 8: max_tokens cap · DB error leak · UUID validation · filename sanitization ──
+
+def test_max_tokens_acima_limite_csv_retorna_422():
+    """POST /conciliar/csv com max_tokens > 32768 deve retornar 422 (validação FastAPI)."""
+    r = client.post(
+        "/conciliar/csv?max_tokens=999999",
+        files={
+            "extrato": ("e.csv", io.BytesIO(b"data,valor\n2026-01-01,100"), "text/csv"),
+            "razao": ("r.csv", io.BytesIO(b"data,valor\n2026-01-01,100"), "text/csv"),
+        },
+    )
+    assert r.status_code == 422, (
+        f"max_tokens=999999 deveria retornar 422, got {r.status_code}"
+    )
+
+
+def test_max_tokens_zero_csv_retorna_422():
+    """POST /conciliar/csv com max_tokens=0 (abaixo do mínimo) deve retornar 422."""
+    r = client.post(
+        "/conciliar/csv?max_tokens=0",
+        files={
+            "extrato": ("e.csv", io.BytesIO(b"data,valor\n2026-01-01,100"), "text/csv"),
+            "razao": ("r.csv", io.BytesIO(b"data,valor\n2026-01-01,100"), "text/csv"),
+        },
+    )
+    assert r.status_code == 422, (
+        f"max_tokens=0 deveria retornar 422, got {r.status_code}"
+    )
+
+
+def test_cliente_id_invalido_no_ofx_retorna_422():
+    """POST /conciliar/ofx com cliente_id não-UUID deve retornar 422."""
+    r = client.post(
+        "/conciliar/ofx?simular=true&cliente_id=nao-e-um-uuid",
+        files={"arquivos": ("extrato.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
+    )
+    assert r.status_code == 422, (
+        f"cliente_id inválido deveria retornar 422, got {r.status_code}"
+    )
+
+
+def test_db_error_em_prod_omite_mensagem():
+    """_salvar_no_banco em _IS_PROD=True não deve retornar campo 'mensagem' (info disclosure)."""
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    async def _run():
+        with patch("api.main._IS_PROD", True), \
+             patch("api.main.DB_DISPONIVEL", True), \
+             patch("api.main.SessionLocal") as mock_session:
+            mock_session.return_value.__aenter__ = AsyncMock(side_effect=Exception("table users does not exist"))
+            mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+            from api.main import _salvar_no_banco
+            result = await _salvar_no_banco("abc123456789", [], [], "test")
+        return result
+
+    result = asyncio.run(_run())
+    assert result["status"] == "error"
+    assert "mensagem" not in result, (
+        f"'mensagem' exposto em produção — vazamento de erro DB: {result}"
+    )
