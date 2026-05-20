@@ -308,21 +308,28 @@ function renderResultado(data) {
       <div class="kpi-sub">${data.score_consenso != null ? `${data.modelos?.length ?? 0} modelos` : 'Modo único'}</div>
     </div>`;
 
-  // Export bar
+  // Export bar — HTML, XLSX, PDF
   document.getElementById('export-bar').innerHTML = `
-    <a class="btn btn-outline btn-sm" href="${API}/export/html/${_reportId}" target="_blank" rel="noopener"
+    <a class="btn btn-export btn-export-html btn-sm" href="${API}/export/html/${_reportId}" target="_blank" rel="noopener"
        aria-label="Baixar relatório HTML">
       <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
       Baixar HTML
     </a>
-    <a class="btn btn-outline btn-sm" href="${API}/export/xlsx/${_reportId}" target="_blank" rel="noopener"
+    <a class="btn btn-export btn-export-xlsx btn-sm" href="${API}/export/xlsx/${_reportId}" target="_blank" rel="noopener"
        aria-label="Baixar planilha XLSX">
       <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
       </svg>
-      Baixar XLSX
+      Baixar Excel
+    </a>
+    <a class="btn btn-export btn-export-pdf btn-sm" href="${API}/export/pdf/${_reportId}" target="_blank" rel="noopener"
+       aria-label="Baixar relatório PDF">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h4m1 5h-7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
+      </svg>
+      Baixar PDF
     </a>`;
 
   // Anomalias
