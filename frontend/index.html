@@ -1359,12 +1359,12 @@
       gap: 12px;
     }
     .sidebar-logo .brand-img {
-      width: 40px; height: 40px;
+      width: 64px; height: 64px;
       object-fit: contain;
-      border-radius: 6px;
-      background: var(--surface-2);
-      padding: 4px;
-      border: 1px solid var(--border);
+      background: transparent;
+      padding: 0;
+      border: none;
+      border-radius: 0;
     }
     .sidebar-logo .brand-meta { display: flex; flex-direction: column; min-width: 0; }
     .sidebar-logo h1 {
@@ -1390,17 +1390,17 @@
       gap: 10px;
     }
     .topbar-logo {
-      width: 28px; height: 28px;
+      width: 40px; height: 40px;
       object-fit: contain;
-      border-radius: 4px;
-      background: var(--surface-2);
-      padding: 2px;
-      border: 1px solid var(--border);
+      background: transparent;
+      padding: 0;
+      border: none;
+      border-radius: 0;
     }
     [data-theme="dark"] .sidebar-logo .brand-img,
     [data-theme="dark"] .topbar-logo {
-      background: var(--surface-2);
-      border-color: var(--border);
+      background: transparent;
+      border: none;
     }
 
     /* ──────────────────────────────────────────────────────────────
@@ -1813,7 +1813,7 @@
 <aside class="sidebar" role="navigation" aria-label="Menu principal">
   <div class="sidebar-logo">
     <div class="brand-row">
-      <img src="/ui/logo.png?v=2" alt="ORGATEC" class="brand-img" width="40" height="40" />
+      <img src="/ui/logo.png?v=2" alt="ORGATEC" class="brand-img" width="64" height="64" />
       <div class="brand-meta">
         <h1>ORGATEC</h1>
         <span>Conciliação Bancária</span>
@@ -1863,7 +1863,7 @@
 <main class="main" id="main-content">
   <header class="topbar">
     <span class="topbar-brand">
-      <img src="/ui/logo.png?v=2" alt="" class="topbar-logo" width="28" height="28" aria-hidden="true" />
+      <img src="/ui/logo.png?v=2" alt="" class="topbar-logo" width="40" height="40" aria-hidden="true" />
       <span class="topbar-title" id="topbar-title">Conciliação Bancária</span>
     </span>
     <div class="topbar-actions">
