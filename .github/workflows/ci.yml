@@ -85,11 +85,9 @@ jobs:
           pip install pip-audit bandit
 
       - name: pip-audit (vulnerabilidades em dependencias)
-        continue-on-error: true
         run: pip-audit -r requirements.txt
 
       - name: bandit (analise estatica de seguranca)
-        continue-on-error: true
         run: bandit -r api/ -ll
 
       - name: Verificar se nao ha credenciais hardcoded

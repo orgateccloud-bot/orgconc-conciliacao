@@ -101,6 +101,7 @@ def emitir_token(
     payload = {
         "sub": sub,
         "iat": int(agora.timestamp()),
+        "nbf": int(agora.timestamp()),  # não válido antes do momento de emissão
         "exp": int((agora + timedelta(minutes=ttl_min or _JWT_TTL_MIN)).timestamp()),
         "role": role,
     }

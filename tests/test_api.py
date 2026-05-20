@@ -868,3 +868,35 @@ def test_auth_hash_bloqueado_em_prod():
     assert r.status_code == 404, (
         f"/auth/hash acessivel em producao — retornou {r.status_code}"
     )
+
+
+def test_login_retorna_401_para_email_e_senha_errados():
+    """Login com email errado e senha errada devem retornar 401 idêntico.
+
+    Verifica que a resposta é consistente (mesmo status, mesma mensagem)
+    independente de qual credencial está errada — sem vazar informação via
+    mensagem diferente ou status diferente.
+    """
+    with patch.dict(os.environ, {
+        "ORGCONC_ADMIN_EMAIL": "admin@orgatec.com",
+        "ORGCONC_ADMIN_SENHA_HASH": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGVQ/YTKGiFj6b3M3KdA0Jl4W2",
+    }):
+        r_email = client.post("/auth/login", json={"email": "errado@outro.com", "senha": "qualquer"})
+        r_senha = client.post("/auth/login", json={"email": "admin@orgatec.com", "senha": "errada"})
+
+    assert r_email.status_code == 401
+    assert r_senha.status_code == 401
+    assert r_email.json()["detail"] == r_senha.json()["detail"], (
+        "Mensagens de erro diferem — vaza qual credencial está errada"
+    )
+
+
+def test_jwt_contem_nbf():
+    """Tokens emitidos devem conter claim nbf (not-before)."""
+    import jwt as pyjwt
+    from api.services.auth import emitir_token
+    token = emitir_token(sub="test@x.com", email="test@x.com")
+    claims = pyjwt.decode(token, options={"verify_signature": False})
+    assert "nbf" in claims, "Claim nbf ausente no token"
+    assert claims["nbf"] <= claims["iat"], "nbf deve ser <= iat"
+    assert claims["nbf"] < claims["exp"], "nbf deve ser < exp"

@@ -156,9 +156,6 @@ _CSP = (
     "upgrade-insecure-requests"
 )
 
-_IS_PROD = os.environ.get("ORGCONC_ENV", "development").strip().lower() in ("production", "prod")
-
-
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
         response = await call_next(request)
@@ -175,6 +172,7 @@ app.add_middleware(_SecurityHeadersMiddleware)
 
 
 from api.services.auth import (
+    _IS_PROD,
     auth_optional,
     current_user,
     decodificar_token,
@@ -568,11 +566,14 @@ async def auth_login(request: Request, payload: LoginPayload):
             detail="Auth nao configurada — defina ORGCONC_ADMIN_EMAIL e ORGCONC_ADMIN_SENHA_HASH no .env",
         )
 
-    if payload.email.strip().lower() != admin_email:
-        # Mesma mensagem para email errado e senha errada (evita user enumeration)
-        raise HTTPException(status_code=401, detail="Credenciais invalidas")
-
-    if not verificar_senha(payload.senha, admin_hash):
+    # Constant-time: bcrypt sempre roda, independente do email — normaliza timing
+    # e impede enumeração de usuário por side-channel de tempo.
+    email_ok = secrets.compare_digest(
+        payload.email.strip().lower().encode("utf-8"),
+        admin_email.encode("utf-8"),
+    )
+    senha_ok = verificar_senha(payload.senha, admin_hash)
+    if not email_ok or not senha_ok:
         raise HTTPException(status_code=401, detail="Credenciais invalidas")
 
     token = emitir_token(sub=admin_email, email=admin_email, role="admin")
