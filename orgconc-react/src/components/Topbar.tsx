@@ -19,7 +19,9 @@ export function Topbar({ title, dbStatus, onToggleSidebar }: Props) {
   }[dbStatus];
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-card/95 backdrop-blur px-4 lg:px-6">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-card/85 backdrop-blur-md px-4 lg:px-6 relative">
+      {/* Linha de costa: hairline gradient navy → cyan (borda inferior) */}
+      <span aria-hidden className="absolute left-0 right-0 bottom-0 h-px coastline-b opacity-60" />
       <div className="flex items-center gap-3">
         {onToggleSidebar && (
           <button

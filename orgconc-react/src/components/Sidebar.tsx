@@ -17,7 +17,9 @@ interface Props {
 
 export function Sidebar({ secao, onChange }: Props) {
   return (
-    <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r bg-card">
+    <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-card/95 backdrop-blur-sm relative">
+      {/* Linha de costa: hairline gradient navy → cyan */}
+      <span aria-hidden className="absolute top-0 bottom-0 right-0 w-px coastline-r opacity-60" />
       {/* Brand */}
       <div className="flex items-center gap-3 px-5 py-5 border-b">
         <Logo size={56} />

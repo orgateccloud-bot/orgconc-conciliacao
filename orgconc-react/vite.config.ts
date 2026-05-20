@@ -9,5 +9,17 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    host: "127.0.0.1",
+    proxy: {
+      "/health":      "http://127.0.0.1:8765",
+      "/conciliar":   "http://127.0.0.1:8765",
+      "/export":      "http://127.0.0.1:8765",
+      "/clientes":    "http://127.0.0.1:8765",
+      "/auth":        "http://127.0.0.1:8765",
+      "/logo-base64": "http://127.0.0.1:8765",
+      "/ui":          "http://127.0.0.1:8765",
+    },
+  },
 });

@@ -77,3 +77,38 @@
   }
   .tabular { font-variant-numeric: tabular-nums; }
 }
+
+/* Atlas Hidrográfico — reduced motion respeitado */
+@media (prefers-reduced-motion: reduce) {
+  .animate-wave-flow,
+  .animate-compass-spin,
+  .animate-fade-in,
+  .animate-slide-up {
+    animation: none !important;
+  }
+}
+
+/* Tracking de labels cartográficos */
+.atlas-label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+
+.atlas-caption {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Linha de costa: hairline gradient para bordas de sidebar/topbar */
+.coastline-r {
+  background: linear-gradient(180deg, transparent 0%, hsl(var(--primary)) 30%, hsl(var(--accent)) 70%, transparent 100%);
+}
+.coastline-b {
+  background: linear-gradient(90deg, transparent 0%, hsl(var(--primary)) 30%, hsl(var(--accent)) 70%, transparent 100%);
+}
