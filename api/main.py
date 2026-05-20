@@ -35,7 +35,8 @@ from fastapi.staticfiles import StaticFiles
 from markdown import markdown as md_to_html
 from api.services.sanitize import sanitize_html
 import contextlib
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from urllib.parse import urlparse as _urlparse
 from sqlalchemy import text as sql_text
 
 # Parsers extraidos para api/parsers/
@@ -113,7 +114,12 @@ async def _lifespan(app: FastAPI):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.warning("ANTHROPIC_API_KEY nao configurada — /conciliar/ofx (sem simular) nao funcionara")
     if DB_DISPONIVEL:
-        log.info("Banco configurado: %s", _DB_URL.split("@")[-1] if "@" in _DB_URL else "ok")
+        try:
+            _parsed = _urlparse(_DB_URL)
+            _safe_db = _parsed.hostname or "db"
+        except Exception:
+            _safe_db = "db"
+        log.info("Banco configurado: %s", _safe_db)
     else:
         log.info("Banco nao configurado — persistencia JSON local ativa")
     yield
@@ -219,26 +225,26 @@ _PLANOS_VALIDOS = {"basico", "pro", "enterprise"}
 
 
 class ClienteCreate(BaseModel):
-    nome: str
-    cnpj: Optional[str] = None
-    email: Optional[str] = None
-    telefone: Optional[str] = None
-    plano: str = "basico"
+    nome: str = Field(..., max_length=255)
+    cnpj: Optional[str] = Field(None, max_length=18)
+    email: Optional[str] = Field(None, max_length=254)
+    telefone: Optional[str] = Field(None, max_length=20)
+    plano: str = Field("basico", max_length=50)
 
     def model_post_init(self, __context) -> None:
         if self.cnpj:
             self.cnpj = re.sub(r"\D", "", self.cnpj)  # normaliza: remove máscara
             if not _validar_cnpj(self.cnpj):
-                raise ValueError(f"CNPJ inválido: {self.cnpj}")
+                raise ValueError("CNPJ inválido")
         if self.plano not in _PLANOS_VALIDOS:
             raise ValueError(f"Plano inválido: {self.plano}. Use: {sorted(_PLANOS_VALIDOS)}")
 
 
 class ClienteUpdate(BaseModel):
-    nome: Optional[str] = None
-    email: Optional[str] = None
-    telefone: Optional[str] = None
-    plano: Optional[str] = None
+    nome: Optional[str] = Field(None, max_length=255)
+    email: Optional[str] = Field(None, max_length=254)
+    telefone: Optional[str] = Field(None, max_length=20)
+    plano: Optional[str] = Field(None, max_length=50)
     ativo: Optional[bool] = None
 
     def model_post_init(self, __context) -> None:
@@ -525,7 +531,8 @@ def root():
 
 
 @app.get("/health")
-async def health():
+@limiter.limit("60/minute")
+async def health(request: Request):
     db_status = "nao_configurado"
     if DB_DISPONIVEL:
         try:
@@ -545,8 +552,8 @@ async def health():
 # ── Auth (JWT) ────────────────────────────────────────────────────────────
 
 class LoginPayload(BaseModel):
-    email: str
-    senha: str
+    email: str = Field(..., max_length=254)
+    senha: str = Field(..., max_length=128)
 
 
 @app.post("/auth/login", tags=["auth"])
@@ -581,14 +588,19 @@ async def auth_login(request: Request, payload: LoginPayload):
 
 
 @app.get("/auth/me", tags=["auth"])
-async def auth_me(user: TokenPayload = Depends(current_user)):
+@limiter.limit("20/minute")
+async def auth_me(request: Request, user: TokenPayload = Depends(current_user)):
     """Retorna info do usuario autenticado (debug/UI)."""
     return {"sub": user.sub, "email": user.email, "role": user.role}
 
 
+class HashPayload(BaseModel):
+    senha: str = Field(..., min_length=8, max_length=128)
+
+
 @app.post("/auth/hash", tags=["auth"], include_in_schema=False)
 @limiter.limit("5/minute")
-async def auth_hash_helper(request: Request, payload: dict):
+async def auth_hash_helper(request: Request, payload: HashPayload):
     """Helper de DEV: gera bcrypt hash de uma senha (uso: setup inicial).
 
     Disponivel apenas em development/staging sem AUTH_TOKEN.
@@ -596,10 +608,7 @@ async def auth_hash_helper(request: Request, payload: dict):
     """
     if _IS_PROD or AUTH_TOKEN:
         raise HTTPException(status_code=404, detail="Indisponivel")
-    senha = payload.get("senha", "")
-    if not senha or len(senha) < 8:
-        raise HTTPException(status_code=400, detail="Senha minima de 8 chars")
-    return {"hash": hash_senha(senha)}
+    return {"hash": hash_senha(payload.senha)}
 
 
 # ── Clientes ──────────────────────────────────────────────────────────────
@@ -645,13 +654,13 @@ async def listar_clientes(request: Request, apenas_ativos: bool = True):
 @limiter.limit("30/minute")
 async def buscar_cliente(request: Request, cliente_id: str):
     """Busca um cliente pelo ID."""
-    if not DB_DISPONIVEL:
-        raise HTTPException(503, "Banco de dados nao configurado")
     import uuid as _uuid
     try:
         cid = _uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "ID invalido")
+    if not DB_DISPONIVEL:
+        raise HTTPException(503, "Banco de dados nao configurado")
     async with SessionLocal() as db:
         cliente = await crud_clientes.buscar_cliente(db, cid)
     if not cliente:
@@ -887,7 +896,8 @@ async def conciliar_ofx(
 
 
 @app.get("/logo-base64")
-def logo_base64():
+@limiter.limit("60/minute")
+def logo_base64(request: Request):
     """Devolve a logo como data URI (usado pelo frontend para PDF)."""
     return {"data_uri": _LOGO_DATA_URI}
 
@@ -922,7 +932,8 @@ def _render_pdf_html(relatorio_md: str, anomalias: list, extratos: list, report_
 
 
 @app.get("/export/html/{rid}", dependencies=[Depends(auth)])
-def export_html(rid: str):
+@limiter.limit("20/minute")
+def export_html(request: Request, rid: str):
     """Baixa o relatorio renderizado em HTML standalone."""
     ds = _carregar_dataset(rid)
     html = _render_html(ds["relatorio"])
@@ -934,7 +945,8 @@ def export_html(rid: str):
 
 
 @app.get("/export/xlsx/{rid}", dependencies=[Depends(auth)])
-def export_xlsx(rid: str):
+@limiter.limit("10/minute")
+def export_xlsx(request: Request, rid: str):
     """Baixa o dataset em XLSX (3 abas: Resumo, Transacoes, Anomalias)."""
     ds = _carregar_dataset(rid)
     blob = _gerar_xlsx(ds["extratos"], ds["anomalias"])
@@ -946,7 +958,8 @@ def export_xlsx(rid: str):
 
 
 @app.get("/export/pdf/{rid}", dependencies=[Depends(auth)])
-def export_pdf(rid: str, html: bool = False):
+@limiter.limit("5/minute")
+def export_pdf(request: Request, rid: str, html: bool = False):
     """Baixa relatorio em PDF (weasyprint server-side). Use ?html=true para receber HTML imprimivel."""
     ds = _carregar_dataset(rid)
     html_content = _render_pdf_html(ds["relatorio"], ds["anomalias"], ds["extratos"], rid)

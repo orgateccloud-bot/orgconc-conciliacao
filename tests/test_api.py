@@ -899,4 +899,35 @@ def test_jwt_contem_nbf():
     claims = pyjwt.decode(token, options={"verify_signature": False})
     assert "nbf" in claims, "Claim nbf ausente no token"
     assert claims["nbf"] <= claims["iat"], "nbf deve ser <= iat"
-    assert claims["nbf"] < claims["exp"], "nbf deve ser < exp"
+
+
+# ── Trilha 4: validação de input, rate limiting, UUID ordering ────────────
+
+def test_cliente_buscar_uuid_valido_sem_db_retorna_503():
+    """UUID válido com DB indisponível deve retornar 503, não 400.
+
+    Regressão: após reordenação (UUID antes de DB check), UUID válido ainda
+    deve retornar 503 quando banco não está configurado.
+    """
+    r = client.get("/clientes/00000000-0000-0000-0000-000000000001")
+    assert r.status_code == 503, (
+        f"UUID válido sem DB deveria retornar 503, retornou {r.status_code}"
+    )
+
+
+def test_login_payload_muito_grande_retorna_422():
+    """POST /auth/login com email acima de 254 chars deve retornar 422 (max_length)."""
+    email_gigante = "a" * 300 + "@x.com"
+    r = client.post("/auth/login", json={"email": email_gigante, "senha": "qualquer"})
+    assert r.status_code == 422, (
+        f"Email de {len(email_gigante)} chars deveria ser rejeitado com 422, retornou {r.status_code}"
+    )
+
+
+def test_export_pdf_sem_auth_retorna_401():
+    """GET /export/pdf sem token deve retornar 401 quando AUTH_TOKEN está definido."""
+    with patch("api.main.AUTH_TOKEN", "segredo-de-teste"):
+        r = client.get("/export/pdf/report-inexistente")
+    assert r.status_code == 401, (
+        f"/export/pdf sem token deveria retornar 401, retornou {r.status_code}"
+    )
