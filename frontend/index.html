@@ -2235,7 +2235,7 @@
     </span>
     <div class="topbar-actions">
       <span class="badge-db" id="db-badge" aria-live="polite">DB: verificando…</span>
-      <button class="theme-toggle" id="btn-theme" onclick="toggleTema()" aria-label="Alternar tema escuro/claro" title="Tema (Ctrl+Shift+D)">
+      <button class="theme-toggle" id="btn-theme" data-action="toggle-theme" aria-label="Alternar tema escuro/claro" title="Tema (Ctrl+Shift+D)">
         <svg class="moon-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
         </svg>
@@ -2284,7 +2284,7 @@
         <div class="mode-grid" role="radiogroup" aria-label="Modo de análise">
           <!-- Python Heurístico -->
           <div class="mode-card green" role="radio" aria-checked="false" tabindex="0"
-               data-mode="simulacao" onclick="selecionarModo(this)" onkeydown="teclaCard(event,this)">
+               data-mode="simulacao" data-action="select-mode">
             <div class="check-icon" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -2304,7 +2304,7 @@
 
           <!-- Haiku 4.5 (basico, rapido e barato) -->
           <div class="mode-card cyan" role="radio" aria-checked="false" tabindex="0"
-               data-mode="haiku" onclick="selecionarModo(this)" onkeydown="teclaCard(event,this)">
+               data-mode="haiku" data-action="select-mode">
             <div class="check-icon" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -2326,7 +2326,7 @@
 
           <!-- Sonnet 4.6 -->
           <div class="mode-card blue selected" role="radio" aria-checked="true" tabindex="0"
-               data-mode="llm" onclick="selecionarModo(this)" onkeydown="teclaCard(event,this)">
+               data-mode="llm" data-action="select-mode">
             <div class="check-icon" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -2348,7 +2348,7 @@
 
           <!-- Multi-modelo -->
           <div class="mode-card purple" role="radio" aria-checked="false" tabindex="0"
-               data-mode="multi" onclick="selecionarModo(this)" onkeydown="teclaCard(event,this)">
+               data-mode="multi" data-action="select-mode">
             <div class="check-icon" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -2380,11 +2380,9 @@
       <div class="card-body">
         <div class="upload-zone" id="upload-zone" role="button" tabindex="0"
              aria-label="Área de upload — arraste arquivos ou clique para selecionar"
-             onclick="document.getElementById('file-input').click()"
-             onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('file-input').click()"
-             ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event)">
+             data-action="open-file-picker" data-dropzone="true">
           <input type="file" id="file-input" multiple accept=".ofx,.pdf,.xml"
-                 onchange="arquivosSelecionados(this.files)" aria-label="Selecionar arquivos" />
+                 data-action="files-selected" aria-label="Selecionar arquivos" />
           <div class="upload-icon" aria-hidden="true">
             <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -2406,7 +2404,7 @@
       </div>
       <div class="card-body">
         <button class="btn btn-primary btn-lg" id="btn-conciliar"
-                onclick="iniciarConciliacao()" disabled
+                data-action="start" disabled
                 aria-label="Iniciar conciliação">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -2522,7 +2520,7 @@
 
       <!-- New analysis button -->
       <hr class="divider" />
-      <button class="btn btn-outline" onclick="novaAnalise()">
+      <button class="btn btn-outline" data-action="new-analysis">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
@@ -2538,7 +2536,7 @@
         <h1>Clientes</h1>
         <p>Gerencie os clientes cadastrados no sistema</p>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="abrirModalCliente()" aria-label="Cadastrar novo cliente">
+      <button class="btn btn-primary btn-sm" data-action="open-cliente" aria-label="Cadastrar novo cliente">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
         </svg>
@@ -2590,10 +2588,10 @@
 
 <!-- ── Modal: Novo Cliente ──────────────────────────────────────── -->
 <div class="modal-backdrop" id="modal-cliente" role="dialog" aria-modal="true" aria-labelledby="modal-title"
-     onclick="if(event.target===this)fecharModal()">
+     data-action="close-modal-backdrop">
   <div class="modal">
     <h2 id="modal-title">Cadastrar Cliente</h2>
-    <form id="form-cliente" onsubmit="submitCliente(event)" novalidate>
+    <form id="form-cliente" data-action="submit-cliente" novalidate>
       <div class="form-group">
         <label for="inp-nome">Nome <span style="color:var(--red)">*</span></label>
         <input type="text" id="inp-nome" name="nome" autocomplete="organization" required placeholder="Razão Social ou Nome" />
@@ -2624,7 +2622,7 @@
         </select>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-outline btn-sm" onclick="fecharModal()">Cancelar</button>
+        <button type="button" class="btn btn-outline btn-sm" data-action="close-modal">Cancelar</button>
         <button type="submit" class="btn btn-primary btn-sm" id="btn-salvar-cliente">Cadastrar</button>
       </div>
     </form>
@@ -2634,6 +2632,6 @@
 <!-- ── Toast container ─────────────────────────────────────────── -->
 <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
-<script src="/ui/js/app.js" defer></script>
+<script src="/ui/js/app.js?v=4" defer></script>
 </body>
 </html>

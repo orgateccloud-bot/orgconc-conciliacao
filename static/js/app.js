@@ -154,7 +154,7 @@ function renderFileList() {
       </svg>
       <span class="file-item-name">${esc(f.name)}</span>
       <span class="file-item-size">${formatBytes(f.size)}</span>
-      <button class="file-remove" onclick="removerArquivo(${i})" aria-label="Remover ${esc(f.name)}">✕</button>
+      <button class="file-remove" data-action="remove-file" data-idx="${i}" aria-label="Remover ${esc(f.name)}">✕</button>
     </div>`).join('');
 }
 
@@ -364,7 +364,7 @@ function renderResultado(data) {
     secInd.classList.remove('hidden');
     const items = Object.entries(relInd).map(([label, texto], i) => `
       <div class="accordion-item">
-        <button class="accordion-btn" aria-expanded="${i===0}" onclick="toggleAccordion(this)">
+        <button class="accordion-btn" aria-expanded="${i===0}" data-action="toggle-accordion">
           <span>${esc(label)}</span>
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
@@ -508,7 +508,7 @@ function atualizarHistorico() {
   const cabecalho = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <span class="text-muted" style="font-size:.78rem">${_historicoRelatorios.length} relatório(s) persistido(s) localmente</span>
-      <button class="btn btn-outline btn-sm" onclick="limparHistorico()" aria-label="Limpar histórico local">Limpar histórico</button>
+      <button class="btn btn-outline btn-sm" data-action="clear-history" aria-label="Limpar histórico local">Limpar histórico</button>
     </div>`;
   container.innerHTML = cabecalho + _historicoRelatorios.slice().reverse().map(r => {
     const label = r.modelo_label ? `${modos[r.modo] || r.modo} (${r.modelo_label})` : (modos[r.modo] || r.modo);
@@ -950,9 +950,69 @@ function toast(msg, type = 'info') {
   setTimeout(() => el.remove(), 4500);
 }
 
+/* ── Event delegation (CSP-safe, substitui handlers inline) ────── */
+function bindEventos() {
+  // Click delegado por data-action
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    if (el.tagName === 'INPUT' && el.type === 'file') return;  // ignora cliques no input file
+    const acao = el.dataset.action;
+    const handlers = {
+      'open-file-picker':    () => document.getElementById('file-input').click(),
+      'select-mode':         () => selecionarModo(el),
+      'remove-file':         () => removerArquivo(parseInt(el.dataset.idx, 10)),
+      'start':               () => iniciarConciliacao(),
+      'new-analysis':        () => novaAnalise(),
+      'toggle-theme':        () => toggleTema(),
+      'open-cliente':        () => abrirModalCliente(),
+      'close-modal':         () => fecharModal(),
+      'close-modal-backdrop':() => { if (e.target === el) fecharModal(); },
+      'clear-history':       () => limparHistorico(),
+      'toggle-accordion':    () => toggleAccordion(el),
+    };
+    if (handlers[acao]) handlers[acao]();
+  });
+
+  // Change delegado (input file)
+  document.addEventListener('change', (e) => {
+    const el = e.target;
+    if (el.dataset && el.dataset.action === 'files-selected') {
+      arquivosSelecionados(el.files);
+    }
+  });
+
+  // Submit delegado (form cliente)
+  document.addEventListener('submit', (e) => {
+    if (e.target.dataset && e.target.dataset.action === 'submit-cliente') {
+      submitCliente(e);
+    }
+  });
+
+  // Teclado (Enter/Espaco) para elementos clicaveis com data-action
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    if (el.tagName === 'BUTTON' || el.tagName === 'A') return;  // botoes ja respondem nativamente
+    if (el.dataset.action === 'submit-cliente') return;
+    if (el.dataset.action === 'files-selected') return;
+    e.preventDefault();
+    el.click();
+  });
+
+  // Drag-and-drop nos dropzones marcados
+  document.querySelectorAll('[data-dropzone]').forEach(zone => {
+    zone.addEventListener('dragover',  dragOver);
+    zone.addEventListener('dragleave', dragLeave);
+    zone.addEventListener('drop',      drop);
+  });
+}
+
 /* ── Init ───────────────────────────────────────────────────────── */
 verificarHealth();
 atualizarHistorico();
+bindEventos();
 window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
     e.preventDefault();
