@@ -907,9 +907,11 @@ def test_cliente_buscar_uuid_valido_sem_db_retorna_503():
     """UUID válido com DB indisponível deve retornar 503, não 400.
 
     Regressão: após reordenação (UUID antes de DB check), UUID válido ainda
-    deve retornar 503 quando banco não está configurado.
+    deve retornar 503 quando banco não está configurado. Patch explícito de
+    DB_DISPONIVEL=False — não depende de cenário global do ambiente.
     """
-    r = client.get("/clientes/00000000-0000-0000-0000-000000000001")
+    with patch("api.main.DB_DISPONIVEL", False):
+        r = client.get("/clientes/00000000-0000-0000-0000-000000000001")
     assert r.status_code == 503, (
         f"UUID válido sem DB deveria retornar 503, retornou {r.status_code}"
     )
@@ -1341,6 +1343,194 @@ def test_export_pdf_retorna_bytes_pdf_validos():
         assert "text/html" in content_type, (
             f"PDF endpoint retornou content-type inesperado: {content_type}"
         )
+
+
+# ── Trilha 13: DB integration — testes mocados (rodam em CI sem Supabase) ─
+
+def _fake_cliente_mock(**overrides):
+    """Cria um mock SQLAlchemy Cliente com defaults sensatos."""
+    from unittest.mock import MagicMock
+    from datetime import datetime, timezone
+    import uuid as _uuid
+
+    c = MagicMock()
+    c.id = overrides.get("id", _uuid.uuid4())
+    c.nome = overrides.get("nome", "Empresa Mock")
+    c.cnpj = overrides.get("cnpj", "11444777000161")
+    c.email = overrides.get("email", "mock@example.com")
+    c.telefone = overrides.get("telefone", None)
+    c.plano = overrides.get("plano", "basico")
+    c.ativo = overrides.get("ativo", True)
+    c.criado_em = overrides.get("criado_em", datetime.now(timezone.utc))
+    return c
+
+
+def _patch_db_session():
+    """Context manager: ativa DB_DISPONIVEL=True + mock de SessionLocal."""
+    from unittest.mock import AsyncMock, MagicMock, patch as _p
+    session_mock = MagicMock()
+    session_mock.__aenter__ = AsyncMock(return_value=session_mock)
+    session_mock.__aexit__ = AsyncMock(return_value=False)
+    return _p.multiple(
+        "api.main",
+        DB_DISPONIVEL=True,
+        SessionLocal=MagicMock(return_value=session_mock),
+    ), session_mock
+
+
+def test_listar_clientes_com_db_mockado():
+    """GET /clientes com DB mockado: retorna lista válida + response_model OK."""
+    from unittest.mock import patch, AsyncMock
+
+    async def fake_listar(*args, **kwargs):
+        return [
+            _fake_cliente_mock(nome="Cliente A"),
+            _fake_cliente_mock(nome="Cliente B"),
+        ]
+
+    ctx, _ = _patch_db_session()
+    with ctx, patch("api.main.crud_clientes.listar_clientes", side_effect=fake_listar):
+        r = client.get("/clientes")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body, list) and len(body) == 2
+    for item in body:
+        # ClienteResponse exige ativo
+        assert "ativo" in item, f"Campo 'ativo' ausente em listar: {item}"
+        assert "id" in item and "nome" in item
+
+
+def test_buscar_cliente_com_db_mockado_retorna_cliente():
+    """GET /clientes/{id} com DB mockado e cliente existente."""
+    from unittest.mock import patch, AsyncMock
+
+    fake = _fake_cliente_mock(nome="Empresa Encontrada", email="found@example.com")
+
+    async def fake_buscar(*args, **kwargs):
+        return fake
+
+    ctx, _ = _patch_db_session()
+    with ctx, patch("api.main.crud_clientes.buscar_cliente", side_effect=fake_buscar):
+        r = client.get(f"/clientes/{fake.id}")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["nome"] == "Empresa Encontrada"
+    assert body["email"] == "found@example.com"
+    assert body["ativo"] is True
+
+
+def test_buscar_cliente_inexistente_retorna_404():
+    """GET /clientes/{id} com DB mockado e cliente inexistente → 404."""
+    from unittest.mock import patch
+
+    async def fake_buscar_none(*args, **kwargs):
+        return None
+
+    ctx, _ = _patch_db_session()
+    with ctx, patch("api.main.crud_clientes.buscar_cliente", side_effect=fake_buscar_none):
+        r = client.get("/clientes/00000000-0000-0000-0000-000000000099")
+
+    assert r.status_code == 404, f"Cliente inexistente deveria retornar 404, got {r.status_code}"
+
+
+def test_atualizar_cliente_com_db_mockado():
+    """PATCH /clientes/{id} com DB mockado."""
+    from unittest.mock import patch
+
+    updated = _fake_cliente_mock(nome="Empresa Renomeada", plano="pro")
+
+    async def fake_atualizar(*args, **kwargs):
+        return updated
+
+    ctx, _ = _patch_db_session()
+    with ctx, patch("api.main.crud_clientes.atualizar_cliente", side_effect=fake_atualizar):
+        r = client.patch(
+            f"/clientes/{updated.id}",
+            json={"nome": "Empresa Renomeada", "plano": "pro"},
+        )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["nome"] == "Empresa Renomeada"
+    assert body["plano"] == "pro"
+
+
+def test_atualizar_cliente_inexistente_retorna_404():
+    """PATCH /clientes/{id} com cliente inexistente → 404."""
+    from unittest.mock import patch
+
+    async def fake_atualizar_none(*args, **kwargs):
+        return None
+
+    ctx, _ = _patch_db_session()
+    with ctx, patch("api.main.crud_clientes.atualizar_cliente", side_effect=fake_atualizar_none):
+        r = client.patch(
+            "/clientes/00000000-0000-0000-0000-000000000099",
+            json={"nome": "Fantasma"},
+        )
+
+    assert r.status_code == 404
+
+
+def test_criar_cliente_cnpj_duplicado_retorna_409():
+    """POST /clientes com IntegrityError (CNPJ duplicado) → 409."""
+    from unittest.mock import patch
+    from sqlalchemy.exc import IntegrityError
+
+    async def fake_criar_dup(*args, **kwargs):
+        raise IntegrityError("INSERT INTO clientes", {}, Exception("UNIQUE violation"))
+
+    ctx, _ = _patch_db_session()
+    with ctx, patch("api.main.crud_clientes.criar_cliente", side_effect=fake_criar_dup):
+        r = client.post(
+            "/clientes",
+            json={"nome": "Empresa Duplicada", "cnpj": "11444777000161", "plano": "basico"},
+        )
+
+    assert r.status_code == 409, f"CNPJ duplicado deveria retornar 409, got {r.status_code}"
+
+
+def test_salvar_no_banco_persiste_conciliacao_e_retorna_ok():
+    """_salvar_no_banco com DB mockado retorna {status: ok, transacoes_persistidas: N}."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    session_mock = MagicMock()
+    # Suporta `async with SessionLocal() as db` e `async with db.begin()`
+    session_mock.__aenter__ = AsyncMock(return_value=session_mock)
+    session_mock.__aexit__ = AsyncMock(return_value=False)
+    session_mock.begin = MagicMock(return_value=session_mock)
+    session_mock.add = MagicMock()
+    session_mock.add_all = MagicMock()
+    session_mock.flush = AsyncMock()
+
+    extratos = [
+        {
+            "conta": "AG 1234 / CC 5678",
+            "arquivo": "test.ofx",
+            "qtd": 2,
+            "transacoes": [
+                {"data": "2026-01-01", "valor": -100.0, "memo": "Saída", "nome": "", "tipo": "DEBIT"},
+                {"data": "2026-01-02", "valor": 250.5, "memo": "Entrada", "nome": "", "tipo": "CREDIT"},
+            ],
+        }
+    ]
+    anomalias = [{"conta": "AG 1234 / CC 5678", "valor": 250.5, "severidade": "atencao", "tipo": "ok"}]
+
+    async def _run():
+        with patch("api.main.DB_DISPONIVEL", True), \
+             patch("api.main.SessionLocal", return_value=session_mock):
+            from api.main import _salvar_no_banco
+            return await _salvar_no_banco("abc123456789", extratos, anomalias, "test")
+
+    result = asyncio.run(_run())
+    assert result["status"] == "ok", f"_salvar_no_banco falhou: {result}"
+    assert result["transacoes_persistidas"] == 2
+    # add foi chamado uma vez com Conciliacao, add_all com lista de Transacao
+    assert session_mock.add.called
+    assert session_mock.add_all.called
 
 
 @pytest.mark.skipif(
