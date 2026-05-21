@@ -1533,6 +1533,242 @@ def test_salvar_no_banco_persiste_conciliacao_e_retorna_ok():
     assert session_mock.add_all.called
 
 
+# ── Trilha 14: LLM integration — testes mocados (rodam em CI sem chave real) ──
+
+def _fake_anthropic_response(text: str, in_tokens: int = 100, out_tokens: int = 200):
+    """Cria mock de resposta do Anthropic SDK (resp.content[].text + usage)."""
+    from unittest.mock import MagicMock
+    block = MagicMock()
+    block.type = "text"
+    block.text = text
+    resp = MagicMock()
+    resp.content = [block]
+    resp.usage = MagicMock(input_tokens=in_tokens, output_tokens=out_tokens)
+    resp.stop_reason = "end_turn"
+    return resp
+
+
+def _make_apistatus_error(msg: str, status_code: int = 400, error_message: str = None):
+    """Constrói uma APIStatusError real do SDK Anthropic para uso em side_effect."""
+    from anthropic import APIStatusError
+    import httpx
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(status_code, request=request)
+    body = {"error": {"message": error_message or msg}}
+    err = APIStatusError(msg, response=response, body=body)
+    err.status_code = status_code
+    return err
+
+
+def test_conciliar_ofx_modo_llm_single_mockado():
+    """POST /conciliar/ofx em modo LLM (sem multi-modelo): caminho happy."""
+    from unittest.mock import MagicMock, patch
+
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = _fake_anthropic_response(
+        "# Relatório de Conciliação\n\nAnálise completa pelo Haiku.",
+        in_tokens=150, out_tokens=400,
+    )
+
+    with patch("api.main._get_client", return_value=fake_client), \
+         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+        r = client.post(
+            "/conciliar/ofx?modelo=haiku",
+            files={"arquivos": ("test.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
+        )
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["modo"] == "claude_llm"
+    assert data["modelo"] == "haiku"
+    assert data["modelo_id"] == "claude-haiku-4-5-20251001"
+    assert data["usage"]["input_tokens"] == 150
+    assert data["usage"]["output_tokens"] == 400
+    assert "Análise completa pelo Haiku" in data["relatorio_md"]
+    assert "Análise completa pelo Haiku" in data["relatorio_html"]  # sanitizado
+
+
+def test_conciliar_ofx_llm_credito_esgotado_retorna_msg_amigavel():
+    """APIStatusError com 'credit balance' → 400 + mensagem em pt-BR."""
+    from unittest.mock import MagicMock, patch
+
+    err = _make_apistatus_error(
+        "Insufficient credits",
+        status_code=400,
+        error_message="Your credit balance is too low to access the Anthropic API",
+    )
+    fake_client = MagicMock()
+    fake_client.messages.create.side_effect = err
+
+    with patch("api.main._get_client", return_value=fake_client), \
+         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+        r = client.post(
+            "/conciliar/ofx?modelo=sonnet",
+            files={"arquivos": ("test.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
+        )
+
+    assert r.status_code == 400, r.text
+    body = r.json()
+    msg = body["detail"]["anthropic_error"]
+    assert "creditos" in msg.lower() or "credit" in msg.lower()
+    # Verifica que mostrou link de billing (mensagem amigável traduzida)
+    assert "billing" in msg.lower() or "recarregue" in msg.lower()
+
+
+def test_conciliar_ofx_llm_rate_limit_retorna_msg_amigavel():
+    """APIStatusError com 'rate limit' → status 429 + mensagem em pt-BR."""
+    from unittest.mock import MagicMock, patch
+
+    err = _make_apistatus_error(
+        "Rate limit",
+        status_code=429,
+        error_message="Rate limit exceeded for this organization",
+    )
+    fake_client = MagicMock()
+    fake_client.messages.create.side_effect = err
+
+    with patch("api.main._get_client", return_value=fake_client), \
+         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+        r = client.post(
+            "/conciliar/ofx?modelo=opus",
+            files={"arquivos": ("test.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
+        )
+
+    assert r.status_code == 429, r.text
+    msg = r.json()["detail"]["anthropic_error"]
+    assert "rate limit" in msg.lower() or "aguarde" in msg.lower()
+
+
+def test_conciliar_ofx_multi_modelo_mockado():
+    """Multi-modelo: 3 chamadas paralelas + síntese, com score_consenso extraído."""
+    from unittest.mock import patch
+
+    chamadas_feitas = []
+
+    async def fake_chamar_modelo(api_key, prompt, model_id, label, max_tokens):
+        chamadas_feitas.append((model_id, label, max_tokens))
+        return {
+            "texto": f"Análise produzida por {label}",
+            "input_tokens": 200, "output_tokens": 500,
+            "modelo": model_id, "label": label, "erro": None,
+        }
+
+    async def fake_sintetizar(api_key, resultados, max_tokens):
+        # Verifica que recebeu 3 resultados
+        assert len(resultados) == 3
+        return "## Índice de Consenso: 85/100\n\nRelatório consolidado", 0.85
+
+    with patch("api.main._chamar_modelo_async", side_effect=fake_chamar_modelo), \
+         patch("api.main._sintetizar_consenso", side_effect=fake_sintetizar), \
+         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+        r = client.post(
+            "/conciliar/ofx?multi_modelo=true",
+            files={"arquivos": ("test.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
+        )
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["modo"] == "multi_modelo"
+    assert data["score_consenso"] == 0.85
+    assert len(data["modelos"]) == 3  # opus + sonnet + haiku
+    assert {m["modelo"] for m in data["modelos"]} == {
+        "claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"
+    }
+    assert "Índice de Consenso: 85/100" in data["relatorio_md"]
+    # Cada modelo recebeu max_tokens // 2 (default 16000 → 8000)
+    assert all(c[2] == 8000 for c in chamadas_feitas), f"max_tokens errado: {chamadas_feitas}"
+
+
+def test_conciliar_csv_modo_llm_mockado():
+    """POST /conciliar/csv: caminho LLM com mock do Anthropic."""
+    from unittest.mock import MagicMock, patch
+
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = _fake_anthropic_response(
+        "## Conciliação Bancária — CSV\n\nDivergências identificadas.",
+        in_tokens=80, out_tokens=250,
+    )
+
+    extrato_csv = b"data,valor,memo\n2026-01-01,-100.00,Saida\n"
+    razao_csv = b"data,valor,conta\n2026-01-01,-100.00,Despesa Geral\n"
+
+    with patch("api.main._get_client", return_value=fake_client), \
+         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+        r = client.post(
+            "/conciliar/csv",
+            files={
+                "extrato": ("extrato.csv", io.BytesIO(extrato_csv), "text/csv"),
+                "razao": ("razao.csv", io.BytesIO(razao_csv), "text/csv"),
+            },
+        )
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["extrato"] == "extrato.csv"
+    assert data["razao"] == "razao.csv"
+    assert data["usage"]["input_tokens"] == 80
+    assert "Divergências identificadas" in data["relatorio_md"]
+
+
+def test_sintetizar_consenso_zero_resultados_validos():
+    """_sintetizar_consenso com lista vazia retorna mensagem padrão + score 0.0."""
+    import asyncio
+    from api.main import _sintetizar_consenso
+
+    async def _run():
+        return await _sintetizar_consenso("fake-key", [], max_tokens=4000)
+
+    texto, score = asyncio.run(_run())
+    assert "Nenhum modelo" in texto
+    assert score == 0.0
+
+
+def test_sintetizar_consenso_um_resultado_valido_score_0_5():
+    """_sintetizar_consenso com 1 resultado válido retorna o texto direto + score 0.5."""
+    import asyncio
+    from api.main import _sintetizar_consenso
+
+    resultados = [
+        {"texto": "Único relatório válido", "erro": None, "label": "Haiku", "modelo": "haiku"},
+        {"texto": "", "erro": "API error", "label": "Sonnet", "modelo": "sonnet"},
+    ]
+
+    async def _run():
+        return await _sintetizar_consenso("fake-key", resultados, max_tokens=4000)
+
+    texto, score = asyncio.run(_run())
+    assert texto == "Único relatório válido"
+    assert score == 0.5
+
+
+def test_chamar_modelo_async_apistatus_retorna_texto_vazio():
+    """_chamar_modelo_async com APIStatusError → res['erro'] preenchido + texto=''."""
+    import asyncio
+    from unittest.mock import MagicMock, patch
+    from api.main import _chamar_modelo_async
+
+    err = _make_apistatus_error("api fail", error_message="model overloaded right now")
+
+    fake_anthropic_class = MagicMock()
+    fake_instance = MagicMock()
+    fake_instance.messages.create.side_effect = err
+    fake_anthropic_class.return_value = fake_instance
+
+    async def _run():
+        with patch("api.main.Anthropic", fake_anthropic_class):
+            return await _chamar_modelo_async("k", "prompt", "model-x", "Label-X", 1000)
+
+    res = asyncio.run(_run())
+    assert res["texto"] == ""
+    assert res["input_tokens"] == 0
+    assert res["output_tokens"] == 0
+    assert res["erro"] is not None
+    assert "overloaded" in res["erro"].lower()
+    assert res["modelo"] == "model-x"
+    assert res["label"] == "Label-X"
+
+
 @pytest.mark.skipif(
     not os.environ.get("ANTHROPIC_API_KEY")
     or os.environ.get("ANTHROPIC_API_KEY", "").startswith("sk-ant-test"),
