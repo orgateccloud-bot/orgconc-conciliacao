@@ -83,7 +83,7 @@ class TokenPayload(BaseModel):
     """Claims tipados do JWT."""
     sub: str          # subject (cliente_id ou identificador)
     email: Optional[str] = None
-    cliente_id: Optional[str] = Noneh
+    cliente_id: Optional[str] = None
     role: str = "user"
     exp: Optional[int] = None
     iat: Optional[int] = None
