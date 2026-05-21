@@ -1533,6 +1533,106 @@ def test_salvar_no_banco_persiste_conciliacao_e_retorna_ok():
     assert session_mock.add_all.called
 
 
+# ── Trilha 15: dashboard /app — estrutura, segurança e contratos ─────────
+
+def _frontend_index_html() -> str:
+    from pathlib import Path
+    p = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
+    return p.read_text(encoding="utf-8")
+
+
+def test_app_dashboard_serve_200():
+    """GET /app deve retornar a página do dashboard."""
+    r = client.get("/app")
+    assert r.status_code == 200
+    assert "text/html" in r.headers.get("content-type", "")
+    assert "ORGATEC" in r.text
+
+
+def test_app_js_servido_em_200():
+    """GET /ui/js/app.js retorna o JS do dashboard com constantes esperadas."""
+    r = client.get("/ui/js/app.js")
+    assert r.status_code == 200
+    txt = r.text
+    assert "STORAGE_KEY" in txt and "THEME_KEY" in txt
+    assert "carregarHistorico" in txt
+    assert "addEventListener" in txt, "app.js deve usar addEventListener (CSP)"
+
+
+def test_app_csp_estrito_aplicado():
+    """CSP no /app deve continuar sem 'unsafe-inline' em script-src."""
+    r = client.get("/app")
+    csp = r.headers.get("content-security-policy", "")
+    assert "script-src" in csp
+    script_directive = csp.split("script-src", 1)[1].split(";", 1)[0]
+    assert "'unsafe-inline'" not in script_directive, (
+        f"script-src ganhou 'unsafe-inline' — regressão de CSP: {script_directive}"
+    )
+
+
+def test_app_dashboard_tem_3_secoes_navegacao():
+    """Dashboard expõe sidebar com Conciliação, Clientes, Relatórios."""
+    html = _frontend_index_html()
+    for sec in ("conciliacao", "clientes", "relatorios"):
+        assert f'data-section="{sec}"' in html, f"Faltando data-section={sec!r}"
+        assert f'id="section-{sec}"' in html, f"Faltando id=section-{sec!r}"
+
+
+def test_app_dashboard_tem_botao_demo():
+    """Dashboard deve ter botão 'Ver demonstração' que carrega dados sample."""
+    html = _frontend_index_html()
+    assert 'data-action="load-demo"' in html, (
+        "Falta data-action='load-demo' — botão de demo perdido"
+    )
+
+
+def test_app_dashboard_tem_theme_toggle():
+    """Dashboard deve ter botão de alternar tema (dark/light)."""
+    html = _frontend_index_html()
+    assert 'data-action="toggle-theme"' in html
+    assert 'id="btn-theme"' in html
+
+
+def test_app_dashboard_form_cliente():
+    """Dashboard deve ter formulário de cadastro de cliente."""
+    html = _frontend_index_html()
+    # Botão de salvar e seção de clientes
+    assert 'id="btn-salvar-cliente"' in html
+    assert 'id="section-clientes"' in html
+
+
+def test_app_html_sem_inline_handlers():
+    """frontend/index.html não deve ter onclick=/onchange= (CSP bloqueia)."""
+    import re
+    html = _frontend_index_html()
+    handlers = re.findall(r'\son(click|change|load|submit|input|focus|blur)=', html, re.IGNORECASE)
+    assert not handlers, (
+        f"Handlers inline detectados em frontend/index.html: {handlers[:5]}"
+    )
+
+
+def test_app_chart_js_pinado_com_sri():
+    """chart.js@4.4.4 deve estar pinado com integrity SRI + crossorigin."""
+    html = _frontend_index_html()
+    assert "chart.js@4.4.4" in html, "Chart.js deve estar pinado em uma versão explícita"
+    import re
+    m = re.search(r'<script[^>]*chart\.js@4\.4\.4[^>]*?>', html, re.DOTALL)
+    assert m, "Tag de chart.js não encontrada"
+    tag = m.group(0)
+    assert 'integrity="sha384-' in tag, f"Chart.js sem SRI: {tag}"
+    assert 'crossorigin="anonymous"' in tag, f"Chart.js sem crossorigin: {tag}"
+
+
+def test_app_csp_permite_chart_e_marked_de_jsdelivr():
+    """CSP script-src deve incluir cdn.jsdelivr.net (onde estão marked + chart.js)."""
+    r = client.get("/app")
+    csp = r.headers.get("content-security-policy", "")
+    script_directive = csp.split("script-src", 1)[1].split(";", 1)[0]
+    assert "cdn.jsdelivr.net" in script_directive, (
+        f"script-src não permite cdn.jsdelivr.net (marked + chart.js falham): {script_directive}"
+    )
+
+
 # ── Trilha 14: LLM integration — testes mocados (rodam em CI sem chave real) ──
 
 def _fake_anthropic_response(text: str, in_tokens: int = 100, out_tokens: int = 200):
