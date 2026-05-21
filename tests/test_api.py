@@ -1258,3 +1258,113 @@ def test_ui_redirect_js_servido_em_200():
     assert "/app" in r.text and "location" in r.text, (
         "redirect.js deve direcionar para /app via window.location"
     )
+
+
+# ── Trilha 12: gaps de production-readiness ───────────────────────────────
+
+def test_criar_cliente_response_inclui_ativo():
+    """Regressão: dict retornado por POST /clientes deve satisfazer ClienteResponse.
+
+    Bug histórico: o dict pulava 'ativo' (que é Required em ClienteResponse),
+    quebrando o endpoint com ResponseValidationError quando DATABASE_URL real
+    estava configurado.
+    """
+    import asyncio
+    from unittest.mock import AsyncMock, patch, MagicMock
+    from datetime import datetime, timezone
+    import uuid as _uuid
+
+    fake_cliente = MagicMock()
+    fake_cliente.id = _uuid.uuid4()
+    fake_cliente.nome = "Empresa Teste"
+    fake_cliente.cnpj = "11444777000161"
+    fake_cliente.email = "teste@example.com"
+    fake_cliente.telefone = None
+    fake_cliente.plano = "basico"
+    fake_cliente.ativo = True
+    fake_cliente.criado_em = datetime.now(timezone.utc)
+
+    async def fake_criar(*args, **kwargs):
+        return fake_cliente
+
+    session_mock = MagicMock()
+    session_mock.__aenter__ = AsyncMock(return_value=session_mock)
+    session_mock.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("api.main.DB_DISPONIVEL", True), \
+         patch("api.main.SessionLocal", return_value=session_mock), \
+         patch("api.main.crud_clientes.criar_cliente", side_effect=fake_criar):
+        r = client.post(
+            "/clientes",
+            json={"nome": "Empresa Teste", "cnpj": "11.444.777/0001-61", "plano": "basico"},
+        )
+    assert r.status_code == 201, f"POST /clientes falhou: {r.status_code} — {r.text}"
+    body = r.json()
+    # Todos os campos required de ClienteResponse devem estar presentes
+    assert "ativo" in body, f"Campo 'ativo' ausente na resposta: {body}"
+    assert body["ativo"] is True
+    assert body["nome"] == "Empresa Teste"
+    assert body["plano"] == "basico"
+
+
+def test_export_pdf_retorna_bytes_pdf_validos():
+    """Smoke test: /export/pdf/{rid} deve retornar bytes que começam com %PDF.
+
+    Gera um dataset via simulação primeiro, depois pede o PDF.
+    Se weasyprint falhar (sem libpango), o endpoint cai no fallback HTML —
+    nesse caso aceitamos text/html, mas o status deve ser 200.
+    """
+    # Cria um dataset via simulação
+    r = client.post(
+        "/conciliar/ofx?simular=true",
+        files={"arquivos": ("smoke.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
+    )
+    assert r.status_code == 200, f"Falha ao criar dataset para PDF test: {r.text}"
+    rid = r.json()["report_id"]
+
+    # Tenta gerar PDF
+    pdf_r = client.get(f"/export/pdf/{rid}")
+    assert pdf_r.status_code == 200, f"GET /export/pdf/{rid} falhou: {pdf_r.status_code}"
+
+    content_type = pdf_r.headers.get("content-type", "")
+    if "application/pdf" in content_type:
+        # WeasyPrint funcionou — valida magic bytes
+        assert pdf_r.content.startswith(b"%PDF"), (
+            f"Content-Type diz application/pdf mas bytes não começam com %PDF: "
+            f"{pdf_r.content[:20]!r}"
+        )
+        assert len(pdf_r.content) > 1000, (
+            f"PDF muito pequeno ({len(pdf_r.content)} bytes) — provavelmente corrompido"
+        )
+    else:
+        # Fallback HTML — aceitável, mas log para visibilidade
+        assert "text/html" in content_type, (
+            f"PDF endpoint retornou content-type inesperado: {content_type}"
+        )
+
+
+@pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY")
+    or os.environ.get("ANTHROPIC_API_KEY", "").startswith("sk-ant-test"),
+    reason="LLM smoke test requer ANTHROPIC_API_KEY real (não sk-ant-test do CI)",
+)
+def test_llm_smoke_anthropic_real():
+    """Smoke test opcional: chama Claude real com OFX mínimo.
+
+    Skipped em CI (key=sk-ant-test). Roda localmente se ANTHROPIC_API_KEY
+    válida estiver configurada. Custa ~1¢ por execução (Haiku, ~500 tokens).
+    """
+    r = client.post(
+        "/conciliar/ofx?modelo=haiku&max_tokens=500",
+        files={"arquivos": ("smoke.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
+    )
+    assert r.status_code == 200, f"LLM smoke falhou: {r.status_code} — {r.text}"
+    data = r.json()
+    assert data["modo"] == "claude_llm"
+    assert data["modelo"] == "haiku"
+    assert "usage" in data
+    assert data["usage"]["input_tokens"] > 0
+    assert data["usage"]["output_tokens"] > 0
+    assert len(data.get("relatorio_md", "")) > 100, (
+        "Relatório LLM suspeitamente curto — possível falha de geração"
+    )

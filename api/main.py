@@ -733,7 +733,8 @@ async def criar_cliente(request: Request, payload: ClienteCreate):
         raise HTTPException(409, "CNPJ já cadastrado")
     return {
         "id": str(cliente.id), "nome": cliente.nome, "cnpj": cliente.cnpj,
-        "email": cliente.email, "plano": cliente.plano,
+        "email": cliente.email, "telefone": cliente.telefone,
+        "plano": cliente.plano, "ativo": cliente.ativo,
         "criado_em": cliente.criado_em.isoformat(),
     }
 
