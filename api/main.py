@@ -637,13 +637,13 @@ async def listar_clientes(request: Request, apenas_ativos: bool = True):
 @limiter.limit("30/minute")
 async def buscar_cliente(request: Request, cliente_id: str):
     """Busca um cliente pelo ID."""
-    if not DB_DISPONIVEL:
-        raise HTTPException(503, "Banco de dados nao configurado")
     import uuid as _uuid
     try:
         cid = _uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "ID invalido")
+    if not DB_DISPONIVEL:
+        raise HTTPException(503, "Banco de dados nao configurado")
     async with SessionLocal() as db:
         cliente = await crud_clientes.buscar_cliente(db, cid)
     if not cliente:
@@ -660,13 +660,13 @@ async def buscar_cliente(request: Request, cliente_id: str):
 @limiter.limit("20/minute")
 async def atualizar_cliente(request: Request, cliente_id: str, payload: ClienteUpdate):
     """Atualiza dados de um cliente."""
-    if not DB_DISPONIVEL:
-        raise HTTPException(503, "Banco de dados nao configurado")
     import uuid as _uuid
     try:
         cid = _uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "ID invalido")
+    if not DB_DISPONIVEL:
+        raise HTTPException(503, "Banco de dados nao configurado")
     campos = {k: v for k, v in payload.model_dump().items() if v is not None}
     async with SessionLocal() as db:
         cliente = await crud_clientes.atualizar_cliente(db, cid, **campos)
