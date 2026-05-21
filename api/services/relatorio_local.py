@@ -2,6 +2,7 @@
 
 Funcao publica: _conciliacao_local(extratos, anomalias) -> str
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -15,7 +16,7 @@ def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
     """Gera relatorio de conciliacao deterministicamente (sem LLM) — versao enriquecida."""
     out = ["# Relatório de Conciliação Bancária\n"]
     out.append(f"**Gerado em:** {datetime.now().strftime('%d/%m/%Y %H:%M')}  \n")
-    out.append(f"**Modo:** Simulação local (sem LLM)  \n")
+    out.append("**Modo:** Simulação local (sem LLM)  \n")
     out.append(f"**Extratos analisados:** {len(extratos)}\n\n")
 
     stats = _top_categorias_e_contrapartes(extratos)
@@ -64,24 +65,22 @@ def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
         vol_e = cred + abs(deb)
         pct = (vol_e / vol_total * 100) if vol_total else 0
         out.append(
-            f"| {e['conta']} | {e['qtd']} | R$ {cred:,.2f} | R$ {deb:,.2f} | "
-            f"**R$ {liq:,.2f}** | {pct:.1f}% |\n"
+            f"| {e['conta']} | {e['qtd']} | R$ {cred:,.2f} | R$ {deb:,.2f} | " f"**R$ {liq:,.2f}** | {pct:.1f}% |\n"
         )
-    out.append(f"| **CONSOLIDADO** | **{total_tx}** | **R$ {total_cred:,.2f}** | "
-               f"**R$ {total_deb:,.2f}** | **R$ {total_liq:,.2f}** | 100,0% |\n\n")
+    out.append(
+        f"| **CONSOLIDADO** | **{total_tx}** | **R$ {total_cred:,.2f}** | "
+        f"**R$ {total_deb:,.2f}** | **R$ {total_liq:,.2f}** | 100,0% |\n\n"
+    )
 
     # === 2. INDICADORES OPERACIONAIS ===
     out.append("## 2. Indicadores Operacionais\n\n")
     sev_count = {"critico": len(crit), "alerta": len(alerta), "atencao": len(atencao)}
-    saude = "🟢 Boa" if sev_count["critico"] == 0 else (
-        "🟡 Atenção" if sev_count["critico"] <= 2 else "🔴 Crítica"
-    )
+    saude = "🟢 Boa" if sev_count["critico"] == 0 else ("🟡 Atenção" if sev_count["critico"] <= 2 else "🔴 Crítica")
     n_dias = len(datas) or 1
     media_diaria_tx = total_tx / n_dias
     cats_count = sum(1 for k in stats["cats"] if k != "A classificar")
     pct_classif = (
-        (sum(d["qtd"] for k, d in stats["cats"].items() if k != "A classificar") / total_tx * 100)
-        if total_tx else 0
+        (sum(d["qtd"] for k, d in stats["cats"].items() if k != "A classificar") / total_tx * 100) if total_tx else 0
     )
     out.append("| Indicador | Valor |\n|---|---:|\n")
     out.append(f"| Saúde da conciliação | {saude} |\n")
@@ -121,8 +120,10 @@ def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
                         usados.add(j)
                         break
         if total_pares_encontrados:
-            out.append(f"\n**Resumo:** {total_pares_encontrados} par(es) conciliado(s) · "
-                       f"Volume total R$ {total_volume:,.2f}\n\n")
+            out.append(
+                f"\n**Resumo:** {total_pares_encontrados} par(es) conciliado(s) · "
+                f"Volume total R$ {total_volume:,.2f}\n\n"
+            )
         else:
             out.append("\n_Nenhuma transferência entre contas detectada._\n\n")
     else:
@@ -156,9 +157,7 @@ def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
     out.append("## 6. Duplicidades Detectadas\n\n")
     achou_dup = False
     for e in extratos:
-        contagem = Counter(
-            (t["data"], round(t["valor"], 2), t["memo"][:40]) for t in e["transacoes"]
-        )
+        contagem = Counter((t["data"], round(t["valor"], 2), t["memo"][:40]) for t in e["transacoes"])
         dups = [k for k, n in contagem.items() if n > 1]
         if dups:
             achou_dup = True

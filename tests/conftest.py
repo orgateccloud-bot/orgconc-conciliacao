@@ -1,5 +1,6 @@
 """Configuração pytest: substitui engine por NullPool nos testes para evitar
 conflito de event loop entre requisições do TestClient."""
+
 import os
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Carrega .env antes de qualquer import do projeto
 from dotenv import load_dotenv
+
 _env = Path(__file__).resolve().parent.parent / ".env"
 if _env.exists():
     load_dotenv(_env, override=True)
@@ -35,6 +37,4 @@ def _patch_engine_nullpool():
         poolclass=NullPool,
         connect_args={"statement_cache_size": 0},
     )
-    _client.SessionLocal = async_sessionmaker(
-        _client.engine, class_=AsyncSession, expire_on_commit=False
-    )
+    _client.SessionLocal = async_sessionmaker(_client.engine, class_=AsyncSession, expire_on_commit=False)

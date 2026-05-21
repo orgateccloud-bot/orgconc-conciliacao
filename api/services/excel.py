@@ -1,4 +1,5 @@
 """Geracao de planilha XLSX com 3 abas (Resumo, Transacoes, Anomalias)."""
+
 from __future__ import annotations
 
 import io
@@ -20,16 +21,28 @@ _LOGO_PATH = Path(__file__).resolve().parent.parent.parent / "static" / "logo.pn
 
 def _xlsx_estilos() -> dict:
     """Paleta de cores, fontes e bordas compartilhados entre as abas XLSX."""
-    BLUE_DARK = "0A3A7A"; BLUE = "1E6FD9"; WHITE = "FFFFFF"
-    GRAY_BORDER = "E2E8F0"; GRAY_LIGHT = "F7FAFC"; GRAY_HOVER = "EFF6FF"
-    RED = "DC2626"; RED_BG = "FEE2E2"
-    ORANGE = "EA580C"; ORANGE_BG = "FFEDD5"
-    YELLOW = "CA8A04"; YELLOW_BG = "FEF9C3"
+    BLUE_DARK = "0A3A7A"
+    BLUE = "1E6FD9"
+    WHITE = "FFFFFF"
+    GRAY_BORDER = "E2E8F0"
+    GRAY_LIGHT = "F7FAFC"
+    GRAY_HOVER = "EFF6FF"
+    RED = "DC2626"
+    RED_BG = "FEE2E2"
+    ORANGE = "EA580C"
+    ORANGE_BG = "FFEDD5"
+    YELLOW = "CA8A04"
+    YELLOW_BG = "FEF9C3"
     GREEN = "16A34A"
     side_thin = Side(border_style="thin", color=GRAY_BORDER)
     return dict(
-        BLUE_DARK=BLUE_DARK, BLUE=BLUE, WHITE=WHITE,
-        RED=RED, ORANGE=ORANGE, YELLOW=YELLOW, GREEN=GREEN,
+        BLUE_DARK=BLUE_DARK,
+        BLUE=BLUE,
+        WHITE=WHITE,
+        RED=RED,
+        ORANGE=ORANGE,
+        YELLOW=YELLOW,
+        GREEN=GREEN,
         fill_blue_dark=PatternFill("solid", fgColor=BLUE_DARK),
         fill_blue=PatternFill("solid", fgColor=BLUE),
         fill_zebra=PatternFill("solid", fgColor=GRAY_LIGHT),
@@ -48,10 +61,11 @@ def _xlsx_estilos() -> dict:
         font_kpi_val_blue=Font(bold=True, size=22, color=BLUE_DARK, name="Calibri"),
         side_thin=side_thin,
         border_all=Border(left=side_thin, right=side_thin, top=side_thin, bottom=side_thin),
-        border_kpi=Border(left=side_thin, right=side_thin,
-                          top=Side(border_style="medium", color=BLUE), bottom=side_thin),
-        FMT_BRL='R$ #,##0.00;[Red]-R$ #,##0.00',
-        FMT_BRL_POS='R$ #,##0.00',
+        border_kpi=Border(
+            left=side_thin, right=side_thin, top=Side(border_style="medium", color=BLUE), bottom=side_thin
+        ),
+        FMT_BRL="R$ #,##0.00;[Red]-R$ #,##0.00",
+        FMT_BRL_POS="R$ #,##0.00",
     )
 
 
@@ -64,7 +78,8 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
         fill = fill or e["fill_blue_dark"]
         font = font or e["font_h_white"]
         for c in cells:
-            c.fill = fill; c.font = font
+            c.fill = fill
+            c.font = font
             c.alignment = Alignment(horizontal="left", vertical="center")
             c.border = e["border_all"]
 
@@ -75,7 +90,8 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
     if _LOGO_PATH.exists():
         try:
             img = XLImage(str(_LOGO_PATH))
-            img.width = 64; img.height = 64
+            img.width = 64
+            img.height = 64
             ws.add_image(img, "A1")
         except Exception as _e:
             log.debug("Logo XLSX ignorada (nao encontrada ou formato invalido): %s", _e)
@@ -87,7 +103,8 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
     ws["B1"].font = e["font_brand"]
     ws["B2"] = "Contabilidade & Auditoria"
     ws["B2"].font = e["font_brand_sub"]
-    ws.merge_cells("B1:E1"); ws.merge_cells("B2:E2")
+    ws.merge_cells("B1:E1")
+    ws.merge_cells("B2:E2")
 
     ws["F1"] = "RELATÓRIO DE CONCILIAÇÃO"
     ws["F1"].font = Font(bold=True, color=e["BLUE_DARK"], size=11, name="Calibri")
@@ -105,9 +122,9 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
     ws.cell(row=5, column=1, value="VISÃO GERAL").font = e["font_section"]
     ws.merge_cells("A5:H5")
 
-    total_tx   = sum(ex["qtd"] for ex in extratos)
+    total_tx = sum(ex["qtd"] for ex in extratos)
     total_cred = sum(t["valor"] for ex in extratos for t in ex["transacoes"] if t["valor"] > 0)
-    total_deb  = sum(t["valor"] for ex in extratos for t in ex["transacoes"] if t["valor"] < 0)
+    total_deb = sum(t["valor"] for ex in extratos for t in ex["transacoes"] if t["valor"] < 0)
     saldo = total_cred + total_deb
 
     sev_count = {"critico": 0, "alerta": 0, "atencao": 0}
@@ -115,22 +132,34 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
         sev_count[a["severidade"]] = sev_count.get(a["severidade"], 0) + 1
 
     kpis = [
-        ("TRANSAÇÕES",  total_tx,   e["font_kpi_val_blue"], e["fill_kpi_blue"], None),
-        ("CRÉDITOS",    total_cred,
-         Font(bold=True, size=18, color=e["GREEN"], name="Calibri"),
-         e["fill_kpi_blue"], e["FMT_BRL_POS"]),
-        ("DÉBITOS",     total_deb,
-         Font(bold=True, size=18, color=e["RED"], name="Calibri"),
-         e["fill_kpi_blue"], e["FMT_BRL"]),
-        ("SALDO",       saldo,
-         Font(bold=True, size=18, color=e["BLUE_DARK"], name="Calibri"),
-         e["fill_kpi_blue"], e["FMT_BRL"]),
+        ("TRANSAÇÕES", total_tx, e["font_kpi_val_blue"], e["fill_kpi_blue"], None),
+        (
+            "CRÉDITOS",
+            total_cred,
+            Font(bold=True, size=18, color=e["GREEN"], name="Calibri"),
+            e["fill_kpi_blue"],
+            e["FMT_BRL_POS"],
+        ),
+        (
+            "DÉBITOS",
+            total_deb,
+            Font(bold=True, size=18, color=e["RED"], name="Calibri"),
+            e["fill_kpi_blue"],
+            e["FMT_BRL"],
+        ),
+        (
+            "SALDO",
+            saldo,
+            Font(bold=True, size=18, color=e["BLUE_DARK"], name="Calibri"),
+            e["fill_kpi_blue"],
+            e["FMT_BRL"],
+        ),
     ]
     sev_kpis = [
-        ("🔴 CRÍTICAS", sev_count["critico"], e["font_kpi_val_red"],    e["fill_critico"]),
-        ("🟠 ALERTAS",  sev_count["alerta"],  e["font_kpi_val_orange"], e["fill_alerta"]),
-        ("🟡 ATENÇÃO",  sev_count["atencao"], e["font_kpi_val_yellow"], e["fill_atencao"]),
-        ("✅ TOTAL",    len(anomalias),        e["font_kpi_val_blue"],   e["fill_kpi_blue"]),
+        ("🔴 CRÍTICAS", sev_count["critico"], e["font_kpi_val_red"], e["fill_critico"]),
+        ("🟠 ALERTAS", sev_count["alerta"], e["font_kpi_val_orange"], e["fill_alerta"]),
+        ("🟡 ATENÇÃO", sev_count["atencao"], e["font_kpi_val_yellow"], e["fill_atencao"]),
+        ("✅ TOTAL", len(anomalias), e["font_kpi_val_blue"], e["fill_kpi_blue"]),
     ]
 
     border_kpi_bottom = Border(left=e["side_thin"], right=e["side_thin"], bottom=e["side_thin"])
@@ -139,17 +168,21 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
         lbl = ws_inner.cell(row=row_lbl, column=col, value=label)
         lbl.font = e["font_kpi_lbl"]
         lbl.alignment = Alignment(horizontal="left", vertical="bottom")
-        lbl.fill = fill; lbl.border = e["border_kpi"]
+        lbl.fill = fill
+        lbl.border = e["border_kpi"]
         v = ws_inner.cell(row=row_val, column=col, value=val)
         v.font = font_val
         v.alignment = Alignment(horizontal="left", vertical="center")
-        v.fill = fill; v.border = border_kpi_bottom
+        v.fill = fill
+        v.border = border_kpi_bottom
         if fmt:
             v.number_format = fmt
         lbl2 = ws_inner.cell(row=row_lbl, column=col + 1)
-        lbl2.fill = fill; lbl2.border = e["border_kpi"]
+        lbl2.fill = fill
+        lbl2.border = e["border_kpi"]
         v2 = ws_inner.cell(row=row_val, column=col + 1)
-        v2.fill = fill; v2.border = border_kpi_bottom
+        v2.fill = fill
+        v2.border = border_kpi_bottom
         ws_inner.merge_cells(start_row=row_lbl, start_column=col, end_row=row_lbl, end_column=col + 1)
         ws_inner.merge_cells(start_row=row_val, start_column=col, end_row=row_val, end_column=col + 1)
 
@@ -175,19 +208,23 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
     r += 1
     for i, ex in enumerate(extratos):
         cred = sum(t["valor"] for t in ex["transacoes"] if t["valor"] > 0)
-        deb  = sum(t["valor"] for t in ex["transacoes"] if t["valor"] < 0)
-        sld  = cred + deb
-        pct  = (ex["qtd"] / total_tx) if total_tx else 0
+        deb = sum(t["valor"] for t in ex["transacoes"] if t["valor"] < 0)
+        sld = cred + deb
+        pct = (ex["qtd"] / total_tx) if total_tx else 0
         ws.cell(row=r, column=1, value=ex["conta"])
         ws.cell(row=r, column=2, value=ex["arquivo"])
         ws.cell(row=r, column=3, value=ex["qtd"])
         c = ws.cell(row=r, column=4, value=cred)
-        c.number_format = e["FMT_BRL_POS"]; c.font = Font(color=e["GREEN"], name="Calibri")
+        c.number_format = e["FMT_BRL_POS"]
+        c.font = Font(color=e["GREEN"], name="Calibri")
         c = ws.cell(row=r, column=5, value=deb)
-        c.number_format = e["FMT_BRL"];     c.font = Font(color=e["RED"], name="Calibri")
+        c.number_format = e["FMT_BRL"]
+        c.font = Font(color=e["RED"], name="Calibri")
         c = ws.cell(row=r, column=6, value=sld)
-        c.number_format = e["FMT_BRL"];     c.font = Font(bold=True, name="Calibri")
-        c = ws.cell(row=r, column=7, value=pct); c.number_format = '0.0%'
+        c.number_format = e["FMT_BRL"]
+        c.font = Font(bold=True, name="Calibri")
+        c = ws.cell(row=r, column=7, value=pct)
+        c.number_format = "0.0%"
         if i % 2 == 1:
             for col in range(1, len(headers_conta) + 1):
                 ws.cell(row=r, column=col).fill = e["fill_zebra"]
@@ -205,8 +242,7 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
         for col, txt in enumerate(["Categoria", "Qtd", "Valor Total", "Ticket Médio", "% Volume", "", "", ""], 1):
             if txt:
                 ws.cell(row=r, column=col, value=txt)
-        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)],
-                      fill=e["fill_blue"], font=e["font_h_white"])
+        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)], fill=e["fill_blue"], font=e["font_h_white"])
         ws.row_dimensions[r].height = 22
         r += 1
         vol_total = sum(abs(d["valor"]) for d in cats.values()) or 1
@@ -216,10 +252,13 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
             pct = abs(d["valor"]) / vol_total
             ws.cell(row=r, column=1, value=cat)
             ws.cell(row=r, column=2, value=d["qtd"])
-            c = ws.cell(row=r, column=3, value=d["valor"]); c.number_format = e["FMT_BRL"]
+            c = ws.cell(row=r, column=3, value=d["valor"])
+            c.number_format = e["FMT_BRL"]
             c.font = Font(color=e["GREEN"] if d["valor"] > 0 else e["RED"], name="Calibri")
-            c = ws.cell(row=r, column=4, value=tk); c.number_format = e["FMT_BRL"]
-            c = ws.cell(row=r, column=5, value=pct); c.number_format = '0.0%'
+            c = ws.cell(row=r, column=4, value=tk)
+            c.number_format = e["FMT_BRL"]
+            c = ws.cell(row=r, column=5, value=pct)
+            c.number_format = "0.0%"
             if i % 2 == 1:
                 for col in range(1, 6):
                     ws.cell(row=r, column=col).fill = e["fill_zebra"]
@@ -235,15 +274,15 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
         r += 1
         for col, txt in enumerate(["#", "Contraparte (CNPJ/CPF/Nome)", "Transações", "Volume", "Tipo"], 1):
             ws.cell(row=r, column=col, value=txt)
-        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)],
-                      fill=e["fill_blue"], font=e["font_h_white"])
+        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)], fill=e["fill_blue"], font=e["font_h_white"])
         ws.row_dimensions[r].height = 22
         r += 1
         for i, (chave, d) in enumerate(top_cps, 1):
             ws.cell(row=r, column=1, value=i)
             ws.cell(row=r, column=2, value=chave)
             ws.cell(row=r, column=3, value=d["qtd"])
-            c = ws.cell(row=r, column=4, value=d["valor"]); c.number_format = e["FMT_BRL"]
+            c = ws.cell(row=r, column=4, value=d["valor"])
+            c.number_format = e["FMT_BRL"]
             c.font = Font(color=e["GREEN"] if d["valor"] > 0 else e["RED"], bold=True, name="Calibri")
             ws.cell(row=r, column=5, value="Recebimento" if d["valor"] > 0 else "Pagamento")
             if i % 2 == 0:
@@ -261,15 +300,15 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
         r += 1
         for col, txt in enumerate(["Tipo", "Título", "Conta", "Valor", "Detalhe"], 1):
             ws.cell(row=r, column=col, value=txt)
-        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)],
-                      fill=e["fill_blue"], font=e["font_h_white"])
+        estilo_header([ws.cell(row=r, column=c) for c in range(1, 6)], fill=e["fill_blue"], font=e["font_h_white"])
         ws.row_dimensions[r].height = 22
         r += 1
         for a in crit_lista:
             ws.cell(row=r, column=1, value=a["tipo"])
             ws.cell(row=r, column=2, value=a["titulo"])
             ws.cell(row=r, column=3, value=a["conta"])
-            c = ws.cell(row=r, column=4, value=a.get("valor", 0)); c.number_format = e["FMT_BRL"]
+            c = ws.cell(row=r, column=4, value=a.get("valor", 0))
+            c.number_format = e["FMT_BRL"]
             ws.cell(row=r, column=5, value=a["detalhe"])
             for col in range(1, 6):
                 ws.cell(row=r, column=col).fill = e["fill_critico"]
@@ -304,8 +343,7 @@ def _xlsx_aba_transacoes(wb, extratos: list[dict], e: dict) -> None:
                 tipo_cell.font = Font(color=e["RED"], bold=True, name="Calibri", size=10)
             c = ws.cell(row=r, column=4, value=t["valor"])
             c.number_format = e["FMT_BRL"]
-            c.font = Font(color=e["GREEN"] if t["valor"] > 0 else e["RED"],
-                          name="Calibri", size=10, bold=True)
+            c.font = Font(color=e["GREEN"] if t["valor"] > 0 else e["RED"], name="Calibri", size=10, bold=True)
             ws.cell(row=r, column=5, value=t["memo"])
             ws.cell(row=r, column=6, value=t["nome"])
             ws.cell(row=r, column=7, value=t["checknum"])
@@ -336,12 +374,9 @@ def _xlsx_aba_anomalias(wb, anomalias: list[dict], e: dict) -> None:
         cell.border = e["border_all"]
     r = 2
     sev_meta = {
-        "critico": ("🔴 CRÍTICO", e["fill_critico"],
-                    Font(bold=True, color=e["RED"],    name="Calibri", size=10)),
-        "alerta":  ("🟠 ALERTA",  e["fill_alerta"],
-                    Font(bold=True, color=e["ORANGE"], name="Calibri", size=10)),
-        "atencao": ("🟡 ATENÇÃO", e["fill_atencao"],
-                    Font(bold=True, color=e["YELLOW"], name="Calibri", size=10)),
+        "critico": ("🔴 CRÍTICO", e["fill_critico"], Font(bold=True, color=e["RED"], name="Calibri", size=10)),
+        "alerta": ("🟠 ALERTA", e["fill_alerta"], Font(bold=True, color=e["ORANGE"], name="Calibri", size=10)),
+        "atencao": ("🟡 ATENÇÃO", e["fill_atencao"], Font(bold=True, color=e["YELLOW"], name="Calibri", size=10)),
     }
     for a in anomalias:
         label, fill, font_sev = sev_meta.get(a["severidade"], ("?", None, None))

@@ -6,6 +6,7 @@ Exporta:
 - RequestIdMiddleware: middleware que injeta X-Request-ID nos headers
 - configurar_logging(): ativa o stack na startup
 """
+
 from __future__ import annotations
 
 import contextvars
@@ -20,10 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-
-request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "request_id", default="-"
-)
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
 
 class JsonFormatter(logging.Formatter):
@@ -33,10 +31,28 @@ class JsonFormatter(logging.Formatter):
     """
 
     _RESERVADOS = {
-        "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-        "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-        "created", "msecs", "relativeCreated", "thread", "threadName",
-        "processName", "process", "message", "asctime",
+        "name",
+        "msg",
+        "args",
+        "levelname",
+        "levelno",
+        "pathname",
+        "filename",
+        "module",
+        "exc_info",
+        "exc_text",
+        "stack_info",
+        "lineno",
+        "funcName",
+        "created",
+        "msecs",
+        "relativeCreated",
+        "thread",
+        "threadName",
+        "processName",
+        "process",
+        "message",
+        "asctime",
     }
 
     def format(self, record: logging.LogRecord) -> str:
@@ -113,9 +129,7 @@ def configurar_logging(nivel: str = "INFO", json_mode: bool = True) -> None:
     if json_mode:
         handler.setFormatter(JsonFormatter())
     else:
-        handler.setFormatter(logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s [%(message)s]"
-        ))
+        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s [%(message)s]"))
 
     root = logging.getLogger()
     root.handlers.clear()

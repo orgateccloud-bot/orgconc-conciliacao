@@ -1,4 +1,5 @@
 """Testes pytest da API de Conciliacao."""
+
 import io
 import os
 import sys
@@ -13,7 +14,16 @@ os.environ["ORGCONC_DATA_DIR"] = str(Path(__file__).resolve().parent / "_data_te
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from api.main import app, _parse_ofx, _parse_xml, _classificar, _detectar_anomalias, _gerar_xlsx, _render_html, DB_DISPONIVEL
+from api.main import (
+    app,
+    _parse_ofx,
+    _parse_xml,
+    _classificar,
+    _detectar_anomalias,
+    _gerar_xlsx,
+    _render_html,
+    DB_DISPONIVEL,
+)
 
 client = TestClient(app)
 
@@ -245,6 +255,7 @@ def test_upload_extensao_invalida():
 
 # ── Hardening: /conciliar/csv exige auth quando ORGCONC_AUTH_TOKEN ativo ──
 
+
 def test_conciliar_ofx_aceita_modelo_haiku_em_simular():
     """modelo=haiku deve ser aceito mesmo em simular (parametro nao quebra fluxo)."""
     r = client.post(
@@ -270,6 +281,7 @@ def test_conciliar_ofx_modelo_invalido_retorna_400():
 def test_modelos_validos_mapping():
     """O dicionario _MODELOS_VALIDOS deve ter haiku, sonnet, opus mapeados."""
     from api.main import _MODELOS_VALIDOS
+
     assert "haiku" in _MODELOS_VALIDOS
     assert "sonnet" in _MODELOS_VALIDOS
     assert "opus" in _MODELOS_VALIDOS
@@ -280,6 +292,7 @@ def test_modelos_validos_mapping():
 def test_frontend_tem_card_haiku():
     """Dashboard deve ter o card Haiku como 4o modo."""
     from pathlib import Path
+
     html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
     assert 'data-mode="haiku"' in html
     assert "Haiku 4.5" in html
@@ -294,13 +307,14 @@ def test_conciliar_csv_exige_auth_quando_token_definido():
             "/conciliar/csv",
             files=[
                 ("extrato", ("e.csv", b"data,valor\n2026-01-01,100", "text/csv")),
-                ("razao",   ("r.csv", b"data,valor\n2026-01-01,100", "text/csv")),
+                ("razao", ("r.csv", b"data,valor\n2026-01-01,100", "text/csv")),
             ],
         )
     assert r.status_code == 401, f"Esperado 401, recebido {r.status_code}: {r.text[:200]}"
 
 
 # ── Hardening: persistencia no response ───────────────────────────────────
+
 
 def test_conciliacao_simulacao_inclui_status_persistencia():
     """O response do /conciliar/ofx deve trazer chave 'persistencia' com status."""
@@ -316,21 +330,23 @@ def test_conciliacao_simulacao_inclui_status_persistencia():
 
 # ── Hardening: persistencia retorna error quando BD falha ─────────────────
 
+
 def test_persistencia_retorna_error_quando_bd_falha():
     """_salvar_no_banco NAO pode engolir excecao silenciosamente."""
     import asyncio
     from api.main import _salvar_no_banco
 
-    with patch("api.main.DB_DISPONIVEL", True), \
-         patch("api.main.SessionLocal", side_effect=RuntimeError("conexao recusada")):
-        resultado = asyncio.run(
-            _salvar_no_banco("teste-rid", [], [], "simulacao")
-        )
+    with (
+        patch("api.main.DB_DISPONIVEL", True),
+        patch("api.main.SessionLocal", side_effect=RuntimeError("conexao recusada")),
+    ):
+        resultado = asyncio.run(_salvar_no_banco("teste-rid", [], [], "simulacao"))
     assert resultado["status"] == "error"
     assert "conexao" in resultado["mensagem"].lower() or resultado["erro"] == "RuntimeError"
 
 
 # ── Hardening: CSP endurecida ─────────────────────────────────────────────
+
 
 def test_csp_inclui_diretivas_endurecidas():
     """CSP deve incluir connect-src, form-action, upgrade-insecure-requests."""
@@ -343,16 +359,19 @@ def test_csp_inclui_diretivas_endurecidas():
 
 # ── Hardening: marked.js pinado com SRI ───────────────────────────────────
 
+
 def test_frontend_usa_marked_com_sri():
     """O dashboard nao pode mais carregar marked sem integrity hash."""
     from pathlib import Path
+
     html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
     assert "marked@" in html, "marked.js deve estar pinado em uma versao explicita"
-    assert "integrity=\"sha384-" in html, "marked.js deve ter SRI hash"
-    assert "crossorigin=\"anonymous\"" in html
+    assert 'integrity="sha384-' in html, "marked.js deve ter SRI hash"
+    assert 'crossorigin="anonymous"' in html
 
 
 # ── JWT auth ──────────────────────────────────────────────────────────────
+
 
 def test_auth_login_sem_config_retorna_503():
     """Sem ORGCONC_ADMIN_* configurado, /auth/login deve retornar 503."""
@@ -364,11 +383,15 @@ def test_auth_login_sem_config_retorna_503():
 def test_auth_login_credenciais_invalidas_retorna_401():
     """Email errado deve retornar 401 com mesma mensagem que senha errada (anti-enum)."""
     from api.services.auth import hash_senha
+
     hash_valido = hash_senha("senha-correta-123")
-    with patch.dict(os.environ, {
-        "ORGCONC_ADMIN_EMAIL": "admin@orgconc.com",
-        "ORGCONC_ADMIN_SENHA_HASH": hash_valido,
-    }):
+    with patch.dict(
+        os.environ,
+        {
+            "ORGCONC_ADMIN_EMAIL": "admin@orgconc.com",
+            "ORGCONC_ADMIN_SENHA_HASH": hash_valido,
+        },
+    ):
         r1 = client.post("/auth/login", json={"email": "outro@x.com", "senha": "qualquer"})
         r2 = client.post("/auth/login", json={"email": "admin@orgconc.com", "senha": "errada"})
     assert r1.status_code == 401
@@ -379,11 +402,15 @@ def test_auth_login_credenciais_invalidas_retorna_401():
 def test_auth_login_sucesso_emite_jwt():
     """Login correto deve emitir JWT valido."""
     from api.services.auth import hash_senha, decodificar_token
+
     hash_valido = hash_senha("senha-correta-123")
-    with patch.dict(os.environ, {
-        "ORGCONC_ADMIN_EMAIL": "admin@orgconc.com",
-        "ORGCONC_ADMIN_SENHA_HASH": hash_valido,
-    }):
+    with patch.dict(
+        os.environ,
+        {
+            "ORGCONC_ADMIN_EMAIL": "admin@orgconc.com",
+            "ORGCONC_ADMIN_SENHA_HASH": hash_valido,
+        },
+    ):
         r = client.post("/auth/login", json={"email": "admin@orgconc.com", "senha": "senha-correta-123"})
     assert r.status_code == 200
     j = r.json()
@@ -403,8 +430,10 @@ def test_auth_me_exige_token():
 
 def test_auth_me_com_token_legacy_funciona():
     """Token legacy compartilhado deve funcionar via /auth/me."""
-    with patch("api.main.AUTH_TOKEN", "legacy-test-token"), \
-         patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-test-token"):
+    with (
+        patch("api.main.AUTH_TOKEN", "legacy-test-token"),
+        patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-test-token"),
+    ):
         r = client.get("/auth/me", headers={"Authorization": "Bearer legacy-test-token"})
     assert r.status_code == 200
     j = r.json()
@@ -414,6 +443,7 @@ def test_auth_me_com_token_legacy_funciona():
 def test_auth_me_com_jwt_funciona():
     """JWT valido emitido por emitir_token deve passar pelo current_user."""
     from api.services.auth import emitir_token
+
     token = emitir_token(sub="teste@x.com", email="teste@x.com", role="admin")
     with patch("api.main.AUTH_TOKEN", "qualquer-coisa"):
         r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
@@ -424,6 +454,7 @@ def test_auth_me_com_jwt_funciona():
 def test_auth_jwt_expirado_retorna_401():
     """JWT com exp no passado deve retornar 401 com mensagem clara."""
     from api.services.auth import emitir_token
+
     token = emitir_token(sub="x@y.com", ttl_min=-1)  # ja expirado
     r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401
@@ -431,6 +462,7 @@ def test_auth_jwt_expirado_retorna_401():
 
 
 # ── Hardening: CSP script-src sem unsafe-inline ───────────────────────────
+
 
 def test_csp_script_src_sem_unsafe_inline():
     """Script-src deve permitir self + cdn.jsdelivr.net mas NAO unsafe-inline."""
@@ -447,12 +479,15 @@ def test_csp_script_src_sem_unsafe_inline():
 
 # ── Frontend: JS extraido + a11y ──────────────────────────────────────────
 
+
 def test_frontend_nao_tem_script_inline():
     """frontend/index.html nao pode ter <script> com conteudo inline."""
     from pathlib import Path
+
     html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
     # Conta apenas tags <script> SEM src (inline)
     import re
+
     inline_scripts = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>[\s\S]+?</script>", html)
     # Tolera scripts vazios <script></script>
     inline_com_conteudo = [s for s in inline_scripts if len(re.sub(r"<[^>]+>", "", s).strip()) > 5]
@@ -462,6 +497,7 @@ def test_frontend_nao_tem_script_inline():
 def test_frontend_carrega_app_js_externo():
     """frontend/index.html deve referenciar /ui/js/app.js."""
     from pathlib import Path
+
     html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
     assert "/ui/js/app.js" in html or 'src="/ui/js/' in html
 
@@ -469,6 +505,7 @@ def test_frontend_carrega_app_js_externo():
 def test_static_js_app_existe_e_eh_servido():
     """static/js/app.js deve existir e ser servido via /ui/js/app.js."""
     from pathlib import Path
+
     p = Path(__file__).resolve().parent.parent / "static" / "js" / "app.js"
     assert p.exists(), "static/js/app.js deve existir"
     assert p.stat().st_size > 100, "app.js esta vazio"
@@ -481,17 +518,18 @@ def test_static_js_app_existe_e_eh_servido():
 def test_frontend_tem_focus_visible():
     """Frontend deve ter regra :focus-visible para a11y."""
     from pathlib import Path
+
     html = (Path(__file__).resolve().parent.parent / "frontend" / "index.html").read_text(encoding="utf-8")
     assert ":focus-visible" in html, "frontend sem :focus-visible (a11y de teclado)"
 
 
 # ── Hardening: limite agregado de upload ──────────────────────────────────
 
+
 def test_limite_agregado_de_upload_retorna_413():
     """Soma dos uploads deve exceder MAX_UPLOAD_TOTAL_BYTES -> 413."""
     # Baixa o limite agregado para 1KB para o teste e envia 3 OFX validos de >400B
-    with patch("api.main.MAX_UPLOAD_TOTAL_BYTES", 1024), \
-         patch("api.main.MAX_UPLOAD_TOTAL_MB", 0):
+    with patch("api.main.MAX_UPLOAD_TOTAL_BYTES", 1024), patch("api.main.MAX_UPLOAD_TOTAL_MB", 0):
         files = [
             ("arquivos", (f"e{i}.ofx", OFX_SAMPLE.encode("latin-1"), "application/x-ofx"))
             for i in range(3)  # 3x ~700B = ~2KB > 1KB
@@ -510,6 +548,7 @@ def test_gerar_xlsx_estrutura():
 
     # Abre e verifica abas
     from openpyxl import load_workbook
+
     wb = load_workbook(io.BytesIO(blob))
     assert "Resumo" in wb.sheetnames
     assert "Transações" in wb.sheetnames
@@ -525,6 +564,7 @@ def test_render_html_contem_logo_e_dados():
 
 
 # ── Clientes ──────────────────────────────────────────────────────────────
+
 
 def test_clientes_cnpj_invalido_retorna_422():
     """CNPJ incorreto deve ser rejeitado pelo Pydantic antes de chegar ao banco."""
@@ -568,6 +608,7 @@ def test_clientes_atualizar_sem_db_retorna_503():
 
 # ── Headers de Segurança ──────────────────────────────────────────────────
 
+
 def test_security_headers_presentes():
     """Toda resposta deve incluir os headers de segurança obrigatorios."""
     r = client.get("/health")
@@ -585,6 +626,7 @@ _requer_db = pytest.mark.skipif(not DB_DISPONIVEL, reason="DATABASE_URL não con
 def _limpar_cliente_teste() -> None:
     """Remove cliente de teste via psycopg2 síncrono para evitar conflito de event loop."""
     import psycopg2
+
     url = os.environ.get("DATABASE_URL", "").replace("+asyncpg", "")
     if not url or "[" in url:
         return
@@ -599,12 +641,15 @@ def cliente_real():
     """Cria cliente no banco real e remove ao final do módulo."""
     _limpar_cliente_teste()  # estado limpo antes de criar
 
-    r = client.post("/clientes", json={
-        "nome": "Empresa Integracao Teste",
-        "cnpj": _CNPJ_TESTE,
-        "email": "integracao@orgconc.com",
-        "plano": "basico",
-    })
+    r = client.post(
+        "/clientes",
+        json={
+            "nome": "Empresa Integracao Teste",
+            "cnpj": _CNPJ_TESTE,
+            "email": "integracao@orgconc.com",
+            "plano": "basico",
+        },
+    )
     assert r.status_code == 201, r.text
     data = r.json()
     yield data
@@ -653,6 +698,7 @@ def test_db_buscar_cliente_inexistente():
 
 
 # ── Anomalias — cobertura de tipos ────────────────────────────────────────
+
 
 def _extrato(txs: list[dict], conta: str = "AG 0000 / CC 0000") -> dict:
     return {"conta": conta, "qtd": len(txs), "transacoes": txs, "arquivo": "test.ofx"}
@@ -707,6 +753,7 @@ def test_anomalias_transferencia_sem_par():
 
 # ── Classificador — edge cases ────────────────────────────────────────────
 
+
 def test_classificador_ted_recebido():
     assert _classificar("TED RECEBIDO CLIENTE", "") == "Receita TED/DOC"
 
@@ -724,6 +771,7 @@ def test_classificador_pix_a_classificar():
 
 
 # ── Conciliar — múltiplos arquivos e XML ──────────────────────────────────
+
 
 def test_conciliar_multiplos_ofx():
     r = client.post(
@@ -754,6 +802,7 @@ def test_conciliar_xml():
 
 # ── Clientes — validações adicionais ──────────────────────────────────────
 
+
 def test_cliente_plano_invalido_retorna_422():
     r = client.post("/clientes", json={"nome": "Empresa X", "plano": "platinum"})
     assert r.status_code == 422
@@ -773,11 +822,13 @@ def test_cliente_cnpj_com_mascara_valido():
 
 # ── XLSX — cabeçalhos das colunas ─────────────────────────────────────────
 
+
 def test_xlsx_cabecalhos_transacoes():
     txs = _parse_ofx(OFX_SAMPLE)
     extrato = {"conta": "AG 1234-5 / CC 9999-9", "qtd": len(txs), "transacoes": txs, "arquivo": "test.ofx"}
     blob = _gerar_xlsx([extrato], [])
     from openpyxl import load_workbook
+
     wb = load_workbook(io.BytesIO(blob))
     ws = wb["Transações"]
     headers = [ws.cell(1, c).value for c in range(1, 10) if ws.cell(1, c).value]
@@ -788,10 +839,12 @@ def test_xlsx_cabecalhos_transacoes():
 
 # ── DB real — conciliação salva no banco ──────────────────────────────────
 
+
 @_requer_db
 def test_db_conciliacao_salva_no_banco():
     """POST /conciliar/ofx?simular=true deve persistir registro em conciliacoes."""
     import psycopg2
+
     r = client.post(
         "/conciliar/ofx?simular=true",
         files=[("arquivos", ("real.ofx", OFX_SAMPLE, "application/x-ofx"))],
@@ -810,64 +863,65 @@ def test_db_conciliacao_salva_no_banco():
 
 # ── Sanitizacao XSS ─────────────────────────────────────────────────────────
 
+
 def test_sanitize_remove_script_tag():
     """Defesa contra XSS: <script> e removido antes do template renderizar."""
     from api.services.sanitize import sanitize_html
-    out = sanitize_html('<p>ok</p><script>alert(1)</script>')
-    assert '<script' not in out.lower()
-    assert 'alert(1)' in out  # texto preservado, mas inerte
+
+    out = sanitize_html("<p>ok</p><script>alert(1)</script>")
+    assert "<script" not in out.lower()
+    assert "alert(1)" in out  # texto preservado, mas inerte
 
 
 def test_sanitize_remove_javascript_uri():
     """Defesa contra XSS: javascript: URIs sao removidas de href."""
     from api.services.sanitize import sanitize_html
+
     out = sanitize_html('<a href="javascript:alert(1)">bad</a><a href="https://x.com">ok</a>')
-    assert 'javascript:' not in out.lower()
+    assert "javascript:" not in out.lower()
     assert 'href="https://x.com"' in out
 
 
 def test_sanitize_remove_event_handlers():
     """Defesa contra XSS: atributos on* sao removidos."""
     from api.services.sanitize import sanitize_html
+
     out = sanitize_html('<p onclick="alert(1)">x</p><img src="x" onerror="alert(1)">')
-    assert 'onclick' not in out.lower()
-    assert 'onerror' not in out.lower()
+    assert "onclick" not in out.lower()
+    assert "onerror" not in out.lower()
 
 
 def test_render_html_sanitiza_xss_em_relatorio_md():
     """End-to-end: relatorio_md com payload XSS nao gera script no HTML final."""
     payload_md = "# Relatorio\n\n<script>alert('xss')</script>\n\nConteudo legitimo."
     html = _render_html(payload_md)
-    assert '<script' not in html.lower()
-    assert 'Conteudo legitimo' in html
+    assert "<script" not in html.lower()
+    assert "Conteudo legitimo" in html
 
 
 # ── Trilha 2 — segurança ────────────────────────────────────────────────────
 
+
 def test_cors_sem_wildcard():
     """CORS: allow_origins nunca deve ser ['*'] — wildcard fallback removido."""
     from api.main import CORS_ORIGINS
-    assert "*" not in CORS_ORIGINS, (
-        "CORS_ORIGINS contém '*' — todas as origens estariam autorizadas"
-    )
+
+    assert "*" not in CORS_ORIGINS, "CORS_ORIGINS contém '*' — todas as origens estariam autorizadas"
 
 
-def test_security_headers_presentes():
-    """Middleware de segurança injeta headers obrigatórios em toda resposta."""
+def test_security_headers_inclui_referrer_policy():
+    """Middleware de segurança injeta Referrer-Policy stict-origin-when-cross-origin."""
     r = client.get("/health")
-    assert r.headers.get("x-content-type-options") == "nosniff"
-    assert r.headers.get("x-frame-options") == "DENY"
     assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
 
 
 def test_auth_hash_bloqueado_em_prod():
     """POST /auth/hash deve retornar 404 quando _IS_PROD=True."""
     from unittest.mock import patch
+
     with patch("api.main._IS_PROD", True):
         r = client.post("/auth/hash", json={"senha": "senha123"})
-    assert r.status_code == 404, (
-        f"/auth/hash acessivel em producao — retornou {r.status_code}"
-    )
+    assert r.status_code == 404, f"/auth/hash acessivel em producao — retornou {r.status_code}"
 
 
 def test_login_retorna_401_para_email_e_senha_errados():
@@ -877,24 +931,28 @@ def test_login_retorna_401_para_email_e_senha_errados():
     independente de qual credencial está errada — sem vazar informação via
     mensagem diferente ou status diferente.
     """
-    with patch.dict(os.environ, {
-        "ORGCONC_ADMIN_EMAIL": "admin@orgatec.com",
-        "ORGCONC_ADMIN_SENHA_HASH": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGVQ/YTKGiFj6b3M3KdA0Jl4W2",
-    }):
+    with patch.dict(
+        os.environ,
+        {
+            "ORGCONC_ADMIN_EMAIL": "admin@orgatec.com",
+            "ORGCONC_ADMIN_SENHA_HASH": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGVQ/YTKGiFj6b3M3KdA0Jl4W2",
+        },
+    ):
         r_email = client.post("/auth/login", json={"email": "errado@outro.com", "senha": "qualquer"})
         r_senha = client.post("/auth/login", json={"email": "admin@orgatec.com", "senha": "errada"})
 
     assert r_email.status_code == 401
     assert r_senha.status_code == 401
-    assert r_email.json()["detail"] == r_senha.json()["detail"], (
-        "Mensagens de erro diferem — vaza qual credencial está errada"
-    )
+    assert (
+        r_email.json()["detail"] == r_senha.json()["detail"]
+    ), "Mensagens de erro diferem — vaza qual credencial está errada"
 
 
 def test_jwt_contem_nbf():
     """Tokens emitidos devem conter claim nbf (not-before)."""
     import jwt as pyjwt
     from api.services.auth import emitir_token
+
     token = emitir_token(sub="test@x.com", email="test@x.com")
     claims = pyjwt.decode(token, options={"verify_signature": False})
     assert "nbf" in claims, "Claim nbf ausente no token"
@@ -902,6 +960,7 @@ def test_jwt_contem_nbf():
 
 
 # ── Trilha 4: validação de input, rate limiting, UUID ordering ────────────
+
 
 def test_cliente_buscar_uuid_valido_sem_db_retorna_503():
     """UUID válido com DB indisponível deve retornar 503, não 400.
@@ -912,30 +971,27 @@ def test_cliente_buscar_uuid_valido_sem_db_retorna_503():
     """
     with patch("api.main.DB_DISPONIVEL", False):
         r = client.get("/clientes/00000000-0000-0000-0000-000000000001")
-    assert r.status_code == 503, (
-        f"UUID válido sem DB deveria retornar 503, retornou {r.status_code}"
-    )
+    assert r.status_code == 503, f"UUID válido sem DB deveria retornar 503, retornou {r.status_code}"
 
 
 def test_login_payload_muito_grande_retorna_422():
     """POST /auth/login com email acima de 254 chars deve retornar 422 (max_length)."""
     email_gigante = "a" * 300 + "@x.com"
     r = client.post("/auth/login", json={"email": email_gigante, "senha": "qualquer"})
-    assert r.status_code == 422, (
-        f"Email de {len(email_gigante)} chars deveria ser rejeitado com 422, retornou {r.status_code}"
-    )
+    assert (
+        r.status_code == 422
+    ), f"Email de {len(email_gigante)} chars deveria ser rejeitado com 422, retornou {r.status_code}"
 
 
 def test_export_pdf_sem_auth_retorna_401():
     """GET /export/pdf sem token deve retornar 401 quando AUTH_TOKEN está definido."""
     with patch("api.main.AUTH_TOKEN", "segredo-de-teste"):
         r = client.get("/export/pdf/report-inexistente")
-    assert r.status_code == 401, (
-        f"/export/pdf sem token deveria retornar 401, retornou {r.status_code}"
-    )
+    assert r.status_code == 401, f"/export/pdf sem token deveria retornar 401, retornou {r.status_code}"
 
 
 # ── Trilha 5: path traversal, health prod, response schema ───────────────
+
 
 def test_carregar_dataset_rid_invalido_retorna_400():
     """IDs inválidos devem ser rejeitados (path traversal bloqueado).
@@ -947,14 +1003,11 @@ def test_carregar_dataset_rid_invalido_retorna_400():
     for rid_invalido in ["../etc/passwd", "../../secret"]:
         r = client.get(f"/export/html/{rid_invalido}")
         assert r.status_code in (400, 404, 422), (
-            f"Traversal '{rid_invalido}' deveria ser bloqueado (400/404/422), "
-            f"retornou {r.status_code}"
+            f"Traversal '{rid_invalido}' deveria ser bloqueado (400/404/422), " f"retornou {r.status_code}"
         )
     for rid_invalido in ["AAAABBBBCCCC", "abc123"]:
         r = client.get(f"/export/html/{rid_invalido}")
-        assert r.status_code == 400, (
-            f"rid '{rid_invalido}' deveria ser rejeitado com 400, retornou {r.status_code}"
-        )
+        assert r.status_code == 400, f"rid '{rid_invalido}' deveria ser rejeitado com 400, retornou {r.status_code}"
 
 
 def test_health_em_prod_nao_expoe_config():
@@ -963,30 +1016,26 @@ def test_health_em_prod_nao_expoe_config():
         r = client.get("/health")
     assert r.status_code == 200
     body = r.json()
-    assert "api_key_configured" not in body, (
-        "/health expõe api_key_configured em produção — risk de reconhecimento"
-    )
-    assert "banco_dados" not in body, (
-        "/health expõe banco_dados em produção"
-    )
+    assert "api_key_configured" not in body, "/health expõe api_key_configured em produção — risk de reconhecimento"
+    assert "banco_dados" not in body, "/health expõe banco_dados em produção"
 
 
 # ── Trilha 6: Cache-Control, exception handler, JWT jti, version info ────
+
 
 def test_auth_login_retorna_cache_control_no_store():
     """POST /auth/login deve retornar Cache-Control: no-store para evitar cache de tokens."""
     r = client.post("/auth/login", json={"email": "x@y.com", "senha": "qualquer"})
     # Independente do status (401/503), o header deve estar presente
     cc = r.headers.get("cache-control", "")
-    assert "no-store" in cc, (
-        f"/auth/login sem 'no-store' no Cache-Control: '{cc}'"
-    )
+    assert "no-store" in cc, f"/auth/login sem 'no-store' no Cache-Control: '{cc}'"
 
 
 def test_jwt_contem_jti():
     """Tokens emitidos devem conter claim jti (JWT ID único)."""
     import jwt as pyjwt
     from api.services.auth import emitir_token
+
     token = emitir_token(sub="test@x.com", email="test@x.com")
     claims = pyjwt.decode(token, options={"verify_signature": False})
     assert "jti" in claims, "Claim jti ausente no token"
@@ -999,21 +1048,18 @@ def test_root_em_prod_nao_expoe_versao():
         r = client.get("/")
     assert r.status_code == 200
     body = r.json()
-    assert "version" not in body, (
-        f"GET / expõe 'version' em produção: {body}"
-    )
+    assert "version" not in body, f"GET / expõe 'version' em produção: {body}"
 
 
 def test_export_retorna_cache_control_no_store():
     """GET /export/* deve retornar Cache-Control: no-store (relatórios financeiros)."""
     r = client.get("/export/html/abc123456789")
     cc = r.headers.get("cache-control", "")
-    assert "no-store" in cc, (
-        f"/export/html sem 'no-store' no Cache-Control: '{cc}'"
-    )
+    assert "no-store" in cc, f"/export/html sem 'no-store' no Cache-Control: '{cc}'"
 
 
 # ── Trilha 7: audit log · legacy token em prod · /docs em prod · body limit ──
+
 
 def test_docs_em_prod_retorna_404():
     """Em produção /docs deve retornar 404 (Swagger UI desabilitado)."""
@@ -1056,8 +1102,7 @@ def test_legacy_token_rejeitado_em_prod():
     from fastapi import HTTPException
 
     legacy = "token-legado-teste-seguro"
-    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", legacy), \
-         patch("api.services.auth._IS_PROD", True):
+    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", legacy), patch("api.services.auth._IS_PROD", True):
         try:
             auth_optional(authorization=f"Bearer {legacy}")
             raise AssertionError("Token legado aceito em produção — deve levantar HTTPException 401")
@@ -1068,6 +1113,7 @@ def test_legacy_token_rejeitado_em_prod():
 def test_body_gigante_retorna_413():
     """POST com Content-Length > _MAX_BODY_BYTES deve retornar 413."""
     import api.main as _m
+
     original = _m._MAX_BODY_BYTES
     try:
         _m._MAX_BODY_BYTES = 100
@@ -1077,14 +1123,13 @@ def test_body_gigante_retorna_413():
             content=payload,
             headers={"Content-Type": "application/json", "Content-Length": str(len(payload))},
         )
-        assert r.status_code == 413, (
-            f"Body gigante deveria retornar 413, got {r.status_code}"
-        )
+        assert r.status_code == 413, f"Body gigante deveria retornar 413, got {r.status_code}"
     finally:
         _m._MAX_BODY_BYTES = original
 
 
 # ── Trilha 8: max_tokens cap · DB error leak · UUID validation · filename sanitization ──
+
 
 def test_max_tokens_acima_limite_csv_retorna_422():
     """POST /conciliar/csv com max_tokens > 32768 deve retornar 422 (validação FastAPI)."""
@@ -1095,9 +1140,7 @@ def test_max_tokens_acima_limite_csv_retorna_422():
             "razao": ("r.csv", io.BytesIO(b"data,valor\n2026-01-01,100"), "text/csv"),
         },
     )
-    assert r.status_code == 422, (
-        f"max_tokens=999999 deveria retornar 422, got {r.status_code}"
-    )
+    assert r.status_code == 422, f"max_tokens=999999 deveria retornar 422, got {r.status_code}"
 
 
 def test_max_tokens_zero_csv_retorna_422():
@@ -1109,9 +1152,7 @@ def test_max_tokens_zero_csv_retorna_422():
             "razao": ("r.csv", io.BytesIO(b"data,valor\n2026-01-01,100"), "text/csv"),
         },
     )
-    assert r.status_code == 422, (
-        f"max_tokens=0 deveria retornar 422, got {r.status_code}"
-    )
+    assert r.status_code == 422, f"max_tokens=0 deveria retornar 422, got {r.status_code}"
 
 
 def test_cliente_id_invalido_no_ofx_retorna_422():
@@ -1120,9 +1161,7 @@ def test_cliente_id_invalido_no_ofx_retorna_422():
         "/conciliar/ofx?simular=true&cliente_id=nao-e-um-uuid",
         files={"arquivos": ("extrato.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
     )
-    assert r.status_code == 422, (
-        f"cliente_id inválido deveria retornar 422, got {r.status_code}"
-    )
+    assert r.status_code == 422, f"cliente_id inválido deveria retornar 422, got {r.status_code}"
 
 
 def test_db_error_em_prod_omite_mensagem():
@@ -1131,36 +1170,38 @@ def test_db_error_em_prod_omite_mensagem():
     from unittest.mock import AsyncMock, patch
 
     async def _run():
-        with patch("api.main._IS_PROD", True), \
-             patch("api.main.DB_DISPONIVEL", True), \
-             patch("api.main.SessionLocal") as mock_session:
+        with (
+            patch("api.main._IS_PROD", True),
+            patch("api.main.DB_DISPONIVEL", True),
+            patch("api.main.SessionLocal") as mock_session,
+        ):
             mock_session.return_value.__aenter__ = AsyncMock(side_effect=Exception("table users does not exist"))
             mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
             from api.main import _salvar_no_banco
+
             result = await _salvar_no_banco("abc123456789", [], [], "test")
         return result
 
     result = asyncio.run(_run())
     assert result["status"] == "error"
-    assert "mensagem" not in result, (
-        f"'mensagem' exposto em produção — vazamento de erro DB: {result}"
-    )
+    assert "mensagem" not in result, f"'mensagem' exposto em produção — vazamento de erro DB: {result}"
 
 
 # ── Trilha 9: WeasyPrint SSRF · parser error · plano max_length · magic bytes ──
 
+
 def test_sanitize_img_src_https_removido():
     """img src com URL remota deve ser removido — SSRF guard para WeasyPrint."""
     from api.services.sanitize import sanitize_html
+
     out = sanitize_html('<img src="https://evil.com/track.png" alt="x">')
-    assert 'src="https://evil.com' not in out, (
-        f"img src remoto não bloqueado pelo sanitizer: {out}"
-    )
+    assert 'src="https://evil.com' not in out, f"img src remoto não bloqueado pelo sanitizer: {out}"
 
 
 def test_sanitize_img_src_http_removido():
     """img src HTTP deve ser removido (sem downgrade para plaintext)."""
     from api.services.sanitize import sanitize_html
+
     out = sanitize_html('<img src="http://evil.com/track.png" alt="x">')
     assert "http://evil.com" not in out, f"img src HTTP não bloqueado: {out}"
 
@@ -1168,6 +1209,7 @@ def test_sanitize_img_src_http_removido():
 def test_sanitize_img_data_uri_mantido():
     """img src com data URI (base64) deve ser preservado."""
     from api.services.sanitize import sanitize_html
+
     data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
     out = sanitize_html(f'<img src="{data_uri}" alt="logo">')
     assert "data:image/png" in out, f"data URI removido indevidamente: {out}"
@@ -1176,6 +1218,7 @@ def test_sanitize_img_data_uri_mantido():
 def test_sanitize_link_http_bloqueado():
     """a href com HTTP deve ser removido (sem downgrade)."""
     from api.services.sanitize import sanitize_html
+
     out = sanitize_html('<a href="http://example.com">link</a>')
     assert "http://example.com" not in out, f"href HTTP não bloqueado: {out}"
 
@@ -1183,6 +1226,7 @@ def test_sanitize_link_http_bloqueado():
 def test_sanitize_link_https_mantido():
     """a href com HTTPS deve ser preservado."""
     from api.services.sanitize import sanitize_html
+
     out = sanitize_html('<a href="https://example.com">link</a>')
     assert "https://example.com" in out, f"href HTTPS removido indevidamente: {out}"
 
@@ -1194,14 +1238,13 @@ def test_plano_muito_longo_retorna_422():
         json={"nome": "Empresa X", "plano": "a" * 21},
         headers={"Authorization": "Bearer dummy"},
     )
-    assert r.status_code == 422, (
-        f"plano de 21 chars deveria retornar 422, got {r.status_code}"
-    )
+    assert r.status_code == 422, f"plano de 21 chars deveria retornar 422, got {r.status_code}"
 
 
 def test_magic_bytes_pdf_nomeado_como_ofx():
     """Arquivo PDF nomeado .ofx deve ser detectado por magic bytes e processado como PDF."""
     from api.parsers import _detectar_tipo
+
     pdf_header = b"%PDF-1.4 content here"
     ext = _detectar_tipo(pdf_header, "extrato.ofx")
     assert ext == ".pdf", f"Magic bytes PDF não detectado — ext retornada: {ext}"
@@ -1210,6 +1253,7 @@ def test_magic_bytes_pdf_nomeado_como_ofx():
 def test_magic_bytes_xml_detectado():
     """Arquivo XML deve ser detectado por magic bytes."""
     from api.parsers import _detectar_tipo
+
     xml_content = b"<?xml version='1.0'?><root/>"
     ext = _detectar_tipo(xml_content, "extrato.pdf")  # extensão errada
     assert ext == ".xml", f"Magic bytes XML não detectado — ext retornada: {ext}"
@@ -1217,8 +1261,10 @@ def test_magic_bytes_xml_detectado():
 
 # ── Trilha 11: /ui/ unificado com /app (dashboard Aurora Blue) ────────────
 
+
 def _static_index_html() -> str:
     from pathlib import Path
+
     p = Path(__file__).resolve().parent.parent / "static" / "index.html"
     return p.read_text(encoding="utf-8")
 
@@ -1226,28 +1272,24 @@ def _static_index_html() -> str:
 def test_ui_index_e_redirect_para_app():
     """static/index.html agora redireciona para /app (unifica visual Aurora Blue)."""
     html = _static_index_html()
-    assert 'http-equiv="refresh"' in html and 'url=/app' in html, (
-        "static/index.html deve ter meta-refresh para /app"
-    )
-    assert 'rel="canonical" href="/app"' in html, (
-        "Faltou <link rel='canonical' href='/app'> para SEO"
-    )
+    assert 'http-equiv="refresh"' in html and "url=/app" in html, "static/index.html deve ter meta-refresh para /app"
+    assert 'rel="canonical" href="/app"' in html, "Faltou <link rel='canonical' href='/app'> para SEO"
 
 
 def test_ui_index_sem_inline_script_block():
     """O redirect em /ui/ continua respeitando CSP (sem <script> inline)."""
     import re
+
     html = _static_index_html()
     matches = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>", html)
     for body in matches:
-        assert not body.strip(), (
-            f"Bloco <script> inline detectado: {body.strip()[:100]}"
-        )
+        assert not body.strip(), f"Bloco <script> inline detectado: {body.strip()[:100]}"
 
 
 def test_ui_index_sem_inline_event_handlers():
     """O redirect em /ui/ não tem onclick=/onchange= (CSP estrito)."""
     import re
+
     html = _static_index_html()
     handlers = re.findall(r"\son(click|change|load|submit|input|focus|blur)=", html, re.IGNORECASE)
     assert not handlers, f"Handlers inline detectados: {handlers[:5]}"
@@ -1257,12 +1299,11 @@ def test_ui_redirect_js_servido_em_200():
     """O fallback JS de redirect (/ui/js/redirect.js) deve ser servido."""
     r = client.get("/ui/js/redirect.js")
     assert r.status_code == 200, f"/ui/js/redirect.js retornou {r.status_code}"
-    assert "/app" in r.text and "location" in r.text, (
-        "redirect.js deve direcionar para /app via window.location"
-    )
+    assert "/app" in r.text and "location" in r.text, "redirect.js deve direcionar para /app via window.location"
 
 
 # ── Trilha 12: gaps de production-readiness ───────────────────────────────
+
 
 def test_criar_cliente_response_inclui_ativo():
     """Regressão: dict retornado por POST /clientes deve satisfazer ClienteResponse.
@@ -1271,7 +1312,6 @@ def test_criar_cliente_response_inclui_ativo():
     quebrando o endpoint com ResponseValidationError quando DATABASE_URL real
     estava configurado.
     """
-    import asyncio
     from unittest.mock import AsyncMock, patch, MagicMock
     from datetime import datetime, timezone
     import uuid as _uuid
@@ -1293,9 +1333,11 @@ def test_criar_cliente_response_inclui_ativo():
     session_mock.__aenter__ = AsyncMock(return_value=session_mock)
     session_mock.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("api.main.DB_DISPONIVEL", True), \
-         patch("api.main.SessionLocal", return_value=session_mock), \
-         patch("api.main.crud_clientes.criar_cliente", side_effect=fake_criar):
+    with (
+        patch("api.main.DB_DISPONIVEL", True),
+        patch("api.main.SessionLocal", return_value=session_mock),
+        patch("api.main.crud_clientes.criar_cliente", side_effect=fake_criar),
+    ):
         r = client.post(
             "/clientes",
             json={"nome": "Empresa Teste", "cnpj": "11.444.777/0001-61", "plano": "basico"},
@@ -1332,20 +1374,16 @@ def test_export_pdf_retorna_bytes_pdf_validos():
     if "application/pdf" in content_type:
         # WeasyPrint funcionou — valida magic bytes
         assert pdf_r.content.startswith(b"%PDF"), (
-            f"Content-Type diz application/pdf mas bytes não começam com %PDF: "
-            f"{pdf_r.content[:20]!r}"
+            f"Content-Type diz application/pdf mas bytes não começam com %PDF: " f"{pdf_r.content[:20]!r}"
         )
-        assert len(pdf_r.content) > 1000, (
-            f"PDF muito pequeno ({len(pdf_r.content)} bytes) — provavelmente corrompido"
-        )
+        assert len(pdf_r.content) > 1000, f"PDF muito pequeno ({len(pdf_r.content)} bytes) — provavelmente corrompido"
     else:
         # Fallback HTML — aceitável, mas log para visibilidade
-        assert "text/html" in content_type, (
-            f"PDF endpoint retornou content-type inesperado: {content_type}"
-        )
+        assert "text/html" in content_type, f"PDF endpoint retornou content-type inesperado: {content_type}"
 
 
 # ── Trilha 13: DB integration — testes mocados (rodam em CI sem Supabase) ─
+
 
 def _fake_cliente_mock(**overrides):
     """Cria um mock SQLAlchemy Cliente com defaults sensatos."""
@@ -1368,19 +1406,23 @@ def _fake_cliente_mock(**overrides):
 def _patch_db_session():
     """Context manager: ativa DB_DISPONIVEL=True + mock de SessionLocal."""
     from unittest.mock import AsyncMock, MagicMock, patch as _p
+
     session_mock = MagicMock()
     session_mock.__aenter__ = AsyncMock(return_value=session_mock)
     session_mock.__aexit__ = AsyncMock(return_value=False)
-    return _p.multiple(
-        "api.main",
-        DB_DISPONIVEL=True,
-        SessionLocal=MagicMock(return_value=session_mock),
-    ), session_mock
+    return (
+        _p.multiple(
+            "api.main",
+            DB_DISPONIVEL=True,
+            SessionLocal=MagicMock(return_value=session_mock),
+        ),
+        session_mock,
+    )
 
 
 def test_listar_clientes_com_db_mockado():
     """GET /clientes com DB mockado: retorna lista válida + response_model OK."""
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import patch
 
     async def fake_listar(*args, **kwargs):
         return [
@@ -1403,7 +1445,7 @@ def test_listar_clientes_com_db_mockado():
 
 def test_buscar_cliente_com_db_mockado_retorna_cliente():
     """GET /clientes/{id} com DB mockado e cliente existente."""
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import patch
 
     fake = _fake_cliente_mock(nome="Empresa Encontrada", email="found@example.com")
 
@@ -1520,9 +1562,9 @@ def test_salvar_no_banco_persiste_conciliacao_e_retorna_ok():
     anomalias = [{"conta": "AG 1234 / CC 5678", "valor": 250.5, "severidade": "atencao", "tipo": "ok"}]
 
     async def _run():
-        with patch("api.main.DB_DISPONIVEL", True), \
-             patch("api.main.SessionLocal", return_value=session_mock):
+        with patch("api.main.DB_DISPONIVEL", True), patch("api.main.SessionLocal", return_value=session_mock):
             from api.main import _salvar_no_banco
+
             return await _salvar_no_banco("abc123456789", extratos, anomalias, "test")
 
     result = asyncio.run(_run())
@@ -1535,8 +1577,10 @@ def test_salvar_no_banco_persiste_conciliacao_e_retorna_ok():
 
 # ── Trilha 15: dashboard /app — estrutura, segurança e contratos ─────────
 
+
 def _frontend_index_html() -> str:
     from pathlib import Path
+
     p = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
     return p.read_text(encoding="utf-8")
 
@@ -1565,9 +1609,9 @@ def test_app_csp_estrito_aplicado():
     csp = r.headers.get("content-security-policy", "")
     assert "script-src" in csp
     script_directive = csp.split("script-src", 1)[1].split(";", 1)[0]
-    assert "'unsafe-inline'" not in script_directive, (
-        f"script-src ganhou 'unsafe-inline' — regressão de CSP: {script_directive}"
-    )
+    assert (
+        "'unsafe-inline'" not in script_directive
+    ), f"script-src ganhou 'unsafe-inline' — regressão de CSP: {script_directive}"
 
 
 def test_app_dashboard_tem_3_secoes_navegacao():
@@ -1581,9 +1625,7 @@ def test_app_dashboard_tem_3_secoes_navegacao():
 def test_app_dashboard_tem_botao_demo():
     """Dashboard deve ter botão 'Ver demonstração' que carrega dados sample."""
     html = _frontend_index_html()
-    assert 'data-action="load-demo"' in html, (
-        "Falta data-action='load-demo' — botão de demo perdido"
-    )
+    assert 'data-action="load-demo"' in html, "Falta data-action='load-demo' — botão de demo perdido"
 
 
 def test_app_dashboard_tem_theme_toggle():
@@ -1604,11 +1646,10 @@ def test_app_dashboard_form_cliente():
 def test_app_html_sem_inline_handlers():
     """frontend/index.html não deve ter onclick=/onchange= (CSP bloqueia)."""
     import re
+
     html = _frontend_index_html()
-    handlers = re.findall(r'\son(click|change|load|submit|input|focus|blur)=', html, re.IGNORECASE)
-    assert not handlers, (
-        f"Handlers inline detectados em frontend/index.html: {handlers[:5]}"
-    )
+    handlers = re.findall(r"\son(click|change|load|submit|input|focus|blur)=", html, re.IGNORECASE)
+    assert not handlers, f"Handlers inline detectados em frontend/index.html: {handlers[:5]}"
 
 
 def test_app_chart_js_pinado_com_sri():
@@ -1616,7 +1657,8 @@ def test_app_chart_js_pinado_com_sri():
     html = _frontend_index_html()
     assert "chart.js@4.4.4" in html, "Chart.js deve estar pinado em uma versão explícita"
     import re
-    m = re.search(r'<script[^>]*chart\.js@4\.4\.4[^>]*?>', html, re.DOTALL)
+
+    m = re.search(r"<script[^>]*chart\.js@4\.4\.4[^>]*?>", html, re.DOTALL)
     assert m, "Tag de chart.js não encontrada"
     tag = m.group(0)
     assert 'integrity="sha384-' in tag, f"Chart.js sem SRI: {tag}"
@@ -1628,16 +1670,18 @@ def test_app_csp_permite_chart_e_marked_de_jsdelivr():
     r = client.get("/app")
     csp = r.headers.get("content-security-policy", "")
     script_directive = csp.split("script-src", 1)[1].split(";", 1)[0]
-    assert "cdn.jsdelivr.net" in script_directive, (
-        f"script-src não permite cdn.jsdelivr.net (marked + chart.js falham): {script_directive}"
-    )
+    assert (
+        "cdn.jsdelivr.net" in script_directive
+    ), f"script-src não permite cdn.jsdelivr.net (marked + chart.js falham): {script_directive}"
 
 
 # ── Trilha 14: LLM integration — testes mocados (rodam em CI sem chave real) ──
 
+
 def _fake_anthropic_response(text: str, in_tokens: int = 100, out_tokens: int = 200):
     """Cria mock de resposta do Anthropic SDK (resp.content[].text + usage)."""
     from unittest.mock import MagicMock
+
     block = MagicMock()
     block.type = "text"
     block.text = text
@@ -1668,11 +1712,14 @@ def test_conciliar_ofx_modo_llm_single_mockado():
     fake_client = MagicMock()
     fake_client.messages.create.return_value = _fake_anthropic_response(
         "# Relatório de Conciliação\n\nAnálise completa pelo Haiku.",
-        in_tokens=150, out_tokens=400,
+        in_tokens=150,
+        out_tokens=400,
     )
 
-    with patch("api.main._get_client", return_value=fake_client), \
-         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+    with (
+        patch("api.main._get_client", return_value=fake_client),
+        patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
+    ):
         r = client.post(
             "/conciliar/ofx?modelo=haiku",
             files={"arquivos": ("test.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
@@ -1701,8 +1748,10 @@ def test_conciliar_ofx_llm_credito_esgotado_retorna_msg_amigavel():
     fake_client = MagicMock()
     fake_client.messages.create.side_effect = err
 
-    with patch("api.main._get_client", return_value=fake_client), \
-         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+    with (
+        patch("api.main._get_client", return_value=fake_client),
+        patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
+    ):
         r = client.post(
             "/conciliar/ofx?modelo=sonnet",
             files={"arquivos": ("test.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
@@ -1728,8 +1777,10 @@ def test_conciliar_ofx_llm_rate_limit_retorna_msg_amigavel():
     fake_client = MagicMock()
     fake_client.messages.create.side_effect = err
 
-    with patch("api.main._get_client", return_value=fake_client), \
-         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+    with (
+        patch("api.main._get_client", return_value=fake_client),
+        patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
+    ):
         r = client.post(
             "/conciliar/ofx?modelo=opus",
             files={"arquivos": ("test.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
@@ -1750,8 +1801,11 @@ def test_conciliar_ofx_multi_modelo_mockado():
         chamadas_feitas.append((model_id, label, max_tokens))
         return {
             "texto": f"Análise produzida por {label}",
-            "input_tokens": 200, "output_tokens": 500,
-            "modelo": model_id, "label": label, "erro": None,
+            "input_tokens": 200,
+            "output_tokens": 500,
+            "modelo": model_id,
+            "label": label,
+            "erro": None,
         }
 
     async def fake_sintetizar(api_key, resultados, max_tokens):
@@ -1759,9 +1813,11 @@ def test_conciliar_ofx_multi_modelo_mockado():
         assert len(resultados) == 3
         return "## Índice de Consenso: 85/100\n\nRelatório consolidado", 0.85
 
-    with patch("api.main._chamar_modelo_async", side_effect=fake_chamar_modelo), \
-         patch("api.main._sintetizar_consenso", side_effect=fake_sintetizar), \
-         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+    with (
+        patch("api.main._chamar_modelo_async", side_effect=fake_chamar_modelo),
+        patch("api.main._sintetizar_consenso", side_effect=fake_sintetizar),
+        patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
+    ):
         r = client.post(
             "/conciliar/ofx?multi_modelo=true",
             files={"arquivos": ("test.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
@@ -1773,7 +1829,9 @@ def test_conciliar_ofx_multi_modelo_mockado():
     assert data["score_consenso"] == 0.85
     assert len(data["modelos"]) == 3  # opus + sonnet + haiku
     assert {m["modelo"] for m in data["modelos"]} == {
-        "claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"
+        "claude-opus-4-7",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
     }
     assert "Índice de Consenso: 85/100" in data["relatorio_md"]
     # Cada modelo recebeu max_tokens // 2 (default 16000 → 8000)
@@ -1787,14 +1845,17 @@ def test_conciliar_csv_modo_llm_mockado():
     fake_client = MagicMock()
     fake_client.messages.create.return_value = _fake_anthropic_response(
         "## Conciliação Bancária — CSV\n\nDivergências identificadas.",
-        in_tokens=80, out_tokens=250,
+        in_tokens=80,
+        out_tokens=250,
     )
 
     extrato_csv = b"data,valor,memo\n2026-01-01,-100.00,Saida\n"
     razao_csv = b"data,valor,conta\n2026-01-01,-100.00,Despesa Geral\n"
 
-    with patch("api.main._get_client", return_value=fake_client), \
-         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}):
+    with (
+        patch("api.main._get_client", return_value=fake_client),
+        patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
+    ):
         r = client.post(
             "/conciliar/csv",
             files={
@@ -1870,8 +1931,7 @@ def test_chamar_modelo_async_apistatus_retorna_texto_vazio():
 
 
 @pytest.mark.skipif(
-    not os.environ.get("ANTHROPIC_API_KEY")
-    or os.environ.get("ANTHROPIC_API_KEY", "").startswith("sk-ant-test"),
+    not os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "").startswith("sk-ant-test"),
     reason="LLM smoke test requer ANTHROPIC_API_KEY real (não sk-ant-test do CI)",
 )
 def test_llm_smoke_anthropic_real():
@@ -1891,6 +1951,4 @@ def test_llm_smoke_anthropic_real():
     assert "usage" in data
     assert data["usage"]["input_tokens"] > 0
     assert data["usage"]["output_tokens"] > 0
-    assert len(data.get("relatorio_md", "")) > 100, (
-        "Relatório LLM suspeitamente curto — possível falha de geração"
-    )
+    assert len(data.get("relatorio_md", "")) > 100, "Relatório LLM suspeitamente curto — possível falha de geração"

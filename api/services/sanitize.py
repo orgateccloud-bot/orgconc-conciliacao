@@ -11,30 +11,57 @@ SSRF guard: `img src` aceita apenas `data:` URIs (base64 embutido).
 URIs remotos (`http://`, `https://`) sao bloqueados para impedir que
 WeasyPrint (gerador de PDF) faca fetch de URLs externas ao renderizar.
 """
+
 from __future__ import annotations
 
 import bleach
 
-
 # Tags permitidas: corpo Markdown padrao + tabelas + code fenced
-_ALLOWED_TAGS = frozenset({
-    # Estrutura
-    "p", "br", "hr", "div", "span", "pre",
-    # Headings
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    # Enfase
-    "strong", "em", "b", "i", "u", "del", "s",
-    # Listas
-    "ul", "ol", "li",
-    # Tabelas
-    "table", "thead", "tbody", "tr", "th", "td",
-    # Codigo
-    "code", "pre",
-    # Citacao
-    "blockquote",
-    # Links e imagens (img src restrito a data URIs — veja _allow_attrs)
-    "a", "img",
-})
+_ALLOWED_TAGS = frozenset(
+    {
+        # Estrutura
+        "p",
+        "br",
+        "hr",
+        "div",
+        "span",
+        "pre",
+        # Headings
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        # Enfase
+        "strong",
+        "em",
+        "b",
+        "i",
+        "u",
+        "del",
+        "s",
+        # Listas
+        "ul",
+        "ol",
+        "li",
+        # Tabelas
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+        # Codigo
+        "code",
+        "pre",
+        # Citacao
+        "blockquote",
+        # Links e imagens (img src restrito a data URIs — veja _allow_attrs)
+        "a",
+        "img",
+    }
+)
 
 
 def _allow_attrs(tag: str, name: str, value: str) -> bool:

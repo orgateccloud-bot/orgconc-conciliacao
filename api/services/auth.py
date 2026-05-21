@@ -13,6 +13,7 @@ Variaveis de ambiente:
 - ORGCONC_JWT_TTL_MIN    : expiracao em minutos (default 120)
 - ORGCONC_AUTH_TOKEN     : (legacy) token compartilhado, aceito como service token
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,8 +39,7 @@ _JWT_SECRET = os.environ.get("ORGCONC_JWT_SECRET", "").strip()
 if not _JWT_SECRET:
     if _IS_PROD:
         raise RuntimeError(
-            "ORGCONC_JWT_SECRET e OBRIGATORIO em producao (>= 32 chars). "
-            "Gere com: openssl rand -hex 32"
+            "ORGCONC_JWT_SECRET e OBRIGATORIO em producao (>= 32 chars). " "Gere com: openssl rand -hex 32"
         )
     _JWT_SECRET = _secrets.token_urlsafe(48)
     log.warning(
@@ -79,10 +79,12 @@ def verificar_senha(senha: str, hash_armazenado: str) -> bool:
 
 # ── JWT ─────────────────────────────────────────────────────────────────────
 
+
 class TokenPayload(BaseModel):
     """Claims tipados do JWT."""
-    sub: str          # subject (cliente_id ou identificador)
-    jti: Optional[str] = None   # JWT ID — identificador único para revogação futura
+
+    sub: str  # subject (cliente_id ou identificador)
+    jti: Optional[str] = None  # JWT ID — identificador único para revogação futura
     email: Optional[str] = None
     cliente_id: Optional[str] = None
     role: str = "user"
@@ -129,6 +131,7 @@ def decodificar_token(token: str) -> TokenPayload:
 
 
 # ── Dependency FastAPI ──────────────────────────────────────────────────────
+
 
 def auth_optional(authorization: Optional[str] = Header(None)) -> Optional[TokenPayload]:
     """Auth opcional. Retorna None se nao houver header. Levanta 401 se invalido.
@@ -177,6 +180,7 @@ def current_user(
     # Dev/staging sem auth configurada: usuario anonimo (apenas para conveniencia local)
     log.warning(
         "Acesso anonimo liberado (ORGCONC_ENV=%s, sem ORGCONC_AUTH_TOKEN). "
-        "Configure auth antes de promover para producao.", _ENV
+        "Configure auth antes de promover para producao.",
+        _ENV,
     )
     return TokenPayload(sub="anonymous", role="anonymous")

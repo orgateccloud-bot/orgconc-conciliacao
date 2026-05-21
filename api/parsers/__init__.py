@@ -10,6 +10,7 @@ Funcoes publicas (mantem prefixo _ por compat com api.main):
 - _top_categorias_e_contrapartes(extratos) -> dict    | estatisticas
 - _fmt_csv(transacoes) -> str                         | formata CSV para prompt LLM
 """
+
 from __future__ import annotations
 
 import io
@@ -29,6 +30,7 @@ log = logging.getLogger("orgconc.parsers")
 
 # ── OFX ─────────────────────────────────────────────────────────────────────
 
+
 def _parse_ofx(text: str) -> list[dict]:
     """Parser OFX minimalista (SGML)."""
     branch_m = re.search(r"<BRANCHID>([^<\n]+)", text)
@@ -36,28 +38,29 @@ def _parse_ofx(text: str) -> list[dict]:
     conta = f"AG {branch_m.group(1).strip() if branch_m else '?'} / CC {acct_m.group(1).strip() if acct_m else '?'}"
     transacoes: list[dict] = []
     for bloco in re.findall(r"<STMTTRN>(.*?)</STMTTRN>", text, flags=re.DOTALL):
+
         def fld(tag: str) -> str:
             m = re.search(rf"<{tag}>([^<\n]*)", bloco)
             return m.group(1).strip() if m else ""
 
         data_raw = fld("DTPOSTED")[:8]
-        data = (
-            f"{data_raw[:4]}-{data_raw[4:6]}-{data_raw[6:8]}"
-            if len(data_raw) == 8 else data_raw
+        data = f"{data_raw[:4]}-{data_raw[4:6]}-{data_raw[6:8]}" if len(data_raw) == 8 else data_raw
+        transacoes.append(
+            {
+                "conta": conta,
+                "data": data,
+                "tipo": fld("TRNTYPE"),
+                "valor": float(fld("TRNAMT") or 0),
+                "memo": fld("MEMO"),
+                "nome": fld("NAME"),
+                "checknum": fld("CHECKNUM"),
+            }
         )
-        transacoes.append({
-            "conta": conta,
-            "data": data,
-            "tipo": fld("TRNTYPE"),
-            "valor": float(fld("TRNAMT") or 0),
-            "memo": fld("MEMO"),
-            "nome": fld("NAME"),
-            "checknum": fld("CHECKNUM"),
-        })
     return transacoes
 
 
 # ── XML (CAMT.053 ou OFX-XML) ────────────────────────────────────────────────
+
 
 def _parse_xml(text: str, filename: str) -> list[dict]:
     """Extrai transacoes de XML (CAMT.053, padrao bancario brasileiro, ou OFX em XML)."""
@@ -73,6 +76,7 @@ def _parse_xml(text: str, filename: str) -> list[dict]:
             el.tag = el.tag.split("}", 1)[1]
         for child in el:
             _strip_ns(child)
+
     _strip_ns(root)
 
     conta = conta_default
@@ -102,15 +106,17 @@ def _parse_xml(text: str, filename: str) -> list[dict]:
             continue
         if cdtdbt.text == "DBIT":
             valor = -abs(valor)
-        transacoes.append({
-            "conta": conta,
-            "data": dt.text[:10],
-            "tipo": "CREDIT" if valor > 0 else "DEBIT",
-            "valor": valor,
-            "memo": (info.text.strip() if info is not None and info.text else ""),
-            "nome": "",
-            "checknum": "",
-        })
+        transacoes.append(
+            {
+                "conta": conta,
+                "data": dt.text[:10],
+                "tipo": "CREDIT" if valor > 0 else "DEBIT",
+                "valor": valor,
+                "memo": (info.text.strip() if info is not None and info.text else ""),
+                "nome": "",
+                "checknum": "",
+            }
+        )
 
     if not transacoes:
         for tr in root.iter("STMTTRN"):
@@ -120,20 +126,23 @@ def _parse_xml(text: str, filename: str) -> list[dict]:
                 valor = float(tr.findtext("TRNAMT") or 0)
             except ValueError:
                 continue
-            transacoes.append({
-                "conta": conta,
-                "data": data_iso,
-                "tipo": tr.findtext("TRNTYPE") or "",
-                "valor": valor,
-                "memo": (tr.findtext("MEMO") or "").strip(),
-                "nome": (tr.findtext("NAME") or "").strip(),
-                "checknum": (tr.findtext("CHECKNUM") or "").strip(),
-            })
+            transacoes.append(
+                {
+                    "conta": conta,
+                    "data": data_iso,
+                    "tipo": tr.findtext("TRNTYPE") or "",
+                    "valor": valor,
+                    "memo": (tr.findtext("MEMO") or "").strip(),
+                    "nome": (tr.findtext("NAME") or "").strip(),
+                    "checknum": (tr.findtext("CHECKNUM") or "").strip(),
+                }
+            )
 
     return transacoes
 
 
 # ── PDF ──────────────────────────────────────────────────────────────────────
+
 
 def _parse_pdf(content: bytes, filename: str) -> list[dict]:
     """Extrai transacoes de PDF de extrato bancario com 3 estrategias em fallback."""
@@ -142,24 +151,35 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
 
     conta_detectada: Optional[str] = None
     rx_conta = re.compile(
-        r"(?:AG[EÊE]?N?CIA|AG[ÊE]?)\s*:?\s*(\d{3,5}[-\d]?)\s+"
-        r"(?:CONTA|C\.?C\.?|CC)\s*:?\s*(\d{4,10}[-\d]?)",
+        r"(?:AG[EÊE]?N?CIA|AG[ÊE]?)\s*:?\s*(\d{3,5}[-\d]?)\s+" r"(?:CONTA|C\.?C\.?|CC)\s*:?\s*(\d{4,10}[-\d]?)",
         re.IGNORECASE,
     )
     rx_sinal_dc = re.compile(
         r"(\d{2}/\d{2}/\d{4})\s+(.{5,80}?)\s+([\d.]+,\d{2})\s*([CD])\b",
         re.IGNORECASE,
     )
-    rx_padrao = re.compile(
-        r"(\d{2}/\d{2}/\d{4})\s+(.{5,80}?)\s+([+\-]?\s*R?\$?\s*[\d.]+,\d{2})"
-    )
-    rx_compacta = re.compile(
-        r"(\d{2}/\d{2}/\d{2,4})\s+(.{3,80}?)\s+(\(?\s*[+\-]?\s*[\d.]+,\d{2}\s*\)?)"
-    )
+    rx_padrao = re.compile(r"(\d{2}/\d{2}/\d{4})\s+(.{5,80}?)\s+([+\-]?\s*R?\$?\s*[\d.]+,\d{2})")
+    rx_compacta = re.compile(r"(\d{2}/\d{2}/\d{2,4})\s+(.{3,80}?)\s+(\(?\s*[+\-]?\s*[\d.]+,\d{2}\s*\)?)")
 
-    keywords_debito = ("PAGTO", "DEBITO", "DÉBITO", "DEB ", "PIX EMITIDO", "PIX ENVIADO",
-                       "SAQUE", "COMPRA", "TARIFA", "JUROS", "IOF", "BOLETO", "TED ENVIADA",
-                       "DOC ENVIADO", "PAGAMENTO", "ESTORNO DEB", "RETIRADA")
+    keywords_debito = (
+        "PAGTO",
+        "DEBITO",
+        "DÉBITO",
+        "DEB ",
+        "PIX EMITIDO",
+        "PIX ENVIADO",
+        "SAQUE",
+        "COMPRA",
+        "TARIFA",
+        "JUROS",
+        "IOF",
+        "BOLETO",
+        "TED ENVIADA",
+        "DOC ENVIADO",
+        "PAGAMENTO",
+        "ESTORNO DEB",
+        "RETIRADA",
+    )
 
     def parse_valor(s: str) -> Optional[float]:
         s = s.strip()
@@ -206,12 +226,17 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
                     if chave in vistos:
                         continue
                     vistos.add(chave)
-                    transacoes.append({
-                        "conta": conta_detectada or conta_default,
-                        "data": data_iso, "tipo": "CREDIT" if valor > 0 else "DEBIT",
-                        "valor": valor, "memo": desc.strip(),
-                        "nome": "", "checknum": "",
-                    })
+                    transacoes.append(
+                        {
+                            "conta": conta_detectada or conta_default,
+                            "data": data_iso,
+                            "tipo": "CREDIT" if valor > 0 else "DEBIT",
+                            "valor": valor,
+                            "memo": desc.strip(),
+                            "nome": "",
+                            "checknum": "",
+                        }
+                    )
 
                 for m in rx_padrao.finditer(text):
                     data_br, desc, valor_s = m.groups()
@@ -227,12 +252,17 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
                     if chave in vistos:
                         continue
                     vistos.add(chave)
-                    transacoes.append({
-                        "conta": conta_detectada or conta_default,
-                        "data": data_iso, "tipo": "CREDIT" if valor > 0 else "DEBIT",
-                        "valor": valor, "memo": desc.strip(),
-                        "nome": "", "checknum": "",
-                    })
+                    transacoes.append(
+                        {
+                            "conta": conta_detectada or conta_default,
+                            "data": data_iso,
+                            "tipo": "CREDIT" if valor > 0 else "DEBIT",
+                            "valor": valor,
+                            "memo": desc.strip(),
+                            "nome": "",
+                            "checknum": "",
+                        }
+                    )
 
                 if not transacoes:
                     for m in rx_compacta.finditer(text):
@@ -245,12 +275,17 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
                         if chave in vistos:
                             continue
                         vistos.add(chave)
-                        transacoes.append({
-                            "conta": conta_detectada or conta_default,
-                            "data": data_iso, "tipo": "CREDIT" if valor > 0 else "DEBIT",
-                            "valor": valor, "memo": desc.strip(),
-                            "nome": "", "checknum": "",
-                        })
+                        transacoes.append(
+                            {
+                                "conta": conta_detectada or conta_default,
+                                "data": data_iso,
+                                "tipo": "CREDIT" if valor > 0 else "DEBIT",
+                                "valor": valor,
+                                "memo": desc.strip(),
+                                "nome": "",
+                                "checknum": "",
+                            }
+                        )
     except Exception:
         log.exception("Erro parseando PDF %s", filename)
         raise HTTPException(status_code=400, detail="PDF invalido ou corrompido")
@@ -263,10 +298,10 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
 
 # Assinaturas de magic bytes para validar tipo real do arquivo
 _MAGIC_BYTES: list[tuple[bytes, str]] = [
-    (b"%PDF",       ".pdf"),
-    (b"<?xml",      ".xml"),
-    (b"<OFX",       ".ofx"),
-    (b"OFXHEADER",  ".ofx"),
+    (b"%PDF", ".pdf"),
+    (b"<?xml", ".xml"),
+    (b"<OFX", ".ofx"),
+    (b"OFXHEADER", ".ofx"),
 ]
 
 
@@ -297,47 +332,99 @@ def _parse_arquivo(content: bytes, filename: str) -> list[dict]:
 # ── Classificador contabil ───────────────────────────────────────────────────
 
 _REGRAS_ANTES_PIX: list[tuple[tuple[str, ...], str]] = [
-    (("INTERCREDIS", "TRANSF.CONTAS", "TRANSF. CONTAS", "TRANSF MESMA TIT",
-      "TRANSFERENCIA MESMA TITULARIDADE", "TRANSFERENCIA ENTRE CONTAS PROPRIAS"),
-     "Transferencia entre contas proprias"),
-    (("DAS ", "DARF", "RFB", "INSS", "FGTS", "DAE", "GPS", "GNRE", "DAR ",
-      "IRRF", "IRPJ", "CSLL", "ICMS", "ISS", "GUIA"),
-     "Tributo"),
+    (
+        (
+            "INTERCREDIS",
+            "TRANSF.CONTAS",
+            "TRANSF. CONTAS",
+            "TRANSF MESMA TIT",
+            "TRANSFERENCIA MESMA TITULARIDADE",
+            "TRANSFERENCIA ENTRE CONTAS PROPRIAS",
+        ),
+        "Transferencia entre contas proprias",
+    ),
+    (
+        (
+            "DAS ",
+            "DARF",
+            "RFB",
+            "INSS",
+            "FGTS",
+            "DAE",
+            "GPS",
+            "GNRE",
+            "DAR ",
+            "IRRF",
+            "IRPJ",
+            "CSLL",
+            "ICMS",
+            "ISS",
+            "GUIA",
+        ),
+        "Tributo",
+    ),
     (("IOF",), "Despesa Financeira - IOF"),
     (("JUROS", "MORA"), "Despesa Financeira - Juros"),
     (("MULTA",), "Despesa Financeira - Multa"),
-    (("PAGAMENTO TD", "LIBERACAO TD", "LIBERAÇÃO TD", "CRED.LIBERA",
-      "DESCONTO TITULO", "CREDITO ROTATIVO", "ANTECIPACAO RECEBIVEL"),
-     "Operacao de Credito - TD"),
-    (("EMPRESTIMO", "EMPRÉSTIMO", "FINANCIAMENTO", "CDC", "PARCELA EMP"),
-     "Pagamento de Emprestimo"),
+    (
+        (
+            "PAGAMENTO TD",
+            "LIBERACAO TD",
+            "LIBERAÇÃO TD",
+            "CRED.LIBERA",
+            "DESCONTO TITULO",
+            "CREDITO ROTATIVO",
+            "ANTECIPACAO RECEBIVEL",
+        ),
+        "Operacao de Credito - TD",
+    ),
+    (("EMPRESTIMO", "EMPRÉSTIMO", "FINANCIAMENTO", "CDC", "PARCELA EMP"), "Pagamento de Emprestimo"),
     (("CHEQUE ESPECIAL", "LIMITE CONTA"), "Despesa Financeira - Cheque Especial"),
     (("SEGURO", "PRESTAMISTA", "PROTECAO", "PROTEÇÃO"), "Despesa - Seguro"),
 ]
 _REGRAS_APOS_PIX: list[tuple[tuple[str, ...], str]] = [
-    (("COMPRA MASTERCARD", "COMPRA VISA", "COMPRA CARTAO", "COMPRA ELO",
-      "COMPRA HIPERCARD", "COMPRA AMEX", "COMPRA DEBITO", "DEBITO COMPRA"),
-     "Compra Cartao"),
+    (
+        (
+            "COMPRA MASTERCARD",
+            "COMPRA VISA",
+            "COMPRA CARTAO",
+            "COMPRA ELO",
+            "COMPRA HIPERCARD",
+            "COMPRA AMEX",
+            "COMPRA DEBITO",
+            "DEBITO COMPRA",
+        ),
+        "Compra Cartao",
+    ),
     (("FATURA CARTAO", "PAGTO FATURA", "PAGAMENTO CARTAO CRED"), "Pagamento Fatura Cartao"),
-    (("PEDAGIO", "PEDÁGIO", "SICOOB TAG", "SEM PARAR", "MOVE MAIS", "CONECTCAR"),
-     "Despesa - Pedagio"),
-    (("POSTO ", "COMBUSTIVEL", "GASOLINA", "ETANOL", "DIESEL", "SHELL", "IPIRANGA"),
-     "Despesa - Combustivel"),
-    (("TARIFA", "MENSALIDADE", "ANUIDADE", "CESTA ", "PACOTE ", "MANUTENCAO",
-      "MANUTENÇÃO CONTA"),
-     "Despesa Bancaria - Tarifa"),
+    (("PEDAGIO", "PEDÁGIO", "SICOOB TAG", "SEM PARAR", "MOVE MAIS", "CONECTCAR"), "Despesa - Pedagio"),
+    (("POSTO ", "COMBUSTIVEL", "GASOLINA", "ETANOL", "DIESEL", "SHELL", "IPIRANGA"), "Despesa - Combustivel"),
+    (
+        ("TARIFA", "MENSALIDADE", "ANUIDADE", "CESTA ", "PACOTE ", "MANUTENCAO", "MANUTENÇÃO CONTA"),
+        "Despesa Bancaria - Tarifa",
+    ),
     (("BOLETO", "COBRAN", "COMPE", "COMPENSADO", "TITULO PAGO"), "Pagamento Boleto"),
-    (("SALARIO", "SALÁRIO", "FOLHA PGTO", "PAGAMENTO FOLHA", "PROVENTO", "ADIANTAMENTO SAL"),
-     "Folha de Pagamento"),
-    (("PRO LABORE", "PRÓ-LABORE", "PRO-LABORE", "RETIRADA SOCIO"),
-     "Pro-Labore / Retirada Socio"),
+    (("SALARIO", "SALÁRIO", "FOLHA PGTO", "PAGAMENTO FOLHA", "PROVENTO", "ADIANTAMENTO SAL"), "Folha de Pagamento"),
+    (("PRO LABORE", "PRÓ-LABORE", "PRO-LABORE", "RETIRADA SOCIO"), "Pro-Labore / Retirada Socio"),
     (("ALUGUEL", "CONDOMINIO", "CONDOMÍNIO"), "Despesa - Aluguel/Condominio"),
-    (("ENERGIA ELETRICA", "ENERGIA ELÉTRICA", "ENEL", "CEMIG", "COELBA", "COPEL",
-      "CELPE", "CELESC", "ELEKTRO", "LIGHT", "EQUATORIAL"),
-     "Despesa - Energia Eletrica"),
+    (
+        (
+            "ENERGIA ELETRICA",
+            "ENERGIA ELÉTRICA",
+            "ENEL",
+            "CEMIG",
+            "COELBA",
+            "COPEL",
+            "CELPE",
+            "CELESC",
+            "ELEKTRO",
+            "LIGHT",
+            "EQUATORIAL",
+        ),
+        "Despesa - Energia Eletrica",
+    ),
     (("AGUA", "ÁGUA", "SABESP", "CEDAE", "COPASA", "EMBASA", "SANEPAR"), "Despesa - Agua"),
-    (("TELEFON", "VIVO", "CLARO", "OI ", "TIM ", "INTERNET", "OPERADORA"),
-     "Despesa - Telecom"),
+    (("TELEFON", "VIVO", "CLARO", "OI ", "TIM ", "INTERNET", "OPERADORA"), "Despesa - Telecom"),
     (("SAQUE", "RETIRADA"), "Saque"),
     (("DEPOSITO", "DEPÓSITO"), "Deposito em Dinheiro"),
     (("ESTORNO", "DEVOLUC"), "Estorno"),
@@ -374,27 +461,28 @@ def _classificar(memo: str, nome: str) -> str:
 
 # ── Detector de anomalias ────────────────────────────────────────────────────
 
+
 def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
     """Identifica anomalias com severidade (critico/alerta/atencao)."""
     anomalias: list[dict] = []
 
     # Duplicidades
     for e in extratos:
-        contagem = Counter(
-            (t["data"], round(t["valor"], 2), t["memo"][:40]) for t in e["transacoes"]
-        )
+        contagem = Counter((t["data"], round(t["valor"], 2), t["memo"][:40]) for t in e["transacoes"])
         for (data, valor, memo), n in contagem.items():
             if n < 2:
                 continue
             sev = "critico" if n >= 3 else "alerta"
-            anomalias.append({
-                "severidade": sev,
-                "tipo": "Duplicidade",
-                "titulo": f"{n}x lançamento idêntico em {data}",
-                "conta": e["conta"],
-                "valor": valor,
-                "detalhe": f"R$ {valor:,.2f} | {memo} | {n} ocorrências",
-            })
+            anomalias.append(
+                {
+                    "severidade": sev,
+                    "tipo": "Duplicidade",
+                    "titulo": f"{n}x lançamento idêntico em {data}",
+                    "conta": e["conta"],
+                    "valor": valor,
+                    "detalhe": f"R$ {valor:,.2f} | {memo} | {n} ocorrências",
+                }
+            )
 
     # Transacoes atipicas
     for e in extratos:
@@ -402,39 +490,53 @@ def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
             v = abs(t["valor"])
             memo = (t["memo"] or t["nome"])[:60]
             if v > 50000:
-                anomalias.append({
-                    "severidade": "alerta", "tipo": "Valor alto",
-                    "titulo": f"Transação de R$ {v:,.2f}",
-                    "conta": e["conta"], "valor": t["valor"],
-                    "detalhe": f"{t['data']} | {memo}",
-                })
+                anomalias.append(
+                    {
+                        "severidade": "alerta",
+                        "tipo": "Valor alto",
+                        "titulo": f"Transação de R$ {v:,.2f}",
+                        "conta": e["conta"],
+                        "valor": t["valor"],
+                        "detalhe": f"{t['data']} | {memo}",
+                    }
+                )
             elif v > 10000:
-                anomalias.append({
-                    "severidade": "atencao", "tipo": "Valor alto",
-                    "titulo": f"Transação de R$ {v:,.2f}",
-                    "conta": e["conta"], "valor": t["valor"],
-                    "detalhe": f"{t['data']} | {memo}",
-                })
+                anomalias.append(
+                    {
+                        "severidade": "atencao",
+                        "tipo": "Valor alto",
+                        "titulo": f"Transação de R$ {v:,.2f}",
+                        "conta": e["conta"],
+                        "valor": t["valor"],
+                        "detalhe": f"{t['data']} | {memo}",
+                    }
+                )
 
     # Estornos
     for e in extratos:
         for t in e["transacoes"]:
             s = (t["memo"] + t["nome"]).upper()
             if "ESTORNO" in s:
-                anomalias.append({
-                    "severidade": "critico", "tipo": "Estorno",
-                    "titulo": "Operação estornada",
-                    "conta": e["conta"], "valor": t["valor"],
-                    "detalhe": f"{t['data']} | R$ {t['valor']:,.2f} | {t['memo'][:60]}",
-                })
+                anomalias.append(
+                    {
+                        "severidade": "critico",
+                        "tipo": "Estorno",
+                        "titulo": "Operação estornada",
+                        "conta": e["conta"],
+                        "valor": t["valor"],
+                        "detalhe": f"{t['data']} | R$ {t['valor']:,.2f} | {t['memo'][:60]}",
+                    }
+                )
 
     # Transferencias internas sem par
     _KEYWORDS_TRANSF = ("INTERCREDIS", "TRANSF.CONTAS", "TRANSF MESMA TIT", "TRANSFERENCIA ENTRE CONTAS")
     if len(extratos) >= 2:
         for c1, c2 in combinations(extratos, 2):
+
             def _eh_transf(t):
                 s = (t["memo"] + t["nome"]).upper()
                 return any(k in s for k in _KEYWORDS_TRANSF)
+
             tx1 = [t for t in c1["transacoes"] if _eh_transf(t)]
             tx2 = [t for t in c2["transacoes"] if _eh_transf(t)]
             usados: set[int] = set()
@@ -444,18 +546,24 @@ def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
                     if j in usados:
                         continue
                     if abs(abs(t1["valor"]) - abs(t2["valor"])) < 0.01 and t1["valor"] * t2["valor"] < 0:
-                        usados.add(j); casados += 1; break
+                        usados.add(j)
+                        casados += 1
+                        break
             sem_par = (len(tx1) - casados) + (len(tx2) - casados)
             if sem_par > 0:
-                anomalias.append({
-                    "severidade": "alerta", "tipo": "Transferencia sem par",
-                    "titulo": f"{sem_par} transferência(s) interna(s) sem par",
-                    "conta": f"{c1['conta']} ↔ {c2['conta']}", "valor": 0,
-                    "detalhe": (
-                        f"{c1['conta']}: {len(tx1) - casados} sem par | "
-                        f"{c2['conta']}: {len(tx2) - casados} sem par"
-                    ),
-                })
+                anomalias.append(
+                    {
+                        "severidade": "alerta",
+                        "tipo": "Transferencia sem par",
+                        "titulo": f"{sem_par} transferência(s) interna(s) sem par",
+                        "conta": f"{c1['conta']} ↔ {c2['conta']}",
+                        "valor": 0,
+                        "detalhe": (
+                            f"{c1['conta']}: {len(tx1) - casados} sem par | "
+                            f"{c2['conta']}: {len(tx2) - casados} sem par"
+                        ),
+                    }
+                )
 
     ordem = {"critico": 0, "alerta": 1, "atencao": 2}
     anomalias.sort(key=lambda a: (ordem[a["severidade"]], -abs(a.get("valor", 0))))
@@ -463,6 +571,7 @@ def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
 
 
 # ── Estatisticas ─────────────────────────────────────────────────────────────
+
 
 def _top_categorias_e_contrapartes(extratos: list[dict]) -> dict:
     """Retorna estatisticas: categorias, top contrapartes, evolucao diaria."""
@@ -504,13 +613,12 @@ def _top_categorias_e_contrapartes(extratos: list[dict]) -> dict:
 
 # ── CSV helper para prompts LLM ──────────────────────────────────────────────
 
+
 def _fmt_csv(transacoes: list[dict]) -> str:
     """Formata transacoes como CSV compacto para enviar ao LLM."""
     linhas = ["data,tipo,valor,memo,nome,checknum"]
     for t in transacoes:
         memo = t["memo"].replace(",", " ").replace("\n", " ")
         nome = t["nome"].replace(",", " ").replace("\n", " ")
-        linhas.append(
-            f"{t['data']},{t['tipo']},{t['valor']:.2f},{memo},{nome},{t['checknum']}"
-        )
+        linhas.append(f"{t['data']},{t['tipo']},{t['valor']:.2f},{memo},{nome},{t['checknum']}")
     return "\n".join(linhas)

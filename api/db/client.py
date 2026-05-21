@@ -1,4 +1,5 @@
 """Conexão com PostgreSQL/Supabase via SQLAlchemy async."""
+
 import os
 from pathlib import Path as _Path
 

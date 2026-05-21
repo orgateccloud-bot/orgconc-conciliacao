@@ -13,7 +13,6 @@ Execucao:
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import os
@@ -32,8 +31,25 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Reques
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from markdown import markdown as md_to_html
+from markdown import markdown as _md_to_html_raw
 from api.services.sanitize import sanitize_html
+
+
+def md_to_html(text: str, extensions: list[str] | None = None) -> str:
+    """Wrap markdown.markdown com tratamento defensivo de AssertionError.
+
+    Defense-in-depth contra PYSEC-2026-89: alguns inputs malformados podem
+    fazer html.parser.HTMLParser levantar AssertionError. Convertemos para
+    HTML escapado em vez de propagar o crash (que viraria 500 + DoS).
+    """
+    try:
+        return _md_to_html_raw(text or "", extensions=extensions or [])
+    except AssertionError:
+        import html as _html
+
+        return f"<pre>{_html.escape(text or '')}</pre>"
+
+
 import contextlib
 from pydantic import BaseModel, Field
 from urllib.parse import urlparse as _urlparse
@@ -42,17 +58,17 @@ from sqlalchemy import text as sql_text
 
 # Parsers extraidos para api/parsers/
 from api.parsers import (
-    _parse_ofx,
-    _parse_xml,
-    _parse_pdf,
     _parse_arquivo,
+    _parse_ofx,  # noqa: F401 — re-export para tests/test_api.py
+    _parse_xml,  # noqa: F401 — re-export para tests/test_api.py
     _classificar,
     _detectar_anomalias,
-    _top_categorias_e_contrapartes,
     _fmt_csv,
 )
+
 # Gerador de relatorio local extraido para api/services/
 from api.services.relatorio_local import _conciliacao_local
+
 # Geracao XLSX extraida para api/services/
 from api.services.excel import _gerar_xlsx
 
@@ -67,16 +83,19 @@ try:
     from api.db.client import SessionLocal, engine
     from api.db import models
     from api.db import clientes as crud_clientes
+
     _DB_IMPORTS_OK = True
 except Exception:  # nosec B110 — importação opcional; banco não é requisito
     pass
 
 AUTH_TOKEN = os.environ.get("ORGCONC_AUTH_TOKEN", "").strip()
 CORS_ORIGINS = [
-    o.strip() for o in os.environ.get(
+    o.strip()
+    for o in os.environ.get(
         "ORGCONC_CORS_ORIGINS",
         "http://127.0.0.1:8765,http://localhost:8765",
-    ).split(",") if o.strip()
+    ).split(",")
+    if o.strip()
 ]
 MAX_UPLOAD_MB = int(os.environ.get("ORGCONC_MAX_UPLOAD_MB", "10"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
@@ -98,6 +117,7 @@ from api.services.logging_estruturado import (
     configurar_logging,
     RequestIdMiddleware,
 )
+
 _LOG_JSON = os.environ.get("ORGCONC_LOG_JSON", "true").strip().lower() not in ("0", "false", "no")
 _LOG_LEVEL = os.environ.get("ORGCONC_LOG_LEVEL", "INFO").strip()
 configurar_logging(nivel=_LOG_LEVEL, json_mode=_LOG_JSON)
@@ -114,14 +134,14 @@ SYSTEM_PROMPT = (
     "executivo, achados criticos, classificacao contabil e plano de acao."
 )
 
+
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.warning("ANTHROPIC_API_KEY nao configurada — /conciliar/ofx (sem simular) nao funcionara")
     if _IS_PROD_EARLY and any("localhost" in o or "127.0.0.1" in o for o in CORS_ORIGINS):
         log.warning(
-            "CORS_ORIGINS contem localhost/127.0.0.1 em producao. "
-            "Configure ORGCONC_CORS_ORIGINS com dominios reais."
+            "CORS_ORIGINS contem localhost/127.0.0.1 em producao. " "Configure ORGCONC_CORS_ORIGINS com dominios reais."
         )
     if DB_DISPONIVEL:
         try:
@@ -177,6 +197,8 @@ async def _global_exception_handler(request: Request, exc: Exception) -> JSONRes
         status_code=500,
         content={"detail": f"{type(exc).__name__}: {exc}"},
     )
+
+
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -219,6 +241,7 @@ _CSP = (
     "upgrade-insecure-requests"
 )
 
+
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
         response = await call_next(request)
@@ -235,13 +258,13 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers["Pragma"] = "no-cache"
         return response
 
+
 app.add_middleware(_SecurityHeadersMiddleware)
 app.add_middleware(_MaxBodySizeMiddleware)
 
 
 from api.services.auth import (
     _IS_PROD,
-    auth_optional,
     current_user,
     decodificar_token,
     emitir_token,
@@ -270,16 +293,19 @@ def auth(authorization: Optional[str] = Header(None)) -> None:
 
 # ── Modelos Pydantic ──────────────────────────────────────────────────────
 
+
 def _validar_cnpj(cnpj: str) -> bool:
     digits = re.sub(r"\D", "", cnpj)
     if len(digits) != 14 or len(set(digits)) == 1:
         return False
+
     def _calc(d, pesos):
         s = sum(int(d[i]) * pesos[i] for i in range(len(pesos)))
         r = s % 11
         return 0 if r < 2 else 11 - r
-    p1 = [5,4,3,2,9,8,7,6,5,4,3,2]
-    p2 = [6,5,4,3,2,9,8,7,6,5,4,3,2]
+
+    p1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    p2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
     return int(digits[12]) == _calc(digits, p1) and int(digits[13]) == _calc(digits, p2)
 
 
@@ -316,6 +342,7 @@ class ClienteUpdate(BaseModel):
 
 # ── Persistência no banco ─────────────────────────────────────────────────
 
+
 async def _salvar_no_banco(
     report_id: str,
     extratos: list[dict],
@@ -328,9 +355,10 @@ async def _salvar_no_banco(
         return {"status": "skip", "motivo": "db_indisponivel"}
     import uuid as _uuid
     from datetime import date
+
     try:
         total_cred = sum(t["valor"] for e in extratos for t in e["transacoes"] if t["valor"] > 0)
-        total_deb  = sum(t["valor"] for e in extratos for t in e["transacoes"] if t["valor"] < 0)
+        total_deb = sum(t["valor"] for e in extratos for t in e["transacoes"] if t["valor"] < 0)
         datas = sorted({t["data"] for e in extratos for t in e["transacoes"] if t.get("data")})
         cid = _uuid.UUID(cliente_id) if cliente_id else None
         async with SessionLocal() as db:
@@ -348,10 +376,7 @@ async def _salvar_no_banco(
                 )
                 db.add(conc)
                 await db.flush()
-                anomalias_set = {
-                    (a.get("conta", ""), round(abs(a.get("valor", 0)), 2))
-                    for a in anomalias
-                }
+                anomalias_set = {(a.get("conta", ""), round(abs(a.get("valor", 0)), 2)) for a in anomalias}
                 txs = [
                     models.Transacao(
                         conciliacao_id=conc.id,
@@ -364,7 +389,8 @@ async def _salvar_no_banco(
                         tipo=t.get("tipo"),
                         eh_anomalia=(e.get("conta", ""), round(abs(t["valor"]), 2)) in anomalias_set,
                     )
-                    for e in extratos for t in e["transacoes"]
+                    for e in extratos
+                    for t in e["transacoes"]
                 ]
                 db.add_all(txs)
             log.info("Conciliacao %s salva no banco (%d transacoes)", report_id, len(txs))
@@ -393,12 +419,14 @@ async def read_limited(up: UploadFile, max_bytes: int = MAX_UPLOAD_BYTES) -> byt
         chunks.append(chunk)
     return b"".join(chunks)
 
+
 _static_dir = Path(__file__).resolve().parent.parent / "static"
 if _static_dir.exists():
     app.mount("/ui", StaticFiles(directory=str(_static_dir), html=True), name="ui")
 
 # Jinja2 templates (relatorios HTML/PDF)
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+
 _templates_dir = Path(__file__).resolve().parent / "templates"
 _jinja = Environment(
     loader=FileSystemLoader(str(_templates_dir)),
@@ -407,6 +435,7 @@ _jinja = Environment(
 
 # Logo embutida (base64) para HTML standalone e PDF
 import base64
+
 _LOGO_PATH = _static_dir / "logo.png"
 _LOGO_B64 = ""
 _LOGO_DATA_URI = ""
@@ -427,9 +456,9 @@ def _get_client() -> Anthropic:
 
 # Modelos usados no modo multi-modelo (ordem: capacidade decrescente)
 _MODELOS_MULTI = [
-    ("claude-opus-4-7",           "Opus 4.7",   "🔵"),
-    ("claude-sonnet-4-6",         "Sonnet 4.6", "🟢"),
-    ("claude-haiku-4-5-20251001", "Haiku 4.5",  "🟡"),
+    ("claude-opus-4-7", "Opus 4.7", "🔵"),
+    ("claude-sonnet-4-6", "Sonnet 4.6", "🟢"),
+    ("claude-haiku-4-5-20251001", "Haiku 4.5", "🟡"),
 ]
 
 
@@ -442,6 +471,7 @@ async def _chamar_modelo_async(
 ) -> dict:
     """Chama um modelo Claude em thread executor (SDK síncrono → async seguro)."""
     import asyncio
+
     loop = asyncio.get_event_loop()
 
     def _call():
@@ -487,10 +517,7 @@ async def _sintetizar_consenso(
     if len(validos) == 1:
         return validos[0]["texto"], 0.5
 
-    secoes = "\n\n".join(
-        f"### Análise — {r['label']}\n{r['texto']}"
-        for r in validos
-    )
+    secoes = "\n\n".join(f"### Análise — {r['label']}\n{r['texto']}" for r in validos)
     prompt_juiz = (
         f"Você recebeu {len(validos)} análises independentes do mesmo extrato bancário, "
         "geradas por modelos Claude diferentes. Produza um RELATÓRIO FINAL consolidado em Markdown:\n\n"
@@ -513,6 +540,7 @@ async def _sintetizar_consenso(
 def _salvar_dataset(extratos: list[dict], anomalias: list[dict], relatorio: str) -> str:
     """Persiste o dataset em disco (./data/{rid}.json) e retorna o ID."""
     import uuid
+
     rid = uuid.uuid4().hex[:12]
     path = DATA_DIR / f"{rid}.json"
     payload = {
@@ -528,8 +556,7 @@ def _salvar_dataset(extratos: list[dict], anomalias: list[dict], relatorio: str)
             old.unlink()
         except OSError as _e:
             log.debug("Limpeza de dataset antigo falhou (ignorado): %s", _e)
-    log.info("Dataset salvo: %s (%d transacoes, %d anomalias)", rid,
-             sum(e["qtd"] for e in extratos), len(anomalias))
+    log.info("Dataset salvo: %s (%d transacoes, %d anomalias)", rid, sum(e["qtd"] for e in extratos), len(anomalias))
     return rid
 
 
@@ -556,6 +583,7 @@ def _render_html(relatorio_md: str) -> str:
     on*, javascript:, iframe/object/embed/style.
     """
     from datetime import datetime
+
     body = md_to_html(relatorio_md, extensions=["tables", "fenced_code"])
     body = sanitize_html(body)
     return _jinja.get_template("relatorio.html").render(
@@ -595,11 +623,16 @@ def root():
     resp: dict = {
         "service": "Conciliacao Bancaria API",
         "endpoints": [
-            "/health", "/docs",
+            "/health",
+            "/docs",
             "/conciliar/ofx",
-            "/export/html/{report_id}", "/export/xlsx/{report_id}", "/export/pdf/{report_id}",
-            "/clientes", "/clientes/{id}",
-            "/auth/login", "/auth/me",
+            "/export/html/{report_id}",
+            "/export/xlsx/{report_id}",
+            "/export/pdf/{report_id}",
+            "/clientes",
+            "/clientes/{id}",
+            "/auth/login",
+            "/auth/me",
             "/logo-base64",
         ],
     }
@@ -630,6 +663,7 @@ async def health(request: Request):
 
 
 # ── Auth (JWT) ────────────────────────────────────────────────────────────
+
 
 class LoginPayload(BaseModel):
     email: str = Field(..., max_length=254)
@@ -701,8 +735,10 @@ async def auth_hash_helper(request: Request, payload: HashPayload):
 
 # ── Clientes ──────────────────────────────────────────────────────────────
 
+
 class ClienteResponse(BaseModel):
     """Schema de resposta público para clientes — define explicitamente os campos expostos."""
+
     id: str
     nome: str
     cnpj: Optional[str] = None
@@ -715,32 +751,39 @@ class ClienteResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@app.post("/clientes", dependencies=[Depends(auth)], status_code=201, tags=["clientes"],
-          response_model=ClienteResponse)
+@app.post("/clientes", dependencies=[Depends(auth)], status_code=201, tags=["clientes"], response_model=ClienteResponse)
 @limiter.limit("20/minute")
 async def criar_cliente(request: Request, payload: ClienteCreate):
     """Cadastra um novo cliente."""
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado — adicione DATABASE_URL ao .env")
     from sqlalchemy.exc import IntegrityError
+
     try:
         async with SessionLocal() as db:
             cliente = await crud_clientes.criar_cliente(
-                db, nome=payload.nome, cnpj=payload.cnpj,
-                email=payload.email, telefone=payload.telefone, plano=payload.plano,
+                db,
+                nome=payload.nome,
+                cnpj=payload.cnpj,
+                email=payload.email,
+                telefone=payload.telefone,
+                plano=payload.plano,
             )
     except IntegrityError:
         raise HTTPException(409, "CNPJ já cadastrado")
     return {
-        "id": str(cliente.id), "nome": cliente.nome, "cnpj": cliente.cnpj,
-        "email": cliente.email, "telefone": cliente.telefone,
-        "plano": cliente.plano, "ativo": cliente.ativo,
+        "id": str(cliente.id),
+        "nome": cliente.nome,
+        "cnpj": cliente.cnpj,
+        "email": cliente.email,
+        "telefone": cliente.telefone,
+        "plano": cliente.plano,
+        "ativo": cliente.ativo,
         "criado_em": cliente.criado_em.isoformat(),
     }
 
 
-@app.get("/clientes", dependencies=[Depends(auth)], tags=["clientes"],
-         response_model=list[ClienteResponse])
+@app.get("/clientes", dependencies=[Depends(auth)], tags=["clientes"], response_model=list[ClienteResponse])
 @limiter.limit("30/minute")
 async def listar_clientes(request: Request, apenas_ativos: bool = True):
     """Lista todos os clientes."""
@@ -749,18 +792,17 @@ async def listar_clientes(request: Request, apenas_ativos: bool = True):
     async with SessionLocal() as db:
         clientes = await crud_clientes.listar_clientes(db, apenas_ativos=apenas_ativos)
     return [
-        {"id": str(c.id), "nome": c.nome, "cnpj": c.cnpj, "email": c.email,
-         "plano": c.plano, "ativo": c.ativo}
+        {"id": str(c.id), "nome": c.nome, "cnpj": c.cnpj, "email": c.email, "plano": c.plano, "ativo": c.ativo}
         for c in clientes
     ]
 
 
-@app.get("/clientes/{cliente_id}", dependencies=[Depends(auth)], tags=["clientes"],
-         response_model=ClienteResponse)
+@app.get("/clientes/{cliente_id}", dependencies=[Depends(auth)], tags=["clientes"], response_model=ClienteResponse)
 @limiter.limit("30/minute")
 async def buscar_cliente(request: Request, cliente_id: str):
     """Busca um cliente pelo ID."""
     import uuid as _uuid
+
     try:
         cid = _uuid.UUID(cliente_id)
     except ValueError:
@@ -772,9 +814,13 @@ async def buscar_cliente(request: Request, cliente_id: str):
     if not cliente:
         raise HTTPException(404, "Cliente nao encontrado")
     return {
-        "id": str(cliente.id), "nome": cliente.nome, "cnpj": cliente.cnpj,
-        "email": cliente.email, "telefone": cliente.telefone,
-        "plano": cliente.plano, "ativo": cliente.ativo,
+        "id": str(cliente.id),
+        "nome": cliente.nome,
+        "cnpj": cliente.cnpj,
+        "email": cliente.email,
+        "telefone": cliente.telefone,
+        "plano": cliente.plano,
+        "ativo": cliente.ativo,
         "criado_em": cliente.criado_em.isoformat(),
     }
 
@@ -786,6 +832,7 @@ async def atualizar_cliente(request: Request, cliente_id: str, payload: ClienteU
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
     import uuid as _uuid
+
     try:
         cid = _uuid.UUID(cliente_id)
     except ValueError:
@@ -801,9 +848,9 @@ async def atualizar_cliente(request: Request, cliente_id: str, payload: ClienteU
 # ── Conciliação ───────────────────────────────────────────────────────────
 
 _MODELOS_VALIDOS = {
-    "haiku":  ("claude-haiku-4-5-20251001", "Haiku 4.5"),
-    "sonnet": ("claude-sonnet-4-6",         "Sonnet 4.6"),
-    "opus":   ("claude-opus-4-7",           "Opus 4.7"),
+    "haiku": ("claude-haiku-4-5-20251001", "Haiku 4.5"),
+    "sonnet": ("claude-sonnet-4-6", "Sonnet 4.6"),
+    "opus": ("claude-opus-4-7", "Opus 4.7"),
 }
 
 
@@ -861,35 +908,37 @@ async def conciliar_ofx(
                 status_code=400,
                 detail=f"Nao foi possivel extrair transacoes de {safe_name}",
             )
-        extratos_parsed.append({
-            "arquivo": safe_name,
-            "conta": txs[0]["conta"],
-            "qtd": len(txs),
-            "transacoes": txs,
-        })
+        extratos_parsed.append(
+            {
+                "arquivo": safe_name,
+                "conta": txs[0]["conta"],
+                "qtd": len(txs),
+                "transacoes": txs,
+            }
+        )
 
     if simular:
         anomalias = _detectar_anomalias(extratos_parsed)
         relatorio = _conciliacao_local(extratos_parsed, anomalias)
         rid = _salvar_dataset(extratos_parsed, anomalias, relatorio)
-        db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao", str(cliente_id) if cliente_id else None)
-        return JSONResponse({
-            "modo": "simulacao_local",
-            "report_id": rid,
-            "extratos": [
-                {"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]}
-                for e in extratos_parsed
-            ],
-            "anomalias": anomalias,
-            "relatorio_md": relatorio,
-            "relatorio_html": _render_html(relatorio),
-            "persistencia": db_status,
-        })
+        db_status = await _salvar_no_banco(
+            rid, extratos_parsed, anomalias, "simulacao", str(cliente_id) if cliente_id else None
+        )
+        return JSONResponse(
+            {
+                "modo": "simulacao_local",
+                "report_id": rid,
+                "extratos": [{"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]} for e in extratos_parsed],
+                "anomalias": anomalias,
+                "relatorio_md": relatorio,
+                "relatorio_html": _render_html(relatorio),
+                "persistencia": db_status,
+            }
+        )
 
     # ── Monta prompt comum ─────────────────────────────────────────────────
     blocos = [
-        f"=== {e['conta']} ({e['arquivo']}) ===\n"
-        f"Total: {e['qtd']} transacoes\n{_fmt_csv(e['transacoes'])}"
+        f"=== {e['conta']} ({e['arquivo']}) ===\n" f"Total: {e['qtd']} transacoes\n{_fmt_csv(e['transacoes'])}"
         for e in extratos_parsed
     ]
     n_contas = len(extratos_parsed)
@@ -898,8 +947,7 @@ async def conciliar_ofx(
         "Identifique transferencias entre contas proprias (INTERCREDIS/TED entre as mesmas contas), "
         "duplicidades, transacoes atipicas e pre-classifique para lancamento contabil. "
         "Consolide o fluxo de caixa considerando todas as contas em conjunto. "
-        "Gere relatorio em portugues em Markdown.\n\n"
-        + "\n\n".join(blocos)
+        "Gere relatorio em portugues em Markdown.\n\n" + "\n\n".join(blocos)
     )
 
     api_key = os.environ.get("ANTHROPIC_API_KEY") or ""
@@ -909,47 +957,44 @@ async def conciliar_ofx(
     # ── Modo multi-modelo: 3 modelos em paralelo + síntese ────────────────
     if multi_modelo:
         import asyncio as _aio
+
         tokens_por_modelo = max(4000, max_tokens // 2)
 
         tarefas = [
-            _chamar_modelo_async(api_key, prompt, mid, label, tokens_por_modelo)
-            for mid, label, _ in _MODELOS_MULTI
+            _chamar_modelo_async(api_key, prompt, mid, label, tokens_por_modelo) for mid, label, _ in _MODELOS_MULTI
         ]
         resultados = list(await _aio.gather(*tarefas))
 
-        relatorio_consolidado, score_consenso = await _sintetizar_consenso(
-            api_key, resultados, max_tokens
-        )
+        relatorio_consolidado, score_consenso = await _sintetizar_consenso(api_key, resultados, max_tokens)
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = _salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado)
-        db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", str(cliente_id) if cliente_id else None)
+        db_status = await _salvar_no_banco(
+            rid, extratos_parsed, anomalias, "multi_modelo", str(cliente_id) if cliente_id else None
+        )
 
-        return JSONResponse({
-            "modo": "multi_modelo",
-            "report_id": rid,
-            "score_consenso": score_consenso,
-            "modelos": [
-                {
-                    "modelo": r["modelo"],
-                    "label": r["label"],
-                    "input_tokens": r.get("input_tokens", 0),
-                    "output_tokens": r.get("output_tokens", 0),
-                    "erro": r.get("erro"),
-                }
-                for r in resultados
-            ],
-            "extratos": [
-                {"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]}
-                for e in extratos_parsed
-            ],
-            "anomalias": anomalias,
-            "relatorio_md": relatorio_consolidado,
-            "relatorio_html": _render_html(relatorio_consolidado),
-            "relatorios_individuais": {
-                r["label"]: r["texto"] for r in resultados if r["texto"]
-            },
-            "persistencia": db_status,
-        })
+        return JSONResponse(
+            {
+                "modo": "multi_modelo",
+                "report_id": rid,
+                "score_consenso": score_consenso,
+                "modelos": [
+                    {
+                        "modelo": r["modelo"],
+                        "label": r["label"],
+                        "input_tokens": r.get("input_tokens", 0),
+                        "output_tokens": r.get("output_tokens", 0),
+                        "erro": r.get("erro"),
+                    }
+                    for r in resultados
+                ],
+                "extratos": [{"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]} for e in extratos_parsed],
+                "anomalias": anomalias,
+                "relatorio_md": relatorio_consolidado,
+                "relatorio_html": _render_html(relatorio_consolidado),
+                "relatorios_individuais": {r["label"]: r["texto"] for r in resultados if r["texto"]},
+                "persistencia": db_status,
+            }
+        )
 
     # ── Modo single model (haiku|sonnet|opus) ────────────────────────────
     model_id, model_label = _MODELOS_VALIDOS[modelo]
@@ -966,9 +1011,11 @@ async def conciliar_ofx(
         body = getattr(e, "body", None) or {}
         msg = (body.get("error") or {}).get("message") or str(e)
         if "credit balance" in msg.lower():
-            friendly = ("Saldo de creditos Anthropic esgotado. "
-                        "Recarregue em https://platform.claude.com/settings/billing "
-                        "ou use ?simular=true para gerar relatorio local.")
+            friendly = (
+                "Saldo de creditos Anthropic esgotado. "
+                "Recarregue em https://platform.claude.com/settings/billing "
+                "ou use ?simular=true para gerar relatorio local."
+            )
         elif "rate" in msg.lower() and "limit" in msg.lower():
             friendly = "Rate limit da Anthropic atingido. Aguarde alguns segundos."
         else:
@@ -980,26 +1027,25 @@ async def conciliar_ofx(
     rid = _salvar_dataset(extratos_parsed, anomalias, relatorio)
     db_status = await _salvar_no_banco(rid, extratos_parsed, anomalias, "llm", str(cliente_id) if cliente_id else None)
 
-    return JSONResponse({
-        "modo": "claude_llm",
-        "modelo": modelo,
-        "modelo_id": model_id,
-        "modelo_label": model_label,
-        "report_id": rid,
-        "extratos": [
-            {"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]}
-            for e in extratos_parsed
-        ],
-        "anomalias": anomalias,
-        "usage": {
-            "input_tokens": resp.usage.input_tokens,
-            "output_tokens": resp.usage.output_tokens,
-        },
-        "stop_reason": resp.stop_reason,
-        "relatorio_md": relatorio,
-        "relatorio_html": _render_html(relatorio),
-        "persistencia": db_status,
-    })
+    return JSONResponse(
+        {
+            "modo": "claude_llm",
+            "modelo": modelo,
+            "modelo_id": model_id,
+            "modelo_label": model_label,
+            "report_id": rid,
+            "extratos": [{"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]} for e in extratos_parsed],
+            "anomalias": anomalias,
+            "usage": {
+                "input_tokens": resp.usage.input_tokens,
+                "output_tokens": resp.usage.output_tokens,
+            },
+            "stop_reason": resp.stop_reason,
+            "relatorio_md": relatorio,
+            "relatorio_html": _render_html(relatorio),
+            "persistencia": db_status,
+        }
+    )
 
 
 @app.get("/logo-base64")
@@ -1015,21 +1061,24 @@ def _render_pdf_html(relatorio_md: str, anomalias: list, extratos: list, report_
     Sanitiza body com bleach antes do template (defesa contra XSS no PDF).
     """
     from datetime import datetime
+
     body = md_to_html(relatorio_md, extensions=["tables", "fenced_code"])
     body = sanitize_html(body)
-    total_tx   = sum(e.get("qtd", 0) for e in extratos)
+    total_tx = sum(e.get("qtd", 0) for e in extratos)
     total_cred = sum(t["valor"] for e in extratos for t in e.get("transacoes", []) if t["valor"] > 0)
-    total_deb  = sum(t["valor"] for e in extratos for t in e.get("transacoes", []) if t["valor"] < 0)
-    n_crit   = sum(1 for a in anomalias if a.get("severidade") == "critico")
+    total_deb = sum(t["valor"] for e in extratos for t in e.get("transacoes", []) if t["valor"] < 0)
+    n_crit = sum(1 for a in anomalias if a.get("severidade") == "critico")
     n_alerta = sum(1 for a in anomalias if a.get("severidade") == "alerta")
-    n_atenc  = sum(1 for a in anomalias if a.get("severidade") == "atencao")
+    n_atenc = sum(1 for a in anomalias if a.get("severidade") == "atencao")
     return _jinja.get_template("relatorio_pdf.html").render(
         report_id=report_id,
         agora=datetime.now().strftime("%d/%m/%Y %H:%M"),
         body=body,
         anomalias=anomalias,
         n_anom=len(anomalias),
-        n_crit=n_crit, n_alerta=n_alerta, n_atenc=n_atenc,
+        n_crit=n_crit,
+        n_alerta=n_alerta,
+        n_atenc=n_atenc,
         total_tx=total_tx,
         total_cred=total_cred,
         total_deb_abs=abs(total_deb),
@@ -1080,6 +1129,7 @@ def export_pdf(request: Request, rid: str, html: bool = False):
 
     try:
         import weasyprint
+
         pdf_bytes = weasyprint.HTML(string=html_content, base_url=None).write_pdf()
         return Response(
             content=pdf_bytes,
@@ -1133,13 +1183,15 @@ async def conciliar_csv(
         raise HTTPException(status_code=e.status_code, detail={"anthropic_error": msg})
     relatorio = "\n".join(b.text for b in resp.content if b.type == "text")
 
-    return JSONResponse({
-        "extrato": safe_extrato,
-        "razao": safe_razao,
-        "usage": {
-            "input_tokens": resp.usage.input_tokens,
-            "output_tokens": resp.usage.output_tokens,
-        },
-        "stop_reason": resp.stop_reason,
-        "relatorio_md": relatorio,
-    })
+    return JSONResponse(
+        {
+            "extrato": safe_extrato,
+            "razao": safe_razao,
+            "usage": {
+                "input_tokens": resp.usage.input_tokens,
+                "output_tokens": resp.usage.output_tokens,
+            },
+            "stop_reason": resp.stop_reason,
+            "relatorio_md": relatorio,
+        }
+    )
