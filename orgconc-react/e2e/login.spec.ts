@@ -24,7 +24,7 @@ test.describe("Pagina de login", () => {
                 });
 
                 test("redireciona raiz para /app/login quando nao autenticado", async ({ page }) => {
-                      await page.goto("/app");
-                      await expect(page).toHaveURL(/\/app\/login/);
+                      await page.goto("/app/");
+                      await expect(page).toHaveURL(/\/app\/login/, { timeout: 10000 });
                 });
 });

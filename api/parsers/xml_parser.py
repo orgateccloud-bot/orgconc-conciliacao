@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as _ET
+import defusedxml.ElementTree as ET
 
 def _parse_xml(text: str, filename: str) -> list[dict]:
     """Extrai transacoes de XML (CAMT.053, padrao bancario brasileiro, ou OFX em XML)."""
@@ -9,7 +10,7 @@ def _parse_xml(text: str, filename: str) -> list[dict]:
     conta_default = f"XML ({filename})"
     try:
         root = ET.fromstring(text)
-    except ET.ParseError:
+    except _ET.ParseError:
         return []
 
     def _strip_ns(el):
