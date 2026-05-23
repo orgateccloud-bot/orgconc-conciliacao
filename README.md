@@ -1,81 +1,90 @@
-# ORGATEC · Conciliação Bancária
+# ORGATEC · Conciliação Bancária (OrgConc)
 
-API e UI web para conciliação bancária inteligente. Cruza extratos OFX/PDF/XML, detecta anomalias, gera relatórios em HTML, XLSX e PDF.
+API e UI para conciliação bancária inteligente. Cruza extratos OFX/PDF/XML, detecta anomalias, gera relatórios HTML/XLSX/PDF.
 
 ## Stack
 
-- **Backend**: FastAPI + Uvicorn (Python 3.10+)
-- **Parsers**: OFX (SGML), PDF (`pdfplumber`), XML (CAMT.053 + OFX-XML)
-- **Exports**: Markdown nativo, HTML standalone, XLSX (`openpyxl`), PDF (`html2pdf.js` client-side)
-- **LLM**: Anthropic Claude (`claude-sonnet-4-5`) opcional, modo simulação local sempre disponível
-- **Auth**: Bearer token opcional · **Rate limit**: `slowapi` · **Persistência**: JSON em disco
+- **Backend**: FastAPI 0.5 · routers modulares · JWT + token legacy
+- **Frontend principal**: `orgconc-react/` (Vite + React 19 + Tailwind + shadcn)
+- **UI legada** (transição): `static/` em `/ui/`
+- **Banco**: PostgreSQL/Supabase opcional
+- **SERPRO**: consulta CPF/CNPJ via cliente externo (`ORGCONC_SERPRO_CLIENT_PATH`)
 
-## Setup
+## Desenvolvimento
 
 ```bash
-# 1. Instalar dependências
 pip install -r requirements.txt
-
-# 2. Configurar variáveis
 cp .env.example .env
-# editar .env e preencher ANTHROPIC_API_KEY
 
-# 3. Rodar servidor
+# Terminal 1 — API
 python -m uvicorn api.main:app --host 127.0.0.1 --port 8765 --reload
+
+# Terminal 2 — React (proxy para API)
+cd orgconc-react && npm install && npm run dev
 ```
 
-UI: http://127.0.0.1:8765/ui/ · Docs Swagger: http://127.0.0.1:8765/docs
+- API: http://127.0.0.1:8765/docs
+- React (dev): http://127.0.0.1:5173
+- UI legada: http://127.0.0.1:8765/ui/
+
+## Produção (React servido pela API)
+
+```bash
+cd orgconc-react && npm run build
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8765
+```
+
+App React: http://127.0.0.1:8765/app/
+
+## Auth
+
+| Variável | Descrição |
+|----------|-----------|
+| `ORGCONC_JWT_SECRET` | Obrigatório em `ORGCONC_ENV=production` |
+| `ORGCONC_ADMIN_EMAIL` / `ORGCONC_ADMIN_SENHA_HASH` | Login `/auth/login` |
+| `ORGCONC_AUTH_TOKEN` | Token legacy (scripts/CI) — aceito junto com JWT |
+
+Em produção, endpoints protegidos exigem `Authorization: Bearer <jwt|legacy>`.
+
+## SERPRO
+
+Configure no `.env`:
+
+- `ORGCONC_SERPRO_DEMO_TOKEN` ou `ORGCONC_SERPRO_CONSUMER_KEY` + `SECRET`
+- `ORGCONC_SERPRO_CLIENT_PATH` — pasta com `serpro_client.py`
+- `ORGCONC_SERPRO_AUDIT_SALT` — **obrigatório em produção**
 
 ## Endpoints principais
 
 | Método | Rota | Descrição |
-|---|---|---|
-| `GET`  | `/health` | Healthcheck + status da chave |
-| `POST` | `/conciliar/ofx?simular=true` | Upload 1-2 arquivos (.ofx, .pdf, .xml) → JSON com anomalias + relatório |
-| `GET`  | `/export/html/{rid}` | Baixa relatório HTML standalone |
-| `GET`  | `/export/xlsx/{rid}` | Baixa planilha Excel (3 abas: Resumo, Transações, Anomalias) |
-
-## Modos de operação
-
-- **Simulação** (`?simular=true`): conciliação **gratuita** com heurísticas locais (regex + classificador). Sem chamada à API.
-- **Claude LLM** (default): chama Anthropic Messages API para análise narrativa rica.
-
-## Funcionalidades
-
-- 🔍 **Detecção de anomalias** com 3 severidades (crítico/alerta/atenção)
-  - Duplicidades (mesma data + valor + memo)
-  - Estornos
-  - Transações atípicas (>R$ 10k = atenção, >R$ 50k = alerta)
-  - Transferências INTERCREDIS sem par
-- 🏷 **Classificador contábil** para 10+ bancos (Sicoob, BB, Itaú, Bradesco, Santander, Caixa, Inter, Nubank, C6)
-- 📊 **Relatório executivo** com 10 seções (resumo, KPIs operacionais, top contrapartes, evolução diária, plano de ação)
-- 🎨 **UI ORGATEC** com tema escuro e branding personalizado
-
-## Configuração (`.env`)
-
-| Variável | Default | Descrição |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | — | Obrigatório para modo LLM |
-| `ORGCONC_AUTH_TOKEN` | (vazio = aberto) | Bearer token opcional |
-| `ORGCONC_CORS_ORIGINS` | `http://127.0.0.1:8765,http://localhost:8765` | CORS allowlist |
-| `ORGCONC_MAX_UPLOAD_MB` | `10` | Limite por arquivo |
-| `ORGCONC_DATA_DIR` | `./data` | Diretório de persistência |
+|--------|------|-----------|
+| POST | `/conciliar/ofx` | Upload 1–50 arquivos; `?simular=true` sem LLM |
+| POST | `/conciliar/csv` | Extrato + razão CSV |
+| GET | `/conciliacoes` | Histórico (requer DB) |
+| POST | `/serpro/cnpj` | Consulta CNPJ |
+| GET | `/export/html\|xlsx\|pdf/{rid}` | Exportações |
 
 ## Testes
 
 ```bash
+pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
+
+Testes de integração com Postgres (`test_db_*`) rodam só se `DATABASE_URL` estiver acessível.
+Para forçar mesmo com URL inválida (debug): `ORGCONC_RUN_DB_TESTS=1 pytest tests/ -k test_db_`.
 
 ## Estrutura
 
 ```
-api/main.py         # FastAPI app, parsers, classifier, exports
-static/index.html   # UI single-page
-static/logo.png     # Logo ORGATEC
-tests/test_api.py   # 14 testes (parsers, endpoints, segurança)
-.env.example        # Template de configuração
-requirements.txt    # Dependências
+api/
+  main.py              # App factory + mounts
+  routers/             # health, auth, clientes, conciliacao, exports, serpro
+  services/            # persistencia, conciliacao_llm, serpro_consulta, excel
+  parsers/             # ofx, xml, pdf, classifier, anomalies, stats
+orgconc-react/         # UI principal
+static/                # UI legada (deprecated)
+tests/
 ```
 
 ## Licença

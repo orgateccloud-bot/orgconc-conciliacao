@@ -7,9 +7,11 @@ interface Props {
   title: string;
   dbStatus: "online" | "offline" | "checking";
   onToggleSidebar?: () => void;
+  userEmail?: string;
+  onLogout?: () => void;
 }
 
-export function Topbar({ title, dbStatus, onToggleSidebar }: Props) {
+export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }: Props) {
   const { tema, toggle } = useTheme();
 
   const dbColor = {
@@ -48,6 +50,16 @@ export function Topbar({ title, dbStatus, onToggleSidebar }: Props) {
           DB: {dbStatus}
         </span>
 
+        {userEmail && (
+          <span className="hidden sm:inline text-xs text-muted-foreground truncate max-w-[140px]">
+            {userEmail}
+          </span>
+        )}
+        {onLogout && (
+          <Button size="sm" variant="ghost" onClick={onLogout}>
+            Sair
+          </Button>
+        )}
         <Button
           size="icon"
           variant="outline"

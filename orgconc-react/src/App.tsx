@@ -1,50 +1,61 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useLocation,
+} from "react-router-dom";
 import { ThemeProvider } from "@/lib/theme";
-import { Sidebar, type Secao } from "@/components/Sidebar";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { LoginPage } from "@/pages/LoginPage";
+import { Sidebar, SidebarNavContent } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import { Toaster } from "@/components/ui/sonner";
-import { HeroCard } from "@/components/HeroCard";
-import { PaletteStrip } from "@/components/PaletteStrip";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-interface Tela {
-  eyebrow: string;
-  title: string;
-  accent: string;
-  subtitle: string;
+const DashboardPage    = lazy(() => import("@/pages/DashboardPage").then(m => ({ default: m.DashboardPage })));
+const ConciliacaoPage  = lazy(() => import("@/pages/ConciliacaoPage").then(m => ({ default: m.ConciliacaoPage })));
+const ClientesPage     = lazy(() => import("@/pages/ClientesPage").then(m => ({ default: m.ClientesPage })));
+const RelatoriosPage   = lazy(() => import("@/pages/RelatoriosPage").then(m => ({ default: m.RelatoriosPage })));
+const ConfiguracoesPage = lazy(() => import("@/pages/ConfiguracoesPage").then(m => ({ default: m.ConfiguracoesPage })));
+
+function PageLoader() {
+  return (
+    <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+      Carregando…
+    </div>
+  );
 }
 
-const TELAS: Record<Secao, Tela> = {
-  conciliacao: {
-    eyebrow: "01 · NOVA CARTA DE CONCILIAÇÃO",
-    title: "Contabilidade que",
-    accent: "respira.",
-    subtitle:
-      "Carregue extratos OFX, PDF ou XML e cruze profundidades contábeis com sondagem assistida por Claude — relatórios em HTML, Excel e PDF.",
-  },
-  clientes: {
-    eyebrow: "02 · CADASTRO FISCAL",
-    title: "Clientes",
-    accent: "ativos.",
-    subtitle: "Carteira de empresas atendidas com plano, CNPJ e histórico de conciliações.",
-  },
-  relatorios: {
-    eyebrow: "03 · ARQUIVOS DE BORDO",
-    title: "Histórico de",
-    accent: "relatórios.",
-    subtitle:
-      "Cartas batimétricas geradas — consulte conciliações anteriores e exporte em HTML, Excel ou PDF.",
-  },
+const TITULOS: Record<string, string> = {
+  dashboard:     "Dashboard",
+  conciliacao:   "Conciliação Bancária",
+  clientes:      "Clientes",
+  relatorios:    "Histórico de Relatórios",
+  configuracoes: "Configurações",
 };
 
-const TITULOS: Record<Secao, string> = {
-  conciliacao: "Conciliação Bancária",
-  clientes: "Clientes",
-  relatorios: "Histórico de Relatórios",
-};
+function ProtectedRoute() {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+        Carregando…
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  return <Outlet />;
+}
 
-export default function App() {
-  const [secao, setSecao] = useState<Secao>("conciliacao");
+function DashboardLayout() {
+  const { user, logout } = useAuth();
+  const location = useLocation();
   const [dbStatus, setDbStatus] = useState<"online" | "offline" | "checking">("checking");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
     fetch("/health")
@@ -53,86 +64,63 @@ export default function App() {
       .catch(() => setDbStatus("offline"));
   }, []);
 
-  const tela = TELAS[secao];
+  const secao = location.pathname.replace(/^\//, "");
+  const title = TITULOS[secao] ?? "OrgConc";
 
   return (
-    <ThemeProvider>
-      <div className="flex min-h-screen" style={{ background: "var(--d-bg)" }}>
-        <Sidebar secao={secao} onChange={setSecao} />
-        <main className="flex-1 flex flex-col min-w-0 relative">
-          <Topbar title={TITULOS[secao]} dbStatus={dbStatus} />
-          <div className="flex-1 p-4 lg:p-10 xl:p-12 space-y-10 max-w-[1400px] w-full mx-auto pb-24">
-            <HeroCard
-              eyebrow={tela.eyebrow}
-              title={tela.title}
-              titleAccent={tela.accent}
-              subtitle={tela.subtitle}
-            />
-            <PaletteStrip />
-            <SprintCard />
-          </div>
-          <SlideFooter section={secao} />
-        </main>
-        <Toaster richColors position="top-right" />
-      </div>
-    </ThemeProvider>
-  );
-}
+    <div className="flex min-h-screen" style={{ background: "var(--d-bg)" }}>
+      {/* Desktop sidebar */}
+      <Sidebar />
 
-function SprintCard() {
-  return (
-    <section className="animate-fade-in">
-      <header className="flex items-baseline justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h2 className="eyebrow">Diário de bordo</h2>
-          <span className="h-px w-12 bg-border" />
+      {/* Mobile sidebar Sheet */}
+      <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+        <SheetContent side="left" className="p-0 w-60 bg-card/95 flex flex-col">
+          <SidebarNavContent onNavigate={() => setMobileSidebarOpen(false)} />
+        </SheetContent>
+      </Sheet>
+
+      <main className="flex-1 flex flex-col min-w-0 relative">
+        <Topbar
+          title={title}
+          dbStatus={dbStatus}
+          userEmail={user?.email || user?.sub}
+          onLogout={logout}
+          onToggleSidebar={() => setMobileSidebarOpen(true)}
+        />
+        <div className="flex-1 p-4 lg:p-10 xl:p-12 max-w-[1400px] w-full mx-auto pb-24">
+          <ErrorBoundary>
+            <Suspense fallback={<PageLoader />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </div>
-        <span className="deck-caption">Sprint 01 · Concluído</span>
-      </header>
-
-      <div className="rounded-3xl border bg-card p-7 lg:p-10">
-        <h3 className="font-semibold text-2xl tracking-tight text-foreground mb-5">
-          Sondagem de fundação — Sprint I
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3 text-sm text-foreground">
-          <Item label="Arquitetura" valor="React 18 · TypeScript · Vite" />
-          <Item label="Sistema" valor="Tailwind 3.4 · shadcn/ui · 43 componentes" />
-          <Item label="Tipografia" valor="Manrope 200 · Instrument Serif italic · JetBrains Mono" />
-          <Item label="Paleta" valor="Direção Leve · navy → blue → azure" />
-          <Item label="Tema" valor="Light & dark · persistência localStorage" />
-          <Item label="Responsividade" valor="≥ 1024 px com sidebar fixa" />
-        </div>
-
-        <footer className="mt-7 pt-5 border-t border-border flex items-baseline justify-between">
-          <span className="deck-caption">Próxima carta</span>
-          <span className="text-xs text-foreground/80">
-            Sprint II — Mapa de modos & rotina de upload
-          </span>
-        </footer>
-      </div>
-    </section>
-  );
-}
-
-function Item({ label, valor }: { label: string; valor: string }) {
-  return (
-    <div className="flex items-baseline gap-3 py-1.5">
-      <span className="eyebrow shrink-0 w-[120px] text-[0.7rem]">{label}</span>
-      <span className="h-px flex-1 bg-border/60 self-center" />
-      <span className="text-foreground/90 text-sm">{valor}</span>
+      </main>
     </div>
   );
 }
 
-function SlideFooter({ section }: { section: Secao }) {
+export default function App() {
   return (
-    <footer
-      aria-hidden
-      className="absolute bottom-4 left-4 right-4 lg:left-10 lg:right-10 flex items-center justify-between"
-    >
-      <span className="deck-caption opacity-60">orgatec · {section}</span>
-      <span className="deck-caption opacity-60">v0.5.0</span>
-    </footer>
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter basename="/app">
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<DashboardLayout />}>
+                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/conciliacao" element={<ConciliacaoPage />} />
+                <Route path="/clientes" element={<ClientesPage />} />
+                <Route path="/relatorios" element={<RelatoriosPage />} />
+                <Route path="/configuracoes" element={<ConfiguracoesPage />} />
+              </Route>
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+          <Toaster richColors position="top-right" />
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
