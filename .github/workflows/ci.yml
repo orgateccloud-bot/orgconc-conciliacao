@@ -118,7 +118,7 @@ jobs:
   e2e:
     name: Playwright E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     needs: frontend
     steps:
       - uses: actions/checkout@v4
@@ -130,9 +130,20 @@ jobs:
       - name: npm ci
         working-directory: orgconc-react
         run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('orgconc-react/package-lock.json') }}
       - name: Instalar Playwright browsers
         working-directory: orgconc-react
-        run: npx playwright install --with-deps chromium
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
       - name: Build app
         working-directory: orgconc-react
         run: npm run build

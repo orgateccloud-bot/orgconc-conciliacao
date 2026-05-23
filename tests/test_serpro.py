@@ -5,6 +5,7 @@ eliminando necessidade de stub externo e asyncio.to_thread.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re as _re
@@ -252,6 +253,103 @@ def test_endpoints_503_sem_credenciais(monkeypatch):
     c = TestClient(app)
     assert c.post("/serpro/cpf", json={"cpf": CPF_VALIDO}).status_code == 503
     assert c.post("/serpro/cnpj", json={"cnpj": CNPJ_VALIDO}).status_code == 503
+
+
+# ── Testes das funcoes internas (sem deps externas) ──────────────────────────
+
+def test_exigir_audit_salt_dev_nao_exige(monkeypatch):
+    monkeypatch.setenv("ORGCONC_ENV", "development")
+    monkeypatch.delenv("ORGCONC_SERPRO_AUDIT_SALT", raising=False)
+    serpro_module._exigir_audit_salt_producao()  # nao deve levantar
+
+
+def test_exigir_audit_salt_prod_sem_salt_levanta(monkeypatch):
+    monkeypatch.setenv("ORGCONC_ENV", "production")
+    monkeypatch.delenv("ORGCONC_SERPRO_AUDIT_SALT", raising=False)
+    with pytest.raises(serpro_module.SerproIntegrationError):
+        serpro_module._exigir_audit_salt_producao()
+
+
+def test_audit_hook_estruturado_propaga_campos(caplog):
+    with caplog.at_level(logging.INFO, logger="orgconc.serpro"):
+        serpro_module._audit_hook_estruturado({
+            "evento": "consulta_cpf",
+            "tipo": "cpf",
+            "documento_mascarado": "***.***.***-**",
+            "documento_hash": "abc123",
+            "resultado": "ok",
+        })
+    assert any("serpro_consulta_audit" in r.message for r in caplog.records)
+
+
+def test_mapear_excecao_sem_modulo_retorna_502(monkeypatch):
+    monkeypatch.setattr(serpro_module, "_exc_module", None)
+    http_exc = serpro_module._mapear_excecao_para_http(ValueError("teste"))
+    assert http_exc.status_code == 502
+    assert "ValueError" in http_exc.detail
+
+
+def test_consultar_cpf_async_503_integration_error(monkeypatch):
+    import asyncio
+
+    def _falha():
+        raise serpro_module.SerproIntegrationError("sem config")
+
+    monkeypatch.setattr(serpro_module, "obter_client", _falha)
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(serpro_module.consultar_cpf_async(CPF_VALIDO))
+    assert exc_info.value.status_code == 503
+
+
+def test_consultar_cpf_async_caminho_feliz(monkeypatch):
+    import asyncio
+
+    class _FakeResultado:
+        tipo = "cpf"
+        documento_mascarado = "***.***.***-**"
+        parcial = False
+        dados = {"nome": "FULANO"}
+
+    class _FakeClient:
+        def consultar_cpf(self, cpf):
+            return _FakeResultado()
+
+    monkeypatch.setattr(serpro_module, "obter_client", lambda: _FakeClient())
+    resultado = asyncio.run(serpro_module.consultar_cpf_async(CPF_VALIDO))
+    assert resultado["tipo"] == "cpf"
+    assert resultado["parcial"] is False
+    assert resultado["dados"]["nome"] == "FULANO"
+
+
+def test_consultar_cnpj_async_503_integration_error(monkeypatch):
+    import asyncio
+
+    def _falha():
+        raise serpro_module.SerproIntegrationError("sem config")
+
+    monkeypatch.setattr(serpro_module, "obter_client", _falha)
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(serpro_module.consultar_cnpj_async(CNPJ_VALIDO))
+    assert exc_info.value.status_code == 503
+
+
+def test_consultar_cnpj_async_caminho_feliz(monkeypatch):
+    import asyncio
+
+    class _FakeResultado:
+        tipo = "cnpj"
+        documento_mascarado = "**.***.***/****-**"
+        parcial = False
+        dados = {"razao_social": "ORGATEC"}
+
+    class _FakeClient:
+        def consultar_cnpj(self, cnpj):
+            return _FakeResultado()
+
+    monkeypatch.setattr(serpro_module, "obter_client", lambda: _FakeClient())
+    resultado = asyncio.run(serpro_module.consultar_cnpj_async(CNPJ_VALIDO))
+    assert resultado["tipo"] == "cnpj"
+    assert resultado["dados"]["razao_social"] == "ORGATEC"
 
 
 def test_audit_hook_emite_log_estruturado(api_client, mock_serpro, caplog):

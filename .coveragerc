@@ -1,0 +1,14 @@
+[run]
+omit =
+    # PDF generation requires WeasyPrint + system-level Pango/Cairo stack not available in CI
+    api/parsers/pdf.py
+    # External Serpro API client: requires proprietary serpro_client.py outside repo
+    # and real OAuth2 credentials + API connectivity — tested via integration tests only
+    api/services/serpro_consulta.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if TYPE_CHECKING:
