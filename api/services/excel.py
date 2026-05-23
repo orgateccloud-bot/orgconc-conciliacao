@@ -174,7 +174,13 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
         cred = sum(t["valor"] for t in ex["transacoes"] if t["valor"] > 0)
         deb  = sum(t["valor"] for t in ex["transacoes"] if t["valor"] < 0)
         sld  = cred + deb
-        pct  = (ex["qtd"] / total_tx) if total_tx else 0
+        vol_e = cred + abs(deb)
+        vol_total_contas = sum(
+            sum(t["valor"] for t in ex2["transacoes"] if t["valor"] > 0)
+            + abs(sum(t["valor"] for t in ex2["transacoes"] if t["valor"] < 0))
+            for ex2 in extratos
+        ) or 1
+        pct = vol_e / vol_total_contas
         ws.cell(row=r, column=1, value=ex["conta"])
         ws.cell(row=r, column=2, value=ex["arquivo"])
         ws.cell(row=r, column=3, value=ex["qtd"])

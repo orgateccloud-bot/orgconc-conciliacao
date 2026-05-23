@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: orgconc-api
+    runtime: python
+    plan: starter
+    region: ohio
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ORGCONC_ENV
+        value: production
+      - key: ORGCONC_JWT_SECRET
+        generateValue: true
+      - key: ORGCONC_CORS_ORIGINS
+        sync: false
+      - key: ORGCONC_ADMIN_EMAIL
+        sync: false
+      - key: ORGCONC_ADMIN_SENHA_HASH
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ORGCONC_MAX_UPLOAD_MB
+        value: "10"
+      - key: ORGCONC_MAX_UPLOAD_TOTAL_MB
+        value: "50"
+      - key: ORGCONC_LOG_JSON
+        value: "true"
+      - key: ORGCONC_LOG_LEVEL
+        value: "INFO"
+    disk:
+      name: orgconc-data
+      mountPath: /data
+      sizeGB: 1

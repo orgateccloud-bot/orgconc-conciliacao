@@ -3,15 +3,12 @@
 Implementa:
 - Hashing de senhas com bcrypt (via passlib)
 - Geracao e validacao de JWT (HS256)
-- Dependency FastAPI `current_user` que substitui o Bearer compartilhado
-- Fallback compativel: se ORGCONC_AUTH_TOKEN ainda existir, aceita como
-  token "service" sem expiracao (uso em CI/scripts internos)
+- Dependency FastAPI `current_user` com acesso anonimo em dev/staging
 
 Variaveis de ambiente:
 - ORGCONC_JWT_SECRET     : chave de assinatura (>=32 chars). Se ausente, gera
                            uma random no startup (tokens nao sobrevivem restart)
 - ORGCONC_JWT_TTL_MIN    : expiracao em minutos (default 120)
-- ORGCONC_AUTH_TOKEN     : (legacy) token compartilhado, aceito como service token
 """
 from __future__ import annotations
 
@@ -21,9 +18,9 @@ import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt as _bcrypt
 import jwt
 from fastapi import Depends, Header, HTTPException
-from passlib.context import CryptContext
 from pydantic import BaseModel
 
 log = logging.getLogger("orgconc.auth")
@@ -57,22 +54,15 @@ elif len(_JWT_SECRET) < 32:
 _JWT_TTL_MIN = int(os.environ.get("ORGCONC_JWT_TTL_MIN", "120"))
 _JWT_ALG = "HS256"
 
-# Token legacy de servico (mantem retrocompat em dev/staging)
-_LEGACY_SERVICE_TOKEN = os.environ.get("ORGCONC_AUTH_TOKEN", "").strip()
-
-# Hashing (passlib)
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__truncate_error=False)
-
-
 def hash_senha(senha: str) -> str:
     """Hash bcrypt da senha (uso: criar usuario, atualizar senha)."""
-    return _pwd_ctx.hash(senha)
+    return _bcrypt.hashpw(senha.encode(), _bcrypt.gensalt()).decode()
 
 
 def verificar_senha(senha: str, hash_armazenado: str) -> bool:
     """Constant-time comparison via bcrypt."""
     try:
-        return _pwd_ctx.verify(senha, hash_armazenado)
+        return _bcrypt.checkpw(senha.encode(), hash_armazenado.encode())
     except Exception:
         return False
 
@@ -135,11 +125,6 @@ def auth_optional(authorization: Optional[str] = Header(None)) -> Optional[Token
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Use 'Bearer <token>'")
     token = authorization.split(" ", 1)[1].strip()
-
-    # Aceita token legacy (compatibilidade ate migrar 100%)
-    if _LEGACY_SERVICE_TOKEN and _secrets.compare_digest(token, _LEGACY_SERVICE_TOKEN):
-        return TokenPayload(sub="legacy-service", role="service")
-
     return decodificar_token(token)
 
 
@@ -159,9 +144,6 @@ def current_user(
     # Producao: anonimo SEMPRE bloqueado
     if _IS_PROD:
         raise HTTPException(status_code=401, detail="Token Bearer obrigatorio em producao")
-    # Dev/staging com token legacy configurado: exige header
-    if _LEGACY_SERVICE_TOKEN:
-        raise HTTPException(status_code=401, detail="Token Bearer ausente")
     # Dev/staging sem auth configurada: usuario anonimo (apenas para conveniencia local)
     log.warning(
         "Acesso anonimo liberado (ORGCONC_ENV=%s, sem ORGCONC_AUTH_TOKEN). "

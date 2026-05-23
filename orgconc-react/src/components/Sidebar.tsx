@@ -1,51 +1,82 @@
+import { useNavigate, useLocation } from "react-router-dom";
 import { Logo } from "@/components/Logo";
-import { LayoutDashboard, Users, FileText, Code2, HeartPulse } from "lucide-react";
+import {
+  Users,
+  FileText,
+  Code2,
+  HeartPulse,
+  LayoutDashboard,
+  LineChart,
+  Settings,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type Secao = "conciliacao" | "clientes" | "relatorios";
+type Secao = "dashboard" | "conciliacao" | "clientes" | "relatorios" | "configuracoes";
 
-const ITEMS: Array<{ id: Secao; label: string; icon: typeof LayoutDashboard }> = [
-  { id: "conciliacao", label: "Conciliação", icon: LayoutDashboard },
+const MAIN_ITEMS: Array<{ id: Secao; label: string; icon: typeof LineChart }> = [
+  { id: "dashboard",   label: "Dashboard",   icon: LayoutDashboard },
+  { id: "conciliacao", label: "Conciliação", icon: LineChart },
   { id: "clientes",    label: "Clientes",    icon: Users },
   { id: "relatorios",  label: "Relatórios",  icon: FileText },
 ];
 
-interface Props {
-  secao: Secao;
-  onChange: (s: Secao) => void;
-}
+const SYSTEM_ITEMS: Array<{ id: Secao; label: string; icon: typeof LineChart }> = [
+  { id: "configuracoes", label: "Configurações", icon: Settings },
+];
 
-export function Sidebar({ secao, onChange }: Props) {
+export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  function go(id: string) {
+    navigate(`/${id}`);
+    onNavigate?.();
+  }
+
+  function isActive(id: string) {
+    return pathname === `/${id}` || (id === "dashboard" && pathname === "/");
+  }
+
   return (
-    <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-card/95 backdrop-blur-sm relative">
-      {/* Linha de costa: hairline gradient navy → cyan */}
-      <span aria-hidden className="absolute top-0 bottom-0 right-0 w-px coastline-r opacity-60" />
-      {/* Brand */}
+    <>
       <div className="flex items-center gap-3 px-5 py-5 border-b">
         <Logo size={56} />
         <div className="flex flex-col">
-          <h1 className="font-bold text-lg tracking-tight text-foreground leading-tight" style={{ letterSpacing: "-0.025em" }}>ORGATEC</h1>
+          <h1
+            className="font-bold text-lg tracking-tight text-foreground leading-tight"
+            style={{ letterSpacing: "-0.025em" }}
+          >
+            ORGATEC
+          </h1>
           <span className="text-[10px] font-semibold tracking-[0.18em] uppercase text-muted-foreground mt-0.5 font-mono">
             Conciliação Bancária
           </span>
         </div>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-2 py-4 space-y-0.5" aria-label="Navegação principal">
         <NavGroup label="Principal">
-          {ITEMS.map(({ id, label, icon: Icon }) => (
+          {MAIN_ITEMS.map(({ id, label, icon: Icon }) => (
             <NavItem
               key={id}
-              active={secao === id}
-              onClick={() => onChange(id)}
+              active={isActive(id)}
+              onClick={() => go(id)}
               icon={<Icon className="h-4 w-4" />}
               label={label}
             />
           ))}
         </NavGroup>
 
-        <NavGroup label="Suporte">
+        <NavGroup label="Sistema">
+          {SYSTEM_ITEMS.map(({ id, label, icon: Icon }) => (
+            <NavItem
+              key={id}
+              active={isActive(id)}
+              onClick={() => go(id)}
+              icon={<Icon className="h-4 w-4" />}
+              label={label}
+            />
+          ))}
           <a
             href="/docs"
             target="_blank"
@@ -67,12 +98,20 @@ export function Sidebar({ secao, onChange }: Props) {
         </NavGroup>
       </nav>
 
-      {/* Footer */}
       <div className="border-t px-4 py-3">
         <div className="inline-flex items-center rounded-md border bg-secondary px-2 py-1 text-[11px] font-mono font-semibold text-muted-foreground">
           v0.5.0
         </div>
       </div>
+    </>
+  );
+}
+
+export function Sidebar() {
+  return (
+    <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-card/95 backdrop-blur-sm relative">
+      <span aria-hidden className="absolute top-0 bottom-0 right-0 w-px coastline-r opacity-60" />
+      <SidebarNavContent />
     </aside>
   );
 }

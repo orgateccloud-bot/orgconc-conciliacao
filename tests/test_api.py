@@ -13,7 +13,7 @@ os.environ["ORGCONC_DATA_DIR"] = str(Path(__file__).resolve().parent / "_data_te
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from api.main import app, _parse_ofx, _parse_xml, _classificar, _detectar_anomalias, _gerar_xlsx, _render_html, DB_DISPONIVEL
+from api.main import app, _parse_ofx, _parse_xml, _classificar, _detectar_anomalias, _coletar_chaves_anomalas, _chave_transacao, _gerar_xlsx, _render_html, DB_DISPONIVEL
 
 client = TestClient(app)
 
@@ -182,6 +182,21 @@ def test_classificador():
     assert _classificar("POSTO IPIRANGA COMPRA", "") in ("Despesa - Combustivel", "Compra Cartao")
 
 
+def test_coletar_chaves_anomalas_duplicidade():
+    """Chaves de anomalia devem corresponder a transacoes duplicadas exatas."""
+    extratos = [{
+        "conta": "CC 1",
+        "transacoes": [
+            {"data": "2026-01-01", "valor": 100.0, "memo": "PIX TESTE", "nome": "", "tipo": "DEBIT"},
+            {"data": "2026-01-01", "valor": 100.0, "memo": "PIX TESTE", "nome": "", "tipo": "DEBIT"},
+        ],
+    }]
+    chaves = _coletar_chaves_anomalas(extratos)
+    k = _chave_transacao("CC 1", extratos[0]["transacoes"][0])
+    assert k in chaves
+    assert len(chaves) >= 1
+
+
 def test_deteccao_anomalias_duplicidades():
     txs = _parse_ofx(OFX_SAMPLE)
     extrato = {"conta": "AG 1234-5 / CC 9999-9", "qtd": len(txs), "transacoes": txs, "arquivo": "test.ofx"}
@@ -269,7 +284,7 @@ def test_conciliar_ofx_modelo_invalido_retorna_400():
 
 def test_modelos_validos_mapping():
     """O dicionario _MODELOS_VALIDOS deve ter haiku, sonnet, opus mapeados."""
-    from api.main import _MODELOS_VALIDOS
+    from api.core.config import _MODELOS_VALIDOS
     assert "haiku" in _MODELOS_VALIDOS
     assert "sonnet" in _MODELOS_VALIDOS
     assert "opus" in _MODELOS_VALIDOS
@@ -287,17 +302,28 @@ def test_frontend_tem_card_haiku():
     assert "repeat(4, 1fr)" in html
 
 
-def test_conciliar_csv_exige_auth_quando_token_definido():
-    """/conciliar/csv NAO pode ser publico quando AUTH_TOKEN existe."""
-    with patch("api.main.AUTH_TOKEN", "segredo-de-teste"):
-        r = client.post(
-            "/conciliar/csv",
-            files=[
-                ("extrato", ("e.csv", b"data,valor\n2026-01-01,100", "text/csv")),
-                ("razao",   ("r.csv", b"data,valor\n2026-01-01,100", "text/csv")),
-            ],
-        )
-    assert r.status_code == 401, f"Esperado 401, recebido {r.status_code}: {r.text[:200]}"
+def test_producao_exige_bearer_sem_header():
+    """Em ORGCONC_ENV=production endpoints protegidos retornam 401 sem Authorization."""
+    with patch("api.services.auth._IS_PROD", True):
+        for path, kwargs in [
+            ("/conciliar/ofx?simular=true", {
+                "files": [("arquivos", ("t.ofx", OFX_SAMPLE, "application/x-ofx"))],
+            }),
+            ("/clientes", {}),
+        ]:
+            method = client.post if "conciliar" in path else client.get
+            r = method(path, **kwargs)
+            assert r.status_code == 401, f"{path}: {r.status_code}"
+
+
+def test_producao_jwt_funciona_sem_legado():
+    """JWT valido aceito em producao mesmo sem token legado configurado."""
+    from api.services.auth import emitir_token
+    token = emitir_token(sub="admin@orgconc.com", email="admin@orgconc.com", role="admin")
+    with patch("api.services.auth._IS_PROD", True), \
+         patch("api.routers.clientes.DB_DISPONIVEL", False):
+        r = client.get("/clientes", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 503
 
 
 # ── Hardening: persistencia no response ───────────────────────────────────
@@ -321,10 +347,10 @@ def test_persistencia_retorna_error_quando_bd_falha():
     import asyncio
     from api.main import _salvar_no_banco
 
-    with patch("api.main.DB_DISPONIVEL", True), \
-         patch("api.main.SessionLocal", side_effect=RuntimeError("conexao recusada")):
+    with patch("api.services.db_persistence.DB_DISPONIVEL", True), \
+         patch("api.services.db_persistence.SessionLocal", side_effect=RuntimeError("conexao recusada")):
         resultado = asyncio.run(
-            _salvar_no_banco("teste-rid", [], [], "simulacao")
+            _salvar_no_banco("teste-rid", [], [], "simulacao_local")
         )
     assert resultado["status"] == "error"
     assert "conexao" in resultado["mensagem"].lower() or resultado["erro"] == "RuntimeError"
@@ -394,29 +420,18 @@ def test_auth_login_sucesso_emite_jwt():
     assert payload.role == "admin"
 
 
-def test_auth_me_exige_token():
-    """/auth/me sem token retorna 401 quando LEGACY_SERVICE_TOKEN configurado."""
-    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-test-token"):
+def test_auth_me_exige_token_em_producao():
+    """/auth/me sem token retorna 401 em producao."""
+    with patch("api.services.auth._IS_PROD", True):
         r = client.get("/auth/me")
     assert r.status_code == 401
-
-
-def test_auth_me_com_token_legacy_funciona():
-    """Token legacy compartilhado deve funcionar via /auth/me."""
-    with patch("api.main.AUTH_TOKEN", "legacy-test-token"), \
-         patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-test-token"):
-        r = client.get("/auth/me", headers={"Authorization": "Bearer legacy-test-token"})
-    assert r.status_code == 200
-    j = r.json()
-    assert j["role"] == "service"
 
 
 def test_auth_me_com_jwt_funciona():
     """JWT valido emitido por emitir_token deve passar pelo current_user."""
     from api.services.auth import emitir_token
     token = emitir_token(sub="teste@x.com", email="teste@x.com", role="admin")
-    with patch("api.main.AUTH_TOKEN", "qualquer-coisa"):
-        r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
     assert r.json()["email"] == "teste@x.com"
 
@@ -490,8 +505,8 @@ def test_frontend_tem_focus_visible():
 def test_limite_agregado_de_upload_retorna_413():
     """Soma dos uploads deve exceder MAX_UPLOAD_TOTAL_BYTES -> 413."""
     # Baixa o limite agregado para 1KB para o teste e envia 3 OFX validos de >400B
-    with patch("api.main.MAX_UPLOAD_TOTAL_BYTES", 1024), \
-         patch("api.main.MAX_UPLOAD_TOTAL_MB", 0):
+    with patch("api.routers.conciliacao.MAX_UPLOAD_TOTAL_BYTES", 1024), \
+         patch("api.routers.conciliacao.MAX_UPLOAD_TOTAL_MB", 0):
         files = [
             ("arquivos", (f"e{i}.ofx", OFX_SAMPLE.encode("latin-1"), "application/x-ofx"))
             for i in range(3)  # 3x ~700B = ~2KB > 1KB
@@ -540,28 +555,28 @@ def test_clientes_cnpj_todos_iguais_retorna_422():
 
 def test_clientes_criar_sem_db_retorna_503():
     """Com DB_DISPONIVEL=False, POST /clientes deve retornar 503."""
-    with patch("api.main.DB_DISPONIVEL", False):
+    with patch("api.routers.clientes.DB_DISPONIVEL", False):
         r = client.post("/clientes", json={"nome": "Empresa Sem DB", "plano": "basico"})
     assert r.status_code == 503
 
 
 def test_clientes_listar_sem_db_retorna_503():
     """Com DB_DISPONIVEL=False, GET /clientes deve retornar 503."""
-    with patch("api.main.DB_DISPONIVEL", False):
+    with patch("api.routers.clientes.DB_DISPONIVEL", False):
         r = client.get("/clientes")
     assert r.status_code == 503
 
 
 def test_clientes_buscar_sem_db_retorna_503():
     """Com DB_DISPONIVEL=False, GET /clientes/{id} deve retornar 503."""
-    with patch("api.main.DB_DISPONIVEL", False):
+    with patch("api.routers.clientes.DB_DISPONIVEL", False):
         r = client.get("/clientes/00000000-0000-0000-0000-000000000001")
     assert r.status_code == 503
 
 
 def test_clientes_atualizar_sem_db_retorna_503():
     """Com DB_DISPONIVEL=False, PATCH /clientes/{id} deve retornar 503."""
-    with patch("api.main.DB_DISPONIVEL", False):
+    with patch("api.routers.clientes.DB_DISPONIVEL", False):
         r = client.patch("/clientes/00000000-0000-0000-0000-000000000001", json={"nome": "Novo"})
     assert r.status_code == 503
 
@@ -579,7 +594,10 @@ def test_security_headers_presentes():
 # ── Integração Real com DB ────────────────────────────────────────────────
 
 _CNPJ_TESTE = "11444777000161"  # CNPJ válido reservado para testes de integração
-_requer_db = pytest.mark.skipif(not DB_DISPONIVEL, reason="DATABASE_URL não configurado")
+_requer_db = pytest.mark.skipif(
+    not DB_DISPONIVEL,
+    reason="DATABASE_URL não configurado ou inacessível (use ORGCONC_RUN_DB_TESTS=1 para forçar)",
+)
 
 
 def _limpar_cliente_teste() -> None:
@@ -766,9 +784,12 @@ def test_cliente_buscar_id_invalido_retorna_400():
 
 def test_cliente_cnpj_com_mascara_valido():
     """CNPJ formatado com pontuação deve ser aceito pelo Pydantic e normalizado."""
-    r = client.post("/clientes", json={"nome": "Empresa Mascara", "cnpj": "11.444.777/0001-61"})
-    # 422 = formato rejeitado (não esperado); 503 = sem DB; 201 = criado; 409/500 = duplicado OK
-    assert r.status_code not in (422,), f"CNPJ com máscara foi rejeitado incorretamente: {r.text}"
+    from api.schemas import ClienteCreate
+    c = ClienteCreate(nome="Empresa Mascara", cnpj="11.444.777/0001-61")
+    assert c.cnpj == "11444777000161"
+    with patch("api.routers.clientes.DB_DISPONIVEL", False):
+        r = client.post("/clientes", json={"nome": "Empresa Mascara", "cnpj": "11.444.777/0001-61"})
+    assert r.status_code == 503
 
 
 # ── XLSX — cabeçalhos das colunas ─────────────────────────────────────────
