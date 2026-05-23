@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -175,4 +175,56 @@
 }
 .coastline-b {
   background: linear-gradient(90deg, transparent 0%, hsl(var(--primary)) 30%, hsl(var(--accent)) 70%, transparent 100%);
+}
+
+/* ─── Glassmorphism — UI/UX Pro Max ─────────────────────────────── */
+@layer utilities {
+  .glass {
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow:
+      0 1px 2px rgba(14, 42, 71, 0.04),
+      0 4px 8px rgba(14, 42, 71, 0.07),
+      0 16px 28px rgba(14, 42, 71, 0.05);
+  }
+  .dark .glass {
+    background: rgba(9, 21, 38, 0.62);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.30),
+      0 4px 8px rgba(0, 0, 0, 0.35),
+      0 16px 28px rgba(0, 0, 0, 0.22);
+  }
+
+  /* Font alternativa para display / subtítulos */
+  .font-jakarta { font-family: 'Plus Jakarta Sans', 'Manrope', system-ui, sans-serif; }
+}
+
+/* ─── Cursor — todos os elementos interativos ───────────────────── */
+button:not([disabled]),
+[role="button"]:not([disabled]),
+[role="tab"],
+label[for],
+a[href],
+summary {
+  cursor: pointer;
+}
+
+/* ─── Financial Dashboard tokens ────────────────────────────────── */
+:root {
+  --profit:   #16A34A;
+  --loss:     #DC2626;
+  --neutral-fin: #94A3B8;
+}
+
+/* ─── Transições globais consistentes (150-300ms) ───────────────── */
+button, a, [role="button"] {
+  transition-duration: 200ms;
+  transition-timing-function: ease;
+}
+
+/* ─── Melhorias de tabela no mobile ─────────────────────────────── */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }

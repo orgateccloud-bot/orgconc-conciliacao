@@ -30,13 +30,17 @@ try:
 except Exception:
     pass
 
-AUTH_TOKEN = os.environ.get("ORGCONC_AUTH_TOKEN", "").strip()
-CORS_ORIGINS = [
-    o.strip() for o in os.environ.get(
-        "ORGCONC_CORS_ORIGINS",
-        "http://127.0.0.1:8765,http://localhost:8765",
-    ).split(",") if o.strip()
-]
+_IS_PROD_ENV = os.environ.get("ORGCONC_ENV", "").strip().lower() in ("production", "prod")
+
+_cors_raw = os.environ.get("ORGCONC_CORS_ORIGINS", "").strip()
+if not _cors_raw:
+    if _IS_PROD_ENV:
+        raise RuntimeError(
+            "ORGCONC_CORS_ORIGINS obrigatorio em producao. "
+            "Ex: ORGCONC_CORS_ORIGINS=https://app.orgatec.cloud"
+        )
+    _cors_raw = "http://127.0.0.1:8765,http://localhost:8765"
+CORS_ORIGINS = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 MAX_UPLOAD_MB = int(os.environ.get("ORGCONC_MAX_UPLOAD_MB", "10"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 MAX_UPLOAD_TOTAL_MB = int(os.environ.get("ORGCONC_MAX_UPLOAD_TOTAL_MB", "50"))
@@ -50,20 +54,23 @@ else:
     _DB_URL = os.environ.get("DATABASE_URL", "").strip()
 
 
-def _db_ping_sync(timeout_s: int = 3) -> bool:
-    """Verifica conectividade real; evita 500 quando URL existe mas Postgres falha."""
+def _db_ping_sync(timeout_s: int = 10) -> bool:
+    """Verifica conectividade; retry 3x com backoff exponencial."""
     if not _DB_URL or re.search(r"\[.+?\]", _DB_URL):
         return False
     url = _DB_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
-    try:
-        import psycopg2
-
-        with psycopg2.connect(url, connect_timeout=timeout_s) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-        return True
-    except Exception:
-        return False
+    import time
+    for attempt in range(3):
+        try:
+            import psycopg2
+            with psycopg2.connect(url, connect_timeout=timeout_s) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+            return True
+        except Exception:
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    return False
 
 
 DB_DISPONIVEL = _DB_IMPORTS_OK and bool(_DB_URL) and _db_ping_sync()
@@ -98,3 +105,25 @@ _MODELOS_VALIDOS = {
 _PLANOS_VALIDOS = {"basico", "pro", "enterprise"}
 
 log = logging.getLogger("orgconc")
+
+
+def _validate_production_env() -> None:
+    """Levanta RuntimeError se variaveis obrigatorias estiverem ausentes em producao."""
+    if not _IS_PROD_ENV:
+        return
+    missing = []
+    if len(os.environ.get("ORGCONC_JWT_SECRET", "").strip()) < 32:
+        missing.append("ORGCONC_JWT_SECRET (>= 32 chars — gere com: openssl rand -hex 32)")
+    if not os.environ.get("ORGCONC_ADMIN_EMAIL", "").strip():
+        missing.append("ORGCONC_ADMIN_EMAIL")
+    if not os.environ.get("ORGCONC_ADMIN_SENHA_HASH", "").strip():
+        missing.append("ORGCONC_ADMIN_SENHA_HASH")
+    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        missing.append("ANTHROPIC_API_KEY")
+    if missing:
+        raise RuntimeError(
+            "Variaveis obrigatorias em producao ausentes ou fracas:\n"
+            + "\n".join(f"  - {m}" for m in missing)
+        )
+
+_validate_production_env()

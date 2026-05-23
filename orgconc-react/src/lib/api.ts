@@ -150,7 +150,9 @@ export interface ConciliacaoMeta {
 }
 
 export async function listarConciliacoes(clienteId?: string) {
-  const q = clienteId ? `?cliente_id=${clienteId}` : "";
+  const params = new URLSearchParams();
+  if (clienteId) params.set("cliente_id", clienteId);
+  const q = params.toString() ? `?${params}` : "";
   return apiFetch<ConciliacaoMeta[]>(`/conciliacoes${q}`);
 }
 
@@ -180,4 +182,33 @@ export function carregarHistoricoLocal() {
   } catch {
     return [];
   }
+}
+
+export async function atualizarCliente(id: string, data: Partial<Cliente>) {
+  return apiFetch<Cliente>(`/clientes/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function conciliarCsv(
+  files: File[],
+  opts: { simular?: boolean; multi_modelo?: boolean; modelo?: string },
+) {
+  const fd = new FormData();
+  files.forEach((f) => fd.append("arquivos", f));
+  const params = new URLSearchParams();
+  if (opts.simular) params.set("simular", "true");
+  else if (opts.multi_modelo) params.set("multi_modelo", "true");
+  else if (opts.modelo) params.set("modelo", opts.modelo);
+  const q = params.toString() ? `?${params}` : "";
+  return apiFetch<ConciliacaoResponse>(`/conciliar/csv${q}`, { method: "POST", body: fd });
+}
+
+export async function listarConciliacoesDoCliente(clienteId: string) {
+  return apiFetch<ConciliacaoMeta[]>(`/conciliacoes/por-cliente/${clienteId}`);
+}
+
+export async function consultarCpfSerpro(cpf: string) {
+  return apiFetch<{ tipo: string; documento_mascarado: string; dados: Record<string, unknown> }>(
+    "/serpro/cpf",
+    { method: "POST", body: JSON.stringify({ cpf }) },
+  );
 }

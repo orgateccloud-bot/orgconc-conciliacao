@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,16 +9,22 @@ import { toast } from "sonner";
 
 export function LoginPage() {
   const { login } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (senha.length < 8) {
+      toast.error("Senha deve ter pelo menos 8 caracteres");
+      return;
+    }
     setBusy(true);
     try {
       await login(email, senha);
       toast.success("Sessão iniciada");
+      navigate("/conciliacao");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha no login");
     } finally {

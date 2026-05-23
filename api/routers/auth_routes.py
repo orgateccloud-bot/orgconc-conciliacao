@@ -10,6 +10,10 @@ from api.services.auth import current_user, emitir_token, hash_senha, verificar_
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Hash dummy computado uma vez no startup para manter tempo constante no login
+# (evita enumeracao de emails validos por medicao de latencia de bcrypt)
+_DUMMY_HASH = hash_senha("__orgconc_dummy_timing_constant_2026__")
+
 
 @router.post("/login")
 @limiter.limit("10/minute")
@@ -21,9 +25,11 @@ async def auth_login(request: Request, payload: LoginPayload):
             status_code=503,
             detail="Auth nao configurada — defina ORGCONC_ADMIN_EMAIL e ORGCONC_ADMIN_SENHA_HASH no .env",
         )
-    if payload.email.strip().lower() != admin_email:
-        raise HTTPException(status_code=401, detail="Credenciais invalidas")
-    if not verificar_senha(payload.senha, admin_hash):
+    email_ok = payload.email.strip().lower() == admin_email
+    # Sempre roda bcrypt independente do email para evitar timing attack
+    hash_a_usar = admin_hash if email_ok else _DUMMY_HASH
+    senha_ok = verificar_senha(payload.senha, hash_a_usar)
+    if not (email_ok and senha_ok):
         raise HTTPException(status_code=401, detail="Credenciais invalidas")
     token = emitir_token(sub=admin_email, email=admin_email, role="admin")
     return {"access_token": token, "token_type": "bearer"}

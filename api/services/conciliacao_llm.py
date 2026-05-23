@@ -38,7 +38,10 @@ async def chamar_modelo_async(
         }
 
     try:
-        res = await loop.run_in_executor(None, _call)
+        res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90.0)
+    except asyncio.TimeoutError:
+        log.warning("Timeout (90s) chamando modelo %s", model_id)
+        res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": "Timeout na API Claude (90s)"}
     except APIStatusError as e:
         body = getattr(e, "body", None) or {}
         msg = (body.get("error") or {}).get("message") or str(e)

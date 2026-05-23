@@ -7,26 +7,26 @@ interface Props {
   subtitle?: string;
 }
 
-/**
- * HeroCard — padrão capa do deck "Direção Leve":
- * Eyebrow mono + h1 ultra-light Manrope com acento serif italic + lead.
- * Logo Orgatec no canto direito com gradiente brand discreto atrás.
- */
 export function HeroCard({ eyebrow, title, titleAccent, subtitle }: Props) {
   return (
     <section
-      className="relative overflow-hidden rounded-2xl border bg-card px-8 py-12 lg:px-14 lg:py-16 animate-slide-up"
+      className="relative overflow-hidden rounded-2xl border glass px-8 py-10 lg:px-12 lg:py-12 animate-slide-up"
       aria-labelledby="hero-title"
     >
-      {/* Glow sutil de fundo */}
+      {/* Glow sutil direita */}
       <div
-        className="absolute -right-32 -top-32 h-96 w-96 rounded-full blur-3xl opacity-30 pointer-events-none"
-        style={{ background: "radial-gradient(circle, #5BA9D6 0%, transparent 70%)" }}
+        className="absolute -right-28 -top-28 h-80 w-80 rounded-full blur-3xl opacity-25 pointer-events-none"
+        style={{ background: "radial-gradient(circle, #5BA9D6 0%, transparent 65%)" }}
+        aria-hidden="true"
+      />
+      {/* Linha de costa inferior */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-px opacity-40 pointer-events-none coastline-b"
         aria-hidden="true"
       />
 
-      <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-12 items-center">
-        <div className="space-y-4">
+      <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-10 items-center">
+        <div className="space-y-3">
           {eyebrow && (
             <div className="eyebrow">{eyebrow}</div>
           )}
@@ -39,17 +39,23 @@ export function HeroCard({ eyebrow, title, titleAccent, subtitle }: Props) {
               {subtitle}
             </p>
           )}
-          <div className="flex items-center gap-3 pt-3">
+          <div className="flex items-center gap-3 pt-2">
             <span className="deck-caption">Folha I</span>
-            <span className="h-px flex-1 max-w-[140px] bg-border" />
+            <span className="h-px flex-1 max-w-[120px] bg-border" />
             <span className="deck-caption">Anno MMXXVI · v0.5.0</span>
           </div>
         </div>
 
-        {/* Logo no canto direito */}
+        {/* Logo */}
         <div className="hidden lg:flex items-center justify-center shrink-0">
-          <div className="relative h-32 w-32 rounded-2xl bg-brand-gradient p-5 shadow-xl flex items-center justify-center">
-            <Logo size={88} />
+          <div className="relative h-28 w-28 rounded-2xl bg-brand-gradient p-4 shadow-xl flex items-center justify-center">
+            {/* Brilho no canto superior direito */}
+            <div
+              className="absolute top-2 right-2 h-8 w-8 rounded-full blur-md opacity-40"
+              style={{ background: "rgba(255,255,255,0.5)" }}
+              aria-hidden="true"
+            />
+            <Logo size={80} />
           </div>
         </div>
       </div>

@@ -302,23 +302,9 @@ def test_frontend_tem_card_haiku():
     assert "repeat(4, 1fr)" in html
 
 
-def test_conciliar_csv_exige_auth_quando_token_definido():
-    """/conciliar/csv NAO pode ser publico quando legacy token existe."""
-    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", "segredo-de-teste"):
-        r = client.post(
-            "/conciliar/csv",
-            files=[
-                ("extrato", ("e.csv", b"data,valor\n2026-01-01,100", "text/csv")),
-                ("razao",   ("r.csv", b"data,valor\n2026-01-01,100", "text/csv")),
-            ],
-        )
-    assert r.status_code == 401, f"Esperado 401, recebido {r.status_code}: {r.text[:200]}"
-
-
 def test_producao_exige_bearer_sem_header():
     """Em ORGCONC_ENV=production endpoints protegidos retornam 401 sem Authorization."""
-    with patch("api.services.auth._IS_PROD", True), \
-         patch("api.services.auth._LEGACY_SERVICE_TOKEN", ""):
+    with patch("api.services.auth._IS_PROD", True):
         for path, kwargs in [
             ("/conciliar/ofx?simular=true", {
                 "files": [("arquivos", ("t.ofx", OFX_SAMPLE, "application/x-ofx"))],
@@ -330,12 +316,13 @@ def test_producao_exige_bearer_sem_header():
             assert r.status_code == 401, f"{path}: {r.status_code}"
 
 
-def test_producao_legacy_token_ainda_funciona():
-    """Token legacy ORGCONC_AUTH_TOKEN aceito em producao via current_user."""
+def test_producao_jwt_funciona_sem_legado():
+    """JWT valido aceito em producao mesmo sem token legado configurado."""
+    from api.services.auth import emitir_token
+    token = emitir_token(sub="admin@orgconc.com", email="admin@orgconc.com", role="admin")
     with patch("api.services.auth._IS_PROD", True), \
-         patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-prod-token"), \
          patch("api.routers.clientes.DB_DISPONIVEL", False):
-        r = client.get("/clientes", headers={"Authorization": "Bearer legacy-prod-token"})
+        r = client.get("/clientes", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 503
 
 
@@ -360,8 +347,8 @@ def test_persistencia_retorna_error_quando_bd_falha():
     import asyncio
     from api.main import _salvar_no_banco
 
-    with patch("api.services.persistencia.DB_DISPONIVEL", True), \
-         patch("api.services.persistencia.SessionLocal", side_effect=RuntimeError("conexao recusada")):
+    with patch("api.services.db_persistence.DB_DISPONIVEL", True), \
+         patch("api.services.db_persistence.SessionLocal", side_effect=RuntimeError("conexao recusada")):
         resultado = asyncio.run(
             _salvar_no_banco("teste-rid", [], [], "simulacao_local")
         )
@@ -433,28 +420,18 @@ def test_auth_login_sucesso_emite_jwt():
     assert payload.role == "admin"
 
 
-def test_auth_me_exige_token():
-    """/auth/me sem token retorna 401 quando LEGACY_SERVICE_TOKEN configurado."""
-    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-test-token"):
+def test_auth_me_exige_token_em_producao():
+    """/auth/me sem token retorna 401 em producao."""
+    with patch("api.services.auth._IS_PROD", True):
         r = client.get("/auth/me")
     assert r.status_code == 401
-
-
-def test_auth_me_com_token_legacy_funciona():
-    """Token legacy compartilhado deve funcionar via /auth/me."""
-    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-test-token"):
-        r = client.get("/auth/me", headers={"Authorization": "Bearer legacy-test-token"})
-    assert r.status_code == 200
-    j = r.json()
-    assert j["role"] == "service"
 
 
 def test_auth_me_com_jwt_funciona():
     """JWT valido emitido por emitir_token deve passar pelo current_user."""
     from api.services.auth import emitir_token
     token = emitir_token(sub="teste@x.com", email="teste@x.com", role="admin")
-    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", "qualquer-coisa"):
-        r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
     assert r.json()["email"] == "teste@x.com"
 

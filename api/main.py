@@ -50,11 +50,11 @@ from api.parsers import (  # noqa: F401
     _parse_xml,
 )
 from api.services.excel import _gerar_xlsx  # noqa: F401
-from api.services.persistencia import (  # noqa: F401
+from api.services.db_persistence import salvar_no_banco as _salvar_no_banco  # noqa: F401
+from api.services.render import render_html as _render_html  # noqa: F401
+from api.services.storage import (  # noqa: F401
     carregar_dataset as _carregar_dataset,
-    render_html as _render_html,
     salvar_dataset as _salvar_dataset,
-    salvar_no_banco as _salvar_no_banco,
 )
 
 configurar_logging(nivel=_LOG_LEVEL, json_mode=_LOG_JSON)

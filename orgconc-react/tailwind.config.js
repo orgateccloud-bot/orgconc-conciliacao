@@ -57,6 +57,10 @@ module.exports = {
         success: "#16A34A",
         warning: "#D97706",
         danger:  "#DC2626",
+        // Financial Dashboard tokens — UI/UX Pro Max
+        profit:  "#16A34A",
+        loss:    "#DC2626",
+        "neutral-fin": "#94A3B8",
       },
       backgroundImage: {
         "brand-gradient":      "linear-gradient(135deg, #1A3A6B 0%, #5BA9D6 100%)",
@@ -70,9 +74,10 @@ module.exports = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans:  ["Manrope", "system-ui", "-apple-system", "sans-serif"],
-        serif: ["Instrument Serif", "Georgia", "serif"],
-        mono:  ["JetBrains Mono", "ui-monospace", "monospace"],
+        sans:    ["Manrope", "system-ui", "-apple-system", "sans-serif"],
+        jakarta: ["Plus Jakarta Sans", "Manrope", "system-ui", "sans-serif"],
+        serif:   ["Instrument Serif", "Georgia", "serif"],
+        mono:    ["JetBrains Mono", "ui-monospace", "monospace"],
       },
       boxShadow: {
         xs: "0 1px 2px rgba(15,23,42,.05)",
