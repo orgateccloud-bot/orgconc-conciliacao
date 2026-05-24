@@ -20,7 +20,7 @@ from typing import Optional
 
 import bcrypt as _bcrypt
 import jwt
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 
 log = logging.getLogger("orgconc.auth")
@@ -114,18 +114,23 @@ def decodificar_token(token: str) -> TokenPayload:
 
 # ── Dependency FastAPI ──────────────────────────────────────────────────────
 
-def auth_optional(authorization: Optional[str] = Header(None)) -> Optional[TokenPayload]:
-    """Auth opcional. Retorna None se nao houver header. Levanta 401 se invalido.
+def auth_optional(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+) -> Optional[TokenPayload]:
+    """Auth opcional via Bearer header ou cookie httpOnly.
 
-    Usado em endpoints publicos que podem se beneficiar de saber quem chamou
-    (ex: /health expoe banco_dados=ok mesmo sem auth).
+    Retorna None se nao houver credencial. Levanta 401 se credencial invalida.
     """
-    if not authorization:
-        return None
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Use 'Bearer <token>'")
-    token = authorization.split(" ", 1)[1].strip()
-    return decodificar_token(token)
+    if authorization:
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Use 'Bearer <token>'")
+        token = authorization.split(" ", 1)[1].strip()
+        return decodificar_token(token)
+    cookie_token = request.cookies.get("orgconc_token")
+    if cookie_token:
+        return decodificar_token(cookie_token)
+    return None
 
 
 def current_user(

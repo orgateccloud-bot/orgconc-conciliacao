@@ -395,8 +395,8 @@ def test_auth_login_credenciais_invalidas_retorna_401():
         "ORGCONC_ADMIN_EMAIL": "admin@orgconc.com",
         "ORGCONC_ADMIN_SENHA_HASH": hash_valido,
     }):
-        r1 = client.post("/auth/login", json={"email": "outro@x.com", "senha": "qualquer"})
-        r2 = client.post("/auth/login", json={"email": "admin@orgconc.com", "senha": "errada"})
+        r1 = client.post("/auth/login", json={"email": "outro@x.com", "senha": "qualquer1"})
+        r2 = client.post("/auth/login", json={"email": "admin@orgconc.com", "senha": "errada!!x"})
     assert r1.status_code == 401
     assert r2.status_code == 401
     assert r1.json()["detail"] == r2.json()["detail"]  # anti-enumeration
@@ -421,9 +421,9 @@ def test_auth_login_sucesso_emite_jwt():
 
 
 def test_auth_me_exige_token_em_producao():
-    """/auth/me sem token retorna 401 em producao."""
+    """/auth/me sem token retorna 401 em producao (usa cliente isolado — sem cookies de sessao)."""
     with patch("api.services.auth._IS_PROD", True):
-        r = client.get("/auth/me")
+        r = TestClient(app).get("/auth/me")
     assert r.status_code == 401
 
 
@@ -457,7 +457,7 @@ def test_csp_script_src_sem_unsafe_inline():
     script_src = parts[0]
     assert "'unsafe-inline'" not in script_src, f"script-src contem unsafe-inline: {script_src}"
     assert "'self'" in script_src
-    assert "cdn.jsdelivr.net" in script_src
+    assert "cdn.jsdelivr.net" not in script_src, "CDN externo nao deve estar em script-src (risco de supply-chain)"
 
 
 # ── Frontend: JS extraido + a11y ──────────────────────────────────────────

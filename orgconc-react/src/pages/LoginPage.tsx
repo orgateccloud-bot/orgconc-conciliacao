@@ -222,6 +222,7 @@ export function LoginPage() {
                   type="email"
                   placeholder="seu.nome@empresa.com"
                   autoComplete="email"
+                  maxLength={254}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -235,6 +236,7 @@ export function LoginPage() {
                   type={showPw ? "text" : "password"}
                   placeholder="••••••••••••"
                   autoComplete="current-password"
+                  maxLength={128}
                   value={senha}
                   onChange={(e) => setSenha(e.target.value)}
                   required

@@ -53,8 +53,8 @@ class ClienteUpdate(BaseModel):
 
 
 class LoginPayload(BaseModel):
-    email: str
-    senha: str
+    email: str = Field(max_length=254)
+    senha: str = Field(min_length=8, max_length=128)
 
 
 class ConsultaCPFRequest(BaseModel):
