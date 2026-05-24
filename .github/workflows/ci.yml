@@ -71,10 +71,12 @@ jobs:
   security:
     name: Security scan
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python 3.12
         uses: actions/setup-python@v5
@@ -85,7 +87,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pip-audit bandit
+          pip install pip-audit bandit semgrep
 
       - name: pip-audit (vulnerabilidades em dependencias)
         run: pip-audit -r requirements.txt
@@ -93,13 +95,32 @@ jobs:
       - name: bandit (analise estatica de seguranca)
         run: bandit -r api/ -ll
 
+      - name: semgrep SAST
+        run: semgrep --config=auto api/ --error --quiet || true
+
       - name: Verificar se nao ha credenciais hardcoded
         run: |
           ! grep -rE "(sk-ant-[a-zA-Z0-9_-]{20,})" --include="*.py" --include="*.html" --include="*.md" . || \
             (echo "ERRO: chave Anthropic encontrada no codigo!" && exit 1)
 
+      - name: Verificar .env nao commitado
+        run: |
+          if git ls-files | grep -E "^\.env$"; then
+            echo "ERRO: .env esta tracked no git!"
+            exit 1
+          fi
+
+      - name: Trivy — varredura de seguranca de filesystem
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "HIGH,CRITICAL"
+          exit-code: "0"
+          format: "table"
+
   frontend:
-    name: React build
+    name: React build + audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -114,6 +135,12 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: TypeScript type check
+        working-directory: orgconc-react
+        run: npx tsc --noEmit
+      - name: npm audit (vulnerabilidades high+critical)
+        working-directory: orgconc-react
+        run: npm audit --audit-level=high
 
   e2e:
     name: Playwright E2E

@@ -11,10 +11,29 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import re
 import sys
 import time
 import uuid
 from typing import Any
+
+# ── PII masking ──────────────────────────────────────────────────────────────
+
+_CPF_RE = re.compile(r'\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b')
+_CNPJ_RE = re.compile(r'\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b')
+_EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
+_IP_LAST_RE = re.compile(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.)\d{1,3}\b')
+
+
+def mask_pii(text: str) -> str:
+    """Mascara CPF, CNPJ, email e ultimo octeto de IP em strings de log."""
+    if not isinstance(text, str):
+        return text
+    text = _CPF_RE.sub('***.***.***-**', text)
+    text = _CNPJ_RE.sub('**.***.***/****.--', text)
+    text = _EMAIL_RE.sub(lambda m: m.group()[0] + '***@' + m.group().split('@')[1], text)
+    text = _IP_LAST_RE.sub(r'\g<1>0', text)
+    return text
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -44,7 +63,7 @@ class JsonFormatter(logging.Formatter):
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)),
             "lvl": record.levelname,
             "logger": record.name,
-            "msg": record.getMessage(),
+            "msg": mask_pii(record.getMessage()),
             "request_id": request_id_var.get(),
         }
         if record.exc_info:
@@ -52,11 +71,12 @@ class JsonFormatter(logging.Formatter):
         # Campos extras (passados via log.info("...", extra={"chave": valor}))
         for k, v in record.__dict__.items():
             if k not in self._RESERVADOS and not k.startswith("_"):
+                safe_v = mask_pii(str(v)) if isinstance(v, str) else v
                 try:
-                    json.dumps(v)
-                    payload[k] = v
+                    json.dumps(safe_v)
+                    payload[k] = safe_v
                 except TypeError:
-                    payload[k] = repr(v)
+                    payload[k] = repr(safe_v)
         return json.dumps(payload, ensure_ascii=False)
 
 

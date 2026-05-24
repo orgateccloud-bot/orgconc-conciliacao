@@ -13,6 +13,17 @@ export function setToken(token: string | null) {
   else sessionStorage.removeItem(TOKEN_KEY);
 }
 
+export async function apiLogout(): Promise<void> {
+  try {
+    await fetch("/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    });
+  } finally {
+    setToken(null);
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -33,7 +44,7 @@ export async function apiFetch<T>(
   if (init.body && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  const res = await fetch(path, { ...init, headers });
+  const res = await fetch(path, { ...init, headers, credentials: "include" });
   if (res.status === 401) {
     setToken(null);
     window.dispatchEvent(new Event("orgconc:logout"));
