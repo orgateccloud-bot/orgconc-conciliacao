@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from api.core.rate_limit import limiter
 from api.schemas import LoginPayload
@@ -10,14 +10,29 @@ from api.services.auth import current_user, emitir_token, hash_senha, verificar_
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Hash dummy computado uma vez no startup para manter tempo constante no login
-# (evita enumeracao de emails validos por medicao de latencia de bcrypt)
 _DUMMY_HASH = hash_senha("__orgconc_dummy_timing_constant_2026__")
+
+_COOKIE_NAME = "orgconc_token"
+_COOKIE_TTL = int(os.environ.get("ORGCONC_JWT_TTL_MIN", "120")) * 60
+_IS_HTTPS = os.environ.get("ORGCONC_ENV", "").strip().lower() in ("production", "prod") or \
+            os.environ.get("ORGCONC_HTTPS_ENABLED", "").strip().lower() in ("1", "true", "yes")
+
+
+def _set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=_IS_HTTPS,
+        samesite="strict",
+        path="/",
+        max_age=_COOKIE_TTL,
+    )
 
 
 @router.post("/login")
 @limiter.limit("10/minute")
-async def auth_login(request: Request, payload: LoginPayload):
+async def auth_login(request: Request, response: Response, payload: LoginPayload):
     admin_email = os.environ.get("ORGCONC_ADMIN_EMAIL", "").strip().lower()
     admin_hash = os.environ.get("ORGCONC_ADMIN_SENHA_HASH", "").strip()
     if not admin_email or not admin_hash:
@@ -26,13 +41,19 @@ async def auth_login(request: Request, payload: LoginPayload):
             detail="Auth nao configurada — defina ORGCONC_ADMIN_EMAIL e ORGCONC_ADMIN_SENHA_HASH no .env",
         )
     email_ok = payload.email.strip().lower() == admin_email
-    # Sempre roda bcrypt independente do email para evitar timing attack
     hash_a_usar = admin_hash if email_ok else _DUMMY_HASH
     senha_ok = verificar_senha(payload.senha, hash_a_usar)
     if not (email_ok and senha_ok):
         raise HTTPException(status_code=401, detail="Credenciais invalidas")
     token = emitir_token(sub=admin_email, email=admin_email, role="admin")
+    _set_auth_cookie(response, token)
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.post("/logout")
+async def auth_logout(response: Response):
+    response.delete_cookie(key=_COOKIE_NAME, path="/", samesite="strict")
+    return {"detail": "Sessao encerrada"}
 
 
 @router.get("/me")

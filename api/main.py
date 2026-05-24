@@ -59,9 +59,12 @@ from api.services.storage import (  # noqa: F401
 
 configurar_logging(nivel=_LOG_LEVEL, json_mode=_LOG_JSON)
 
+_IS_HTTPS = os.environ.get("ORGCONC_ENV", "").strip().lower() in ("production", "prod") or \
+            os.environ.get("ORGCONC_HTTPS_ENABLED", "").strip().lower() in ("1", "true", "yes")
+
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' cdn.jsdelivr.net cdnjs.cloudflare.com; "
+    "script-src 'self'; "
     "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
     "font-src 'self' fonts.gstatic.com; "
     "img-src 'self' data:; "
@@ -73,6 +76,8 @@ _CSP = (
     "upgrade-insecure-requests"
 )
 
+_HSTS = "max-age=31536000; includeSubDomains; preload"
+
 
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
@@ -82,6 +87,12 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        response.headers["X-XSS-Protection"] = "0"
+        if _IS_HTTPS:
+            response.headers["Strict-Transport-Security"] = _HSTS
         return response
 
 

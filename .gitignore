@@ -1,14 +1,21 @@
-# Secrets
+# Secrets — nunca commitar
 .env
+.env.*
+!.env.example
 *.key
 *.pem
+*.p12
+*.pfx
+secrets.json
+credentials.json
+service-account*.json
 
 # Dados persistidos (datasets temporários)
 data/
 tests/_data_test/
 
-# Configurações locais do Claude Code
-.claude/settings.local.json
+# Claude Code — apenas settings locais, nunca worktrees/cache
+.claude/
 
 # Dados bancários reais (não publicar)
 *.ofx
