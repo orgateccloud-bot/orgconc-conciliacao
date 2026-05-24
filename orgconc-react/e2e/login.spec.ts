@@ -6,14 +6,14 @@ test.describe("Pagina de login", () => {
           await page.goto("/app/login");
           await expect(page.getByRole("heading")).toContainText("ORGATEC");
           await expect(page.getByLabel("E-mail")).toBeVisible();
-          await expect(page.getByLabel("Senha")).toBeVisible();
+          await expect(page.locator("#lp-senha")).toBeVisible();
           await expect(page.getByRole("button", { name: "Entrar" })).toBeVisible();
     });
 
                 test("bloqueia submit com senha curta", async ({ page }) => {
                       await page.goto("/app/login");
                       await page.getByLabel("E-mail").fill("admin@test.com");
-                      await page.getByLabel("Senha").fill("123");
+                      await page.locator("#lp-senha").fill("123");
                       await page.getByRole("button", { name: "Entrar" }).click();
                       await expect(page.getByText(/pelo menos 8/i)).toBeVisible();
                 });
