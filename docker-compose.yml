@@ -1,0 +1,64 @@
+version: '3.8'
+
+# Orgconc — Conciliacao Bancaria
+# Uso interno com Supabase como banco de dados
+# Para iniciar: docker compose up -d
+# Para parar:   docker compose down
+
+services:
+
+  # Backend FastAPI
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orgconc-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Supabase (banco de dados na nuvem)
+      SUPABASE_URL: https://cmnbmckwvkfexfkegxsf.supabase.co
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      # Autenticacao JWT
+      JWT_SECRET: ${JWT_SECRET:-orgconc-jwt-secret-interno-2026}
+      ORGCONC_AUTH_TOKEN: ${ORGCONC_AUTH_TOKEN:-orgconc-token-interno}
+      # API Anthropic (opcional - para analise com IA)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Configuracoes do servidor
+      HOST: 0.0.0.0
+      PORT: 8000
+      WORKERS: 2
+      ORGCONC_LOG_LEVEL: INFO
+      ORGCONC_LOG_JSON: "false"
+      ORGCONC_MAX_UPLOAD_MB: 50
+      ORGCONC_MAX_UPLOAD_TOTAL_MB: 500
+      ORGCONC_DATA_DIR: /app/data
+      # CORS - permitir acesso do frontend local e GitHub Pages
+      ORGCONC_CORS_ORIGINS: "http://localhost,http://localhost:3000,http://127.0.0.1,https://orgateccloud-bot.github.io"
+    volumes:
+      - orgconc_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Frontend estatico (opcional - serve os HTMLs localmente)
+  frontend:
+    image: nginx:alpine
+    container_name: orgconc-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
+volumes:
+  orgconc_data:
+    driver: local
