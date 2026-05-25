@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# Orgconc — Script de Inicializacao para Uso Interno
+# Orgconc - Script de Inicializacao para Uso Interno
 # ============================================================
 # Uso: bash start.sh
 # Requer: Docker Desktop instalado
@@ -9,61 +9,74 @@
 set -e
 
 echo ""
-echo "  ██████╗ ██████╗  ██████╗  ██████╗ ███╗   ██╗ ██████╗"
-echo " ██╔═══██╗██╔══██╗██╔════╝ ██╔════╝ ████╗  ██║██╔════╝"
-echo " ██║   ██║██████╔╝██║  ███╗██║      ██╔██╗ ██║██║     "
-echo " ██║   ██║██╔══██╗██║   ██║██║      ██║╚██╗██║██║     "
-echo " ╚██████╔╝██║  ██║╚██████╔╝╚██████╗ ██║ ╚████║╚██████╗"
-echo "  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝"
-echo ""
-echo " Conciliacao Bancaria Inteligente — ORGATEC v0.9.0"
+echo "  ╔═══════════════════════════════════════╗"
+echo "  ║   ORGCONC - Conciliacao Bancaria      ║"
+echo "  ║   ORGATEC v0.9.0 - Uso Interno        ║"
+echo "  ╚═══════════════════════════════════════╝"
 echo ""
 
 # Verificar Docker
 if ! command -v docker &> /dev/null; then
     echo "❌ Docker nao encontrado. Instale Docker Desktop:"
-    echo "   https://www.docker.com/products/docker-desktop"
-    exit 1
-fi
+        echo "   https://www.docker.com/products/docker-desktop"
+            exit 1
+            fi
 
-# Criar arquivo .env se nao existir
-if [ ! -f .env ]; then
-    echo "📋 Criando arquivo .env com credenciais do Supabase..."
-    cat > .env << 'EOF'
-# Supabase — Banco de dados (ja configurado)
-SUPABASE_URL=https://cmnbmckwvkfexfkegxsf.supabase.co
-SUPABASE_ANON_KEY=PREENCHER_COM_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY=PREENCHER_COM_SERVICE_ROLE_KEY
+            echo "✅ Docker encontrado: $(docker --version)"
 
-# Autenticacao
-JWT_SECRET=orgconc-jwt-secret-interno-2026-mudar-em-producao
-ORGCONC_AUTH_TOKEN=orgconc-token-interno-2026
+            # Criar arquivo .env se nao existir
+            if [ ! -f .env ]; then
+                echo ""
+                    echo "📋 Criando arquivo .env..."
+                        cp .env.example .env
+                            echo ""
+                                echo "⚠️  IMPORTANTE: Preencha as keys do Supabase no arquivo .env"
+                                    echo ""
+                                        echo "   As keys estao em:"
+                                            echo "   https://supabase.com/dashboard/project/cmnbmckwvkfexfkegxsf/settings/api-keys/legacy"
+                                                echo ""
+                                                    echo "   Edite o .env e substitua:"
+                                                        echo "   SUPABASE_ANON_KEY=PREENCHER_COM_ANON_KEY"
+                                                            echo "   SUPABASE_SERVICE_ROLE_KEY=PREENCHER_COM_SERVICE_ROLE_KEY"
+                                                                echo ""
+                                                                    read -p "   Pressione ENTER apos editar o .env para continuar..."
+                                                                    fi
 
-# Configuracoes
-ORGCONC_CORS_ORIGINS=http://localhost,http://localhost:80,http://127.0.0.1
-EOF
-    echo ""
-    echo "⚠️  IMPORTANTE: Edite o arquivo .env e preencha:"
-    echo "   - SUPABASE_ANON_KEY"
-    echo "   - SUPABASE_SERVICE_ROLE_KEY"
-    echo ""
-    echo "   Encontre as chaves em:"
-    echo "   https://supabase.com/dashboard/project/cmnbmckwvkfexfkegxsf/settings/api-keys/legacy"
-    echo ""
-    read -p "Pressione ENTER apos editar o .env para continuar..."
-fi
+                                                                    # Verifica se as keys foram preenchidas
+                                                                    if grep -q "PREENCHER_COM" .env 2>/dev/null; then
+                                                                        echo ""
+                                                                            echo "❌ ERRO: As keys do Supabase nao foram preenchidas no .env"
+                                                                                echo "   Edite o arquivo .env e preencha SUPABASE_ANON_KEY e SUPABASE_SERVICE_ROLE_KEY"
+                                                                                    echo ""
+                                                                                        exit 1
+                                                                                        fi
 
-echo "🐳 Iniciando Orgconc com Docker Compose..."
-docker compose up -d --build
+                                                                                        echo ""
+                                                                                        echo "🐳 Iniciando Orgconc com Docker Compose..."
+                                                                                        docker compose up -d --build
 
-echo ""
-echo "✅ Orgconc iniciado com sucesso!"
-echo ""
-echo "  📊 Dashboard:  http://localhost/frontend/dashboard_trust.html"
-echo "  🔐 Login:      http://localhost/frontend/login.html"
-echo "  🔌 API:        http://localhost:8000"
-echo "  ❤️  Health:     http://localhost:8000/health"
-echo ""
-echo "  Para parar: docker compose down"
-echo "  Para logs:  docker compose logs -f"
-echo ""
+                                                                                        echo ""
+                                                                                        echo "⏳ Aguardando servicos iniciarem (10s)..."
+                                                                                        sleep 10
+
+                                                                                        # Verifica health
+                                                                                        if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                                                                                            echo "✅ API Backend: ONLINE"
+                                                                                            else
+                                                                                                echo "⚠️  API Backend: ainda iniciando... aguarde alguns segundos e acesse o dashboard"
+                                                                                                fi
+
+                                                                                                echo ""
+                                                                                                echo "╔══════════════════════════════════════════════════════╗"
+                                                                                                echo "║              ORGCONC INICIADO!                       ║"
+                                                                                                echo "╠══════════════════════════════════════════════════════╣"
+                                                                                                echo "║  🌐 Login:     http://localhost/frontend/login.html  ║"
+                                                                                                echo "║  📊 Dashboard: http://localhost/frontend/            ║"
+                                                                                                echo "║  🔌 API:       http://localhost:8000                 ║"
+                                                                                                echo "║  📖 API Docs:  http://localhost:8000/docs            ║"
+                                                                                                echo "║  ❤️  Health:    http://localhost:8000/health          ║"
+                                                                                                echo "╠══════════════════════════════════════════════════════╣"
+                                                                                                echo "║  Para parar:   docker compose down                   ║"
+                                                                                                echo "║  Para logs:    docker compose logs -f                ║"
+                                                                                                echo "╚══════════════════════════════════════════════════════╝"
+                                                                                                echo ""
