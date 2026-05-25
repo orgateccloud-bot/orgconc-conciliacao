@@ -38,6 +38,7 @@ if ! command -v docker &> /dev/null; then
                                                     echo "   Edite o .env e substitua:"
                                                         echo "   SUPABASE_ANON_KEY=PREENCHER_COM_ANON_KEY"
                                                             echo "   SUPABASE_SERVICE_ROLE_KEY=PREENCHER_COM_SERVICE_ROLE_KEY"
+                                                            echo "   DATABASE_URL=PREENCHER_COM_DB_PASSWORD (Settings->Database->Connection string)"
                                                                 echo ""
                                                                     read -p "   Pressione ENTER apos editar o .env para continuar..."
                                                                     fi
@@ -46,7 +47,7 @@ if ! command -v docker &> /dev/null; then
                                                                     if grep -q "PREENCHER_COM" .env 2>/dev/null; then
                                                                         echo ""
                                                                             echo "❌ ERRO: As keys do Supabase nao foram preenchidas no .env"
-                                                                                echo "   Edite o arquivo .env e preencha SUPABASE_ANON_KEY e SUPABASE_SERVICE_ROLE_KEY"
+                                                                                echo "   Edite o arquivo .env e preencha SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY e DATABASE_URL"
                                                                                     echo ""
                                                                                         exit 1
                                                                                         fi
