@@ -1,22 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  carregarHistoricoLocal,
+  ApiError,
+  fetchActivityFeed,
+  fetchAiInsights,
+  fetchAuditTimeline,
+  fetchDashboardBundle,
+  fetchPerformanceModelos,
+  fetchTransacoesRecentes,
+  fetchTrustScore,
   listarClientes,
-  listarConciliacoes,
+  type ActivityFeedItem,
+  type AiInsightsResponse,
+  type AuditTimelineResponse,
   type Cliente,
-  type ConciliacaoMeta,
+  type DashboardBundle,
+  type ModeloPerf,
+  type TransacaoRecente,
+  type TrustScore,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -26,18 +28,23 @@ import {
   AlertTriangle,
   TrendingUp,
   Plus,
-  ArrowRight,
   LineChart as LineChartIcon,
-  Download,
-  Sparkles,
+  DollarSign,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-const MODO_LABEL: Record<string, string> = {
-  simulacao_local: "Sim.",
-  claude_llm: "Claude",
-  multi_modelo: "Multi",
-};
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { RightSidebar } from "@/components/dashboard/RightSidebar";
+import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
+import { KpiCard } from "@/components/dashboard/KpiCard";
+import { TrendChart } from "@/components/dashboard/TrendChart";
+import { DistribuicaoChart } from "@/components/dashboard/DistribuicaoChart";
+import { Heatmap } from "@/components/dashboard/Heatmap";
+import { TransacoesRecentes } from "@/components/dashboard/TransacoesRecentes";
+import { SecurityRing } from "@/components/dashboard/SecurityRing";
+import { TrustGrid } from "@/components/dashboard/TrustGrid";
+import { ComplianceBadges } from "@/components/dashboard/ComplianceBadges";
+import { AuditTimeline } from "@/components/dashboard/AuditTimeline";
+import { AIInsightsPanel } from "@/components/dashboard/AIInsightsPanel";
+import { PerformanceModelos } from "@/components/dashboard/PerformanceModelos";
 
 const DATA_EXTENSO = new Date().toLocaleDateString("pt-BR", {
   weekday: "long",
@@ -46,390 +53,242 @@ const DATA_EXTENSO = new Date().toLocaleDateString("pt-BR", {
   year: "numeric",
 });
 
+const FORMATADOR_BRL_COMPACTO = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
 export function DashboardPage() {
   const { user } = useAuth();
-  const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [dbRows, setDbRows] = useState<ConciliacaoMeta[]>([]);
-  const local = useMemo(() => carregarHistoricoLocal(), []);
   const navigate = useNavigate();
+  const [bundle, setBundle] = useState<DashboardBundle | null>(null);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [transacoes, setTransacoes] = useState<TransacaoRecente[]>([]);
+  const [trust, setTrust] = useState<TrustScore | null>(null);
+  const [auditTimeline, setAuditTimeline] = useState<AuditTimelineResponse | null>(null);
+  const [activity, setActivity] = useState<ActivityFeedItem[]>([]);
+  const [modelos, setModelos] = useState<ModeloPerf[]>([]);
+  const [insights, setInsights] = useState<AiInsightsResponse | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [backendOffline, setBackendOffline] = useState(false);
 
   useEffect(() => {
-    listarClientes().then(setClientes).catch(() => {});
-    listarConciliacoes().then(setDbRows).catch(() => {});
+    let cancelled = false;
+    setLoading(true);
+
+    Promise.all([
+      fetchDashboardBundle(30).catch((e) => {
+        if (e instanceof ApiError && e.status === 503) {
+          if (!cancelled) setBackendOffline(true);
+          return null;
+        }
+        if (!cancelled) toast.error("Falha ao carregar métricas", { description: e?.message });
+        return null;
+      }),
+      fetchTransacoesRecentes(8).catch(() => [] as TransacaoRecente[]),
+      listarClientes().catch(() => [] as Cliente[]),
+      fetchTrustScore(30).catch(() => null),
+      fetchAuditTimeline(10).catch(() => null),
+      fetchActivityFeed(8).catch(() => [] as ActivityFeedItem[]),
+      fetchPerformanceModelos(30).catch(() => [] as ModeloPerf[]),
+      fetchAiInsights(30, false).catch(() => null),
+    ]).then(([b, tx, cs, ts, at, act, mods, ai]) => {
+      if (cancelled) return;
+      setBundle(b);
+      setTransacoes(tx ?? []);
+      setClientes(cs ?? []);
+      setTrust(ts);
+      setAuditTimeline(at);
+      setActivity(act ?? []);
+      setModelos(mods ?? []);
+      setInsights(ai);
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const rows = useMemo<ConciliacaoMeta[]>(() => {
-    if (dbRows.length) return dbRows;
-    return local.map(
-      (r: { id: string; modo: string; ts: string; total_tx: number; total_anom: number }) => ({
-        report_id: r.id,
-        modo: r.modo,
-        total_transacoes: r.total_tx,
-        total_anomalias: r.total_anom,
-        criado_em: r.ts,
-        exports: {
-          html: `/export/html/${r.id}`,
-          xlsx: `/export/xlsx/${r.id}`,
-          pdf: `/export/pdf/${r.id}`,
-        },
-      })
-    );
-  }, [dbRows, local]);
-
-  const totalTx = rows.reduce((s, r) => s + r.total_transacoes, 0);
-  const totalAnom = rows.reduce((s, r) => s + r.total_anomalias, 0);
   const clientesAtivos = clientes.filter((c) => c.ativo !== false).length;
-  const taxaAnom = totalTx > 0 ? ((totalAnom / totalTx) * 100).toFixed(1) : null;
-
-  const modoData = useMemo(() => {
-    const byModo: Record<string, number> = {};
-    rows.forEach((r) => { byModo[r.modo] = (byModo[r.modo] || 0) + 1; });
-    return Object.entries(byModo).map(([modo, qtd]) => ({
-      modo: MODO_LABEL[modo] ?? modo,
-      qtd,
-    }));
-  }, [rows]);
-
-  const trendData = useMemo(() => {
-    return rows.slice(-8).map((r) => ({
-      data: new Date(r.criado_em).toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-      }),
-      anomalias: r.total_anomalias,
-      transacoes: r.total_transacoes,
-    }));
-  }, [rows]);
-
   const primeiroNome = user?.email?.split("@")[0] ?? user?.sub ?? "usuário";
 
-  return (
+  async function refreshInsights() {
+    setInsightsLoading(true);
+    try {
+      const novo = await fetchAiInsights(30, true);
+      setInsights(novo);
+      toast.success("Insights atualizados");
+    } catch (e) {
+      toast.error("Falha ao gerar insights", { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setInsightsLoading(false);
+    }
+  }
+
+  const valoresKpi = useMemo(() => {
+    if (!bundle) return null;
+    const k = bundle.kpis;
+    return {
+      conciliacoes: k.conciliacoes,
+      transacoes: k.transacoes,
+      anomalias: k.anomalias,
+      volume: k.volume_total,
+      taxa: k.taxa_anomalias_pct,
+      delta: k.delta,
+    };
+  }, [bundle]);
+
+  const mainContent = loading ? (
+    <DashboardSkeleton />
+  ) : (
     <div className="space-y-6 animate-fade-in">
+      <HeroBanner
+        nome={primeiroNome}
+        onNova={() => navigate("/conciliacao")}
+        onRelatorios={() => navigate("/relatorios")}
+      />
 
-      {/* ── HERO BANNER ──────────────────────────────────────────── */}
-      <section className="relative overflow-hidden rounded-3xl bg-brand-gradient p-8 lg:p-12 animate-slide-up">
-        {/* Orbs decorativos */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full blur-3xl opacity-20"
-          style={{ background: "radial-gradient(circle, #7BC8E0 0%, transparent 70%)" }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -left-12 -bottom-16 h-72 w-72 rounded-full blur-3xl opacity-15"
-          style={{ background: "radial-gradient(circle, #5BA9D6 0%, transparent 70%)" }}
-        />
-        {/* Linha de costa no rodapé do banner */}
-        <div
-          aria-hidden
-          className="absolute bottom-0 left-0 right-0 h-px opacity-30"
-          style={{ background: "linear-gradient(90deg, transparent, #7BC8E0, transparent)" }}
-        />
+      <ComplianceBadges />
 
-        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          {/* Texto */}
-          <div className="space-y-3">
-            <p className="text-[11px] font-mono uppercase tracking-[0.24em] text-blue-200/80">
-              {DATA_EXTENSO}
-            </p>
-            <div>
-              <h1 className="text-4xl lg:text-5xl xl:text-[3.5rem] font-bold tracking-[-0.035em] text-white leading-none">
-                ORGATEC
-              </h1>
-              <p className="mt-1.5 text-base font-light text-blue-100/70">
-                Conciliação Bancária Inteligente
-              </p>
-            </div>
-            {user && (
-              <p className="text-sm text-blue-200/60 font-light">
-                Bem-vindo,{" "}
-                <span className="text-blue-100 font-medium capitalize">{primeiroNome}</span>
-              </p>
-            )}
-          </div>
+      <SecurityRing data={trust} />
 
-          {/* CTAs */}
-          <div className="flex flex-wrap gap-3 shrink-0">
-            <Button
-              className="bg-white text-primary hover:bg-white/90 gap-2 font-semibold shadow-lg"
-              onClick={() => navigate("/conciliacao")}
-            >
-              <Plus className="h-4 w-4" />
-              Nova análise
-            </Button>
-            <Button
-              variant="outline"
-              className="border-white/25 text-white hover:bg-white/10 hover:border-white/40 gap-2"
-              onClick={() => navigate("/relatorios")}
-            >
-              <FileText className="h-4 w-4" />
-              Relatórios
-            </Button>
-          </div>
-        </div>
-      </section>
+      <TrustGrid data={trust} />
 
-      {/* ── KPI CARDS ─────────────────────────────────────────────── */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        {[
-          {
-            label: "Conciliações",
-            value: rows.length,
-            desc: "total realizadas",
-            icon: LineChartIcon,
-            bar: "bg-primary",
-            iconCx: "bg-primary/10 text-primary",
-          },
-          {
-            label: "Transações",
-            value: totalTx.toLocaleString("pt-BR"),
-            desc: "linhas analisadas",
-            icon: TrendingUp,
-            bar: "bg-blue-400",
-            iconCx: "bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400",
-          },
-          {
-            label: "Anomalias",
-            value: totalAnom.toLocaleString("pt-BR"),
-            desc: taxaAnom ? `${taxaAnom}% das transações` : "detectadas",
-            icon: AlertTriangle,
-            bar: "bg-orange-400",
-            iconCx: "bg-orange-50 text-orange-500 dark:bg-orange-950/40 dark:text-orange-400",
-          },
-          {
-            label: "Clientes",
-            value: clientesAtivos,
-            desc: "ativos na carteira",
-            icon: Users,
-            bar: "bg-green-500",
-            iconCx: "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400",
-          },
-        ].map(({ label, value, desc, icon: Icon, bar, iconCx }) => (
-          <div
-            key={label}
-            className="relative overflow-hidden rounded-2xl border glass p-5 hover:shadow-card-hover transition-all"
-          >
-            {/* Barra de acento no topo */}
-            <div className={cn("absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl", bar)} />
-            <div className="flex items-start justify-between mb-3">
-              <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                {label}
-              </p>
-              <div className={cn("rounded-lg p-1.5", iconCx)}>
-                <Icon className="h-3.5 w-3.5" />
-              </div>
-            </div>
-            <p className="text-3xl font-bold font-jakarta tracking-tight leading-none">
-              {value}
-            </p>
-            <p className="mt-1.5 text-xs text-muted-foreground">{desc}</p>
-          </div>
-        ))}
+        <KpiCard
+          label="Volume processado"
+          value={valoresKpi ? FORMATADOR_BRL_COMPACTO.format(valoresKpi.volume) : "—"}
+          desc="últimos 30 dias"
+          icon={DollarSign}
+          accent="primary"
+        />
+        <KpiCard
+          label="Conciliações"
+          value={valoresKpi?.conciliacoes ?? 0}
+          desc="análises realizadas"
+          delta={valoresKpi?.delta.conciliacoes_pct ?? null}
+          icon={LineChartIcon}
+          accent="blue"
+        />
+        <KpiCard
+          label="Transações"
+          value={valoresKpi ? valoresKpi.transacoes.toLocaleString("pt-BR") : "—"}
+          desc="linhas analisadas"
+          delta={valoresKpi?.delta.transacoes_pct ?? null}
+          icon={TrendingUp}
+          accent="green"
+        />
+        <KpiCard
+          label="Anomalias"
+          value={valoresKpi?.anomalias ?? 0}
+          desc={valoresKpi && valoresKpi.taxa > 0 ? `${valoresKpi.taxa}% das transações` : "detectadas"}
+          delta={valoresKpi?.delta.anomalias_pct ?? null}
+          icon={AlertTriangle}
+          accent="orange"
+          inverso
+        />
       </div>
 
-      {/* ── CHARTS (só com dados suficientes) ─────────────────────── */}
-      {rows.length > 1 && (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="rounded-3xl border glass p-6">
-            <div className="flex items-center gap-2 mb-5">
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">Anomalias por período</h3>
-              <span className="ml-auto text-[11px] font-mono text-muted-foreground">últimas 8</span>
-            </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={trendData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="data" tick={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="anomalias"
-                  name="Anomalias"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2.5}
-                  dot={{ r: 3, fill: "hsl(var(--primary))" }}
-                  activeDot={{ r: 5 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+      {backendOffline && <BackendOfflineCard clientesAtivos={clientesAtivos} />}
 
-          <div className="rounded-3xl border glass p-6">
-            <div className="flex items-center gap-2 mb-5">
-              <Sparkles className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">Por modo de análise</h3>
-            </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={modoData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="modo" tick={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
-                <Bar dataKey="qtd" name="Análises" fill="hsl(var(--primary))" radius={[5, 5, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+      {!backendOffline && (
+        <>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <TrendChart data={bundle?.trend ?? []} />
+            <DistribuicaoChart data={bundle?.distribuicao ?? []} />
           </div>
-        </div>
+          <Heatmap data={bundle?.heatmap ?? []} dias={120} />
+        </>
       )}
 
-      {/* ── AÇÕES RÁPIDAS + ATIVIDADE RECENTE ─────────────────────── */}
-      <div className="grid gap-5 lg:grid-cols-3">
-        {/* Feature cards — ações */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-mono uppercase tracking-widest text-muted-foreground px-1">
-            Ações rápidas
-          </h3>
-          {[
-            {
-              route: "/conciliacao",
-              icon: LineChartIcon,
-              label: "Nova conciliação",
-              desc: "OFX · PDF · XML · CSV",
-              cx: "bg-primary/10 text-primary",
-            },
-            {
-              route: "/clientes",
-              icon: Users,
-              label: "Gerenciar clientes",
-              desc: "Cadastro e consulta SERPRO",
-              cx: "bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400",
-            },
-            {
-              route: "/relatorios",
-              icon: FileText,
-              label: "Ver relatórios",
-              desc: "HTML · Excel · PDF",
-              cx: "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400",
-            },
-          ].map(({ route, icon: Icon, label, desc, cx }) => (
-            <button
-              key={route}
-              onClick={() => navigate(route)}
-              className="w-full rounded-2xl border glass p-4 text-left flex items-center gap-4 hover:shadow-card-hover hover:border-primary/30 transition-all group"
-            >
-              <div className={cn("rounded-xl p-2.5 shrink-0", cx)}>
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-sm">{label}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5" />
-            </button>
-          ))}
-        </div>
-
-        {/* Feed de atividade recente */}
-        <div className="lg:col-span-2 rounded-3xl border glass p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
-              Atividade recente
-            </h3>
-            {rows.length > 0 && (
-              <button
-                onClick={() => navigate("/relatorios")}
-                className="text-xs text-primary hover:underline"
-              >
-                Ver tudo →
-              </button>
-            )}
-          </div>
-
-          {rows.length === 0 ? (
-            <EmptyState onAction={() => navigate("/conciliacao")} />
-          ) : (
-            <div className="space-y-2">
-              {[...rows].reverse().slice(0, 5).map((r) => (
-                <div
-                  key={r.report_id}
-                  className="flex items-center gap-4 rounded-xl px-4 py-3 hover:bg-muted/20 transition-colors text-sm group"
-                >
-                  {/* Status dot */}
-                  <div
-                    className={cn(
-                      "h-2 w-2 rounded-full shrink-0",
-                      r.total_anomalias > 0 ? "bg-orange-400" : "bg-green-500"
-                    )}
-                  />
-                  {/* ID */}
-                  <span className="font-mono text-xs text-muted-foreground w-20 shrink-0 truncate">
-                    {r.report_id.slice(0, 8)}…
-                  </span>
-                  {/* Modo badge */}
-                  <span className="hidden sm:inline text-xs text-muted-foreground flex-1">
-                    {MODO_LABEL[r.modo] ?? r.modo}
-                  </span>
-                  {/* Stats */}
-                  <span className="text-xs text-muted-foreground hidden md:block">
-                    {r.total_transacoes} tx
-                  </span>
-                  <span
-                    className={cn(
-                      "text-xs font-semibold w-16 text-right shrink-0",
-                      r.total_anomalias > 0 ? "text-orange-500" : "text-green-500"
-                    )}
-                  >
-                    {r.total_anomalias === 0 ? "Limpa" : `${r.total_anomalias} anom.`}
-                  </span>
-                  {/* Data */}
-                  <span className="text-xs text-muted-foreground whitespace-nowrap hidden sm:block w-20 text-right shrink-0">
-                    {new Date(r.criado_em).toLocaleDateString("pt-BR")}
-                  </span>
-                  {/* Download rápido */}
-                  <a
-                    href={r.exports.xlsx}
-                    title="Baixar Excel"
-                    className="shrink-0 p-1 rounded text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                  </a>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <AIInsightsPanel data={insights} loading={insightsLoading} onRefresh={refreshInsights} />
+        <PerformanceModelos data={modelos} />
       </div>
+
+      <AuditTimeline data={auditTimeline} />
+
+      <TransacoesRecentes data={transacoes} />
     </div>
+  );
+
+  return (
+    <DashboardShell
+      main={mainContent}
+      rightbar={<RightSidebar activity={activity} trust={trust} />}
+    />
   );
 }
 
-function EmptyState({ onAction }: { onAction: () => void }) {
+function HeroBanner({
+  nome,
+  onNova,
+  onRelatorios,
+}: {
+  nome: string;
+  onNova: () => void;
+  onRelatorios: () => void;
+}) {
   return (
-    <div className="flex flex-col items-center gap-5 py-10 text-center">
-      {/* Ícone ilustrativo */}
-      <div className="relative">
-        <div className="h-16 w-16 rounded-2xl bg-brand-gradient flex items-center justify-center shadow-lg">
-          <LineChartIcon className="h-8 w-8 text-white" />
+    <section className="relative overflow-hidden rounded-3xl bg-brand-gradient p-8 lg:p-10 animate-slide-up">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full blur-3xl opacity-20"
+        style={{ background: "radial-gradient(circle, #7BC8E0 0%, transparent 70%)" }}
+      />
+      <div
+        aria-hidden
+        className="absolute bottom-0 left-0 right-0 h-px opacity-30"
+        style={{ background: "linear-gradient(90deg, transparent, #7BC8E0, transparent)" }}
+      />
+      <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <p className="text-[11px] font-mono uppercase tracking-[0.24em] text-blue-200/80">
+            {DATA_EXTENSO}
+          </p>
+          <h1 className="text-3xl lg:text-4xl font-bold tracking-[-0.035em] text-white leading-none">
+            ORGATEC
+          </h1>
+          <p className="text-sm font-light text-blue-100/70">
+            Conciliação Bancária Inteligente · Bem-vindo,{" "}
+            <span className="text-blue-100 font-medium capitalize">{nome}</span>
+          </p>
         </div>
-        <div className="absolute -right-1 -top-1 h-5 w-5 rounded-full bg-primary/20 border-2 border-background flex items-center justify-center">
-          <Sparkles className="h-2.5 w-2.5 text-primary" />
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <Button className="bg-white text-primary hover:bg-white/90 gap-2 font-semibold" onClick={onNova}>
+            <Plus className="h-4 w-4" />
+            Nova análise
+          </Button>
+          <Button
+            variant="outline"
+            className="border-white/25 text-white hover:bg-white/10 hover:border-white/40 gap-2"
+            onClick={onRelatorios}
+          >
+            <FileText className="h-4 w-4" />
+            Relatórios
+          </Button>
         </div>
       </div>
-      <div className="space-y-1">
-        <p className="font-semibold text-sm">Nenhuma análise ainda</p>
-        <p className="text-xs text-muted-foreground max-w-[260px]">
-          Carregue seu primeiro extrato OFX, PDF ou XML para começar a detectar anomalias automaticamente.
-        </p>
+    </section>
+  );
+}
+
+function BackendOfflineCard({ clientesAtivos }: { clientesAtivos: number }) {
+  return (
+    <div className="rounded-3xl border glass p-8 text-center space-y-3">
+      <div className="mx-auto h-12 w-12 rounded-2xl bg-muted/60 flex items-center justify-center">
+        <Users className="h-6 w-6 text-muted-foreground" />
       </div>
-      <Button size="sm" onClick={onAction} className="gap-2">
-        <Plus className="h-4 w-4" /> Fazer primeira análise
-      </Button>
+      <h3 className="text-sm font-semibold">Métricas indisponíveis</h3>
+      <p className="text-xs text-muted-foreground max-w-md mx-auto">
+        O banco de dados não está acessível agora. KPIs, charts e heatmap voltam quando a conexão for restabelecida.
+        Você ainda tem <strong>{clientesAtivos}</strong> cliente{clientesAtivos === 1 ? "" : "s"} ativo
+        {clientesAtivos === 1 ? "" : "s"} na carteira e pode usar o sistema normalmente.
+      </p>
     </div>
   );
 }
