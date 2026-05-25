@@ -170,7 +170,7 @@ export function DashboardPage() {
       </section>
 
       {/* ── KPI CARDS ─────────────────────────────────────────────── */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <section aria-label="Indicadores principais" className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {[
           {
             label: "Conciliações",
@@ -207,15 +207,17 @@ export function DashboardPage() {
         ].map(({ label, value, desc, icon: Icon, bar, iconCx }) => (
           <div
             key={label}
+            role="region"
+            aria-label={`${label}: ${value} ${desc}`}
             className="relative overflow-hidden rounded-2xl border glass p-5 hover:shadow-card-hover transition-all"
           >
             {/* Barra de acento no topo */}
-            <div className={cn("absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl", bar)} />
+            <div aria-hidden className={cn("absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl", bar)} />
             <div className="flex items-start justify-between mb-3">
               <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 {label}
               </p>
-              <div className={cn("rounded-lg p-1.5", iconCx)}>
+              <div aria-hidden className={cn("rounded-lg p-1.5", iconCx)}>
                 <Icon className="h-3.5 w-3.5" />
               </div>
             </div>
@@ -225,17 +227,21 @@ export function DashboardPage() {
             <p className="mt-1.5 text-xs text-muted-foreground">{desc}</p>
           </div>
         ))}
-      </div>
+      </section>
 
       {/* ── CHARTS (só com dados suficientes) ─────────────────────── */}
       {rows.length > 1 && (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="rounded-3xl border glass p-6">
-            <div className="flex items-center gap-2 mb-5">
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+        <section aria-label="Gráficos de desempenho" className="grid gap-5 lg:grid-cols-2">
+          <figure
+            role="img"
+            aria-label={`Tendência de anomalias nas últimas ${trendData.length} análises`}
+            className="rounded-3xl border glass p-6 m-0"
+          >
+            <figcaption className="flex items-center gap-2 mb-5">
+              <TrendingUp aria-hidden className="h-4 w-4 text-muted-foreground" />
               <h3 className="text-sm font-semibold">Anomalias por período</h3>
               <span className="ml-auto text-[11px] font-mono text-muted-foreground">últimas 8</span>
-            </div>
+            </figcaption>
             <ResponsiveContainer width="100%" height={180}>
               <LineChart data={trendData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -260,13 +266,17 @@ export function DashboardPage() {
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </figure>
 
-          <div className="rounded-3xl border glass p-6">
-            <div className="flex items-center gap-2 mb-5">
-              <Sparkles className="h-4 w-4 text-muted-foreground" />
+          <figure
+            role="img"
+            aria-label={`Distribuição por modo de análise — ${modoData.length} categorias`}
+            className="rounded-3xl border glass p-6 m-0"
+          >
+            <figcaption className="flex items-center gap-2 mb-5">
+              <Sparkles aria-hidden className="h-4 w-4 text-muted-foreground" />
               <h3 className="text-sm font-semibold">Por modo de análise</h3>
-            </div>
+            </figcaption>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={modoData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -283,8 +293,8 @@ export function DashboardPage() {
                 <Bar dataKey="qtd" name="Análises" fill="hsl(var(--primary))" radius={[5, 5, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
-        </div>
+          </figure>
+        </section>
       )}
 
       {/* ── AÇÕES RÁPIDAS + ATIVIDADE RECENTE ─────────────────────── */}
@@ -353,19 +363,23 @@ export function DashboardPage() {
           {rows.length === 0 ? (
             <EmptyState onAction={() => navigate("/conciliacao")} />
           ) : (
-            <div className="space-y-2">
+            <ul aria-label="Lista de análises recentes" className="space-y-2 list-none p-0 m-0">
               {[...rows].reverse().slice(0, 5).map((r) => (
-                <div
+                <li
                   key={r.report_id}
                   className="flex items-center gap-4 rounded-xl px-4 py-3 hover:bg-muted/20 transition-colors text-sm group"
                 >
                   {/* Status dot */}
-                  <div
+                  <span
+                    aria-hidden
                     className={cn(
                       "h-2 w-2 rounded-full shrink-0",
                       r.total_anomalias > 0 ? "bg-orange-400" : "bg-green-500"
                     )}
                   />
+                  <span className="sr-only">
+                    {r.total_anomalias > 0 ? "Com anomalias" : "Sem anomalias"}
+                  </span>
                   {/* ID */}
                   <span className="font-mono text-xs text-muted-foreground w-20 shrink-0 truncate">
                     {r.report_id.slice(0, 8)}…
@@ -393,15 +407,16 @@ export function DashboardPage() {
                   {/* Download rápido */}
                   <a
                     href={r.exports.xlsx}
+                    aria-label={`Baixar planilha Excel da análise ${r.report_id.slice(0, 8)}`}
                     title="Baixar Excel"
-                    className="shrink-0 p-1 rounded text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="shrink-0 p-1 rounded text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary transition-opacity"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Download className="h-3.5 w-3.5" />
+                    <Download aria-hidden className="h-3.5 w-3.5" />
                   </a>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
       </div>
