@@ -66,7 +66,7 @@ async def chamar_modelo_async(
             )
             res["cost_usd"] = metrics["cost_total_usd"]
             res["cost_dia_usd"] = metrics["cost_dia_usd"]
-        except Exception:
+        except Exception:  # noqa: BLE001 — fallback de telemetria nao deve quebrar response
             log.exception("Falha registrando metrica LLM para %s", model_id)
 
     res.update({"modelo": model_id, "label": label})

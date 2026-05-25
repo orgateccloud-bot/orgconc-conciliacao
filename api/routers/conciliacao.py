@@ -72,9 +72,11 @@ async def conciliar_ofx(
             txs = _parse_arquivo(content, up.filename)
         except HTTPException:
             raise
-        except Exception:
-            log.exception("Falha parseando %s", safe_name)
-            raise HTTPException(400, detail=f"Falha ao parsear arquivo")
+        except (ValueError, KeyError, UnicodeDecodeError) as exc:
+            # parsers OFX/XML/PDF lancam diversos tipos; HTTPException ja
+            # foi tratada acima. Demais erros viram 400 generico sem leak.
+            log.exception("Falha parseando %s (%s)", safe_name, type(exc).__name__)
+            raise HTTPException(400, detail="Falha ao parsear arquivo")
         if not txs:
             raise HTTPException(400, detail=f"Nao foi possivel extrair transacoes de {safe_name}")
         extratos_parsed.append({

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 
 from fastapi import APIRouter
@@ -9,6 +10,7 @@ from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.templates import LOGO_DATA_URI
 
 router = APIRouter()
+log = logging.getLogger("orgconc.health")
 
 
 @router.get("/")
@@ -34,7 +36,8 @@ async def health():
             async with SessionLocal() as db:
                 await db.execute(sql_text("SELECT 1"))
             db_status = "ok"
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — healthcheck nao deve crashar
+            log.warning("healthcheck DB falhou: %s", type(exc).__name__)
             db_status = "erro"
     return {
         "status": "ok",

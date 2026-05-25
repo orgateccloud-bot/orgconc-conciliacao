@@ -74,7 +74,8 @@ def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -
             img = XLImage(str(_LOGO_PATH))
             img.width = 64; img.height = 64
             ws.add_image(img, "A1")
-        except Exception:
+        except (OSError, ValueError):
+            # logo corrompido ou formato invalido — gera Excel sem logo
             pass
     ws.row_dimensions[1].height = 30
     ws.row_dimensions[2].height = 24
