@@ -21,6 +21,7 @@ services:
       SUPABASE_URL: https://cmnbmckwvkfexfkegxsf.supabase.co
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      DATABASE_URL: ${DATABASE_URL}
       # Autenticacao JWT
       JWT_SECRET: ${JWT_SECRET:-orgconc-jwt-secret-interno-2026}
       ORGCONC_AUTH_TOKEN: ${ORGCONC_AUTH_TOKEN:-orgconc-token-interno}
