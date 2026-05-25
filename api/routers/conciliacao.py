@@ -133,16 +133,19 @@ async def conciliar_ofx(
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
+        custo_total_usd = round(sum(r.get("cost_usd", 0.0) for r in resultados), 6)
         return JSONResponse({
             "modo": "multi_modelo",
             "report_id": rid,
             "score_consenso": score_consenso,
+            "custo_total_usd": custo_total_usd,
             "modelos": [
                 {
                     "modelo": r["modelo"],
                     "label": r["label"],
                     "input_tokens": r.get("input_tokens", 0),
                     "output_tokens": r.get("output_tokens", 0),
+                    "cost_usd": r.get("cost_usd", 0.0),
                     "erro": r.get("erro"),
                 }
                 for r in resultados
@@ -171,7 +174,11 @@ async def conciliar_ofx(
         "report_id": rid,
         "extratos": [{"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]} for e in extratos_parsed],
         "anomalias": anomalias,
-        "usage": {"input_tokens": res.get("input_tokens", 0), "output_tokens": res.get("output_tokens", 0)},
+        "usage": {
+            "input_tokens": res.get("input_tokens", 0),
+            "output_tokens": res.get("output_tokens", 0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        },
         "relatorio_md": relatorio,
         "relatorio_html": render_html(relatorio),
         "persistencia": db_status,
@@ -249,7 +256,11 @@ async def conciliar_csv(
         "report_id": rid,
         "extrato": extrato.filename,
         "razao": razao.filename,
-        "usage": {"input_tokens": res.get("input_tokens", 0), "output_tokens": res.get("output_tokens", 0)},
+        "usage": {
+            "input_tokens": res.get("input_tokens", 0),
+            "output_tokens": res.get("output_tokens", 0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        },
         "relatorio_md": relatorio,
         "relatorio_html": render_html(relatorio),
         "persistencia": db_status,

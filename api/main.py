@@ -34,6 +34,7 @@ from api.core.config import (
     engine,
     log,
 )
+from api.core.observability import init_sentry
 from api.core.rate_limit import limiter
 from api.core.templates import LOGO_DATA_URI
 from api.routers import auth_routes, clientes, conciliacao, conciliacoes_list, exports, health, serpro
@@ -58,17 +59,20 @@ from api.services.storage import (  # noqa: F401
 )
 
 configurar_logging(nivel=_LOG_LEVEL, json_mode=_LOG_JSON)
+init_sentry(release=os.environ.get("ORGCONC_RELEASE") or None)
 
 _IS_HTTPS = os.environ.get("ORGCONC_ENV", "").strip().lower() in ("production", "prod") or \
             os.environ.get("ORGCONC_HTTPS_ENABLED", "").strip().lower() in ("1", "true", "yes")
 
+_SENTRY_INGEST = "*.sentry.io" if os.environ.get("SENTRY_DSN", "").strip() else ""
+_CONNECT_SRC = "connect-src 'self'" + (f" {_SENTRY_INGEST}" if _SENTRY_INGEST else "")
 _CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
     "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
     "font-src 'self' fonts.gstatic.com; "
     "img-src 'self' data:; "
-    "connect-src 'self'; "
+    f"{_CONNECT_SRC}; "
     "form-action 'self'; "
     "object-src 'none'; "
     "frame-ancestors 'none'; "
