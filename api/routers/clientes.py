@@ -8,14 +8,19 @@ from sqlalchemy.exc import IntegrityError
 from api.core.config import DB_DISPONIVEL, SessionLocal, crud_clientes
 from api.core.rate_limit import limiter
 from api.schemas import ClienteCreate, ClienteUpdate
-from api.services.auth import current_user
+from api.services.audit import gravar_audit_independente
+from api.services.auth import TokenPayload, current_user
 
 router = APIRouter(prefix="/clientes", tags=["clientes"], dependencies=[Depends(current_user)])
 
 
 @router.post("", status_code=201)
 @limiter.limit("20/minute")
-async def criar_cliente(request: Request, payload: ClienteCreate):
+async def criar_cliente(
+    request: Request,
+    payload: ClienteCreate,
+    user: TokenPayload = Depends(current_user),
+):
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
     try:
@@ -30,6 +35,13 @@ async def criar_cliente(request: Request, payload: ClienteCreate):
             )
     except IntegrityError:
         raise HTTPException(409, "CNPJ já cadastrado")
+    await gravar_audit_independente(
+        action="cliente.criar",
+        resource_type="cliente",
+        resource_id=str(cliente.id),
+        payload={"nome": cliente.nome, "plano": cliente.plano},
+        actor=user,
+    )
     return {
         "id": str(cliente.id),
         "nome": cliente.nome,
@@ -80,7 +92,12 @@ async def buscar_cliente(request: Request, cliente_id: str):
 
 @router.patch("/{cliente_id}")
 @limiter.limit("20/minute")
-async def atualizar_cliente(request: Request, cliente_id: str, payload: ClienteUpdate):
+async def atualizar_cliente(
+    request: Request,
+    cliente_id: str,
+    payload: ClienteUpdate,
+    user: TokenPayload = Depends(current_user),
+):
     try:
         cid = uuid.UUID(cliente_id)
     except ValueError:
@@ -92,4 +109,11 @@ async def atualizar_cliente(request: Request, cliente_id: str, payload: ClienteU
         cliente = await crud_clientes.atualizar_cliente(db, cid, **campos)
     if not cliente:
         raise HTTPException(404, "Cliente nao encontrado")
+    await gravar_audit_independente(
+        action="cliente.atualizar",
+        resource_type="cliente",
+        resource_id=str(cliente.id),
+        payload={"campos_alterados": list(campos.keys())},
+        actor=user,
+    )
     return {"id": str(cliente.id), "nome": cliente.nome, "plano": cliente.plano, "ativo": cliente.ativo}

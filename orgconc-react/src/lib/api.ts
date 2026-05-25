@@ -223,3 +223,175 @@ export async function consultarCpfSerpro(cpf: string) {
     { method: "POST", body: JSON.stringify({ cpf }) },
   );
 }
+
+// ── Dashboard metrics (PR 1 backend) ──────────────────────────────────────
+
+export interface KpisDelta {
+  conciliacoes_pct: number | null;
+  transacoes_pct: number | null;
+  anomalias_pct: number | null;
+}
+
+export interface KpisBlock {
+  periodo_dias: number;
+  conciliacoes: number;
+  transacoes: number;
+  anomalias: number;
+  volume_total: number;
+  taxa_anomalias_pct: number;
+  delta: KpisDelta;
+}
+
+export interface TrendPoint {
+  data: string;          // YYYY-MM-DD
+  conciliacoes: number;
+  transacoes: number;
+  anomalias: number;
+}
+
+export interface DistribuicaoItem {
+  modo: string;
+  qtd: number;
+}
+
+export interface HeatmapDay {
+  data: string;          // YYYY-MM-DD
+  valor: number;
+}
+
+export interface DashboardBundle {
+  kpis: KpisBlock;
+  trend: TrendPoint[];
+  distribuicao: DistribuicaoItem[];
+  heatmap: HeatmapDay[];
+  gerado_em: number;
+  cache_ttl_s: number;
+}
+
+export interface TransacaoRecente {
+  id: string;
+  conciliacao_id: string | null;
+  data_lancamento: string | null;
+  valor: number | null;
+  memo: string | null;
+  categoria: string | null;
+  banco: string | null;
+  tipo: string | null;
+  eh_anomalia: boolean;
+  criado_em: string | null;
+}
+
+export async function fetchDashboardBundle(periodo = 30) {
+  return apiFetch<DashboardBundle>(`/metrics/dashboard-bundle?periodo=${periodo}`);
+}
+
+export async function fetchTransacoesRecentes(limit = 10) {
+  return apiFetch<TransacaoRecente[]>(`/transacoes/recentes?limit=${limit}`);
+}
+
+// ── Trust score + audit (PR 4 backend) ────────────────────────────────────
+
+export interface TrustScore {
+  score: number;
+  periodo_dias: number;
+  breakdown: {
+    taxa_sucesso_pct: number;
+    dias_sem_falha: number;
+    cobertura_pct: number;
+  };
+  metricas: {
+    total_conciliacoes: number;
+    conciliacoes_limpas: number;
+    total_transacoes: number;
+    total_anomalias: number;
+    taxa_anomalias_pct: number;
+  };
+  descricao: string;
+}
+
+export interface AuditEventSummary {
+  id: string;
+  ts: string | null;
+  actor_email: string | null;
+  actor_sub: string | null;
+  action: string;
+  resource_type: string | null;
+  resource_id: string | null;
+  payload_hash: string;
+  prev_hash: string;
+  payload_hash_short: string | null;
+  request_id: string | null;
+}
+
+export interface AuditEventDetalhe extends AuditEventSummary {
+  payload: Record<string, unknown> | null;
+  payload_hash_valid: boolean;
+}
+
+export interface AuditTimelineResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  cadeia_integra: boolean;
+  cadeia_motivo: string | null;
+  eventos: AuditEventSummary[];
+}
+
+export async function fetchTrustScore(periodo = 30) {
+  return apiFetch<TrustScore>(`/metrics/trust-score?periodo=${periodo}`);
+}
+
+export async function fetchAuditTimeline(limit = 10) {
+  return apiFetch<AuditTimelineResponse>(`/audit/timeline?limit=${limit}`);
+}
+
+export async function fetchAuditEvento(eventoId: string) {
+  return apiFetch<AuditEventDetalhe>(`/audit/eventos/${eventoId}`);
+}
+
+// ── PR 5: AI insights, performance modelos, activity feed ────────────────
+
+export interface ModeloPerf {
+  modo: string;
+  qtd: number;
+  latency_ms_avg: number | null;
+  transacoes: number;
+  anomalias: number;
+}
+
+export interface ActivityFeedItem {
+  id: string;
+  ts: string | null;
+  titulo: string;
+  severidade: "info" | "success" | "warn";
+  ator: string;
+  resource_id: string | null;
+}
+
+export interface AiInsight {
+  tipo: "info" | "success" | "warn";
+  titulo: string;
+  texto: string;
+  cta: string | null;
+}
+
+export interface AiInsightsResponse {
+  insights: AiInsight[];
+  from_cache: boolean;
+  gerado_em: string;
+  expira_em: string;
+}
+
+export async function fetchPerformanceModelos(periodo = 30) {
+  return apiFetch<ModeloPerf[]>(`/metrics/modelos?periodo=${periodo}`);
+}
+
+export async function fetchActivityFeed(limit = 10) {
+  return apiFetch<ActivityFeedItem[]>(`/activity/feed?limit=${limit}`);
+}
+
+export async function fetchAiInsights(periodo = 30, refresh = false) {
+  return apiFetch<AiInsightsResponse>(
+    `/ai/insights/dashboard?periodo=${periodo}&refresh=${refresh}`
+  );
+}

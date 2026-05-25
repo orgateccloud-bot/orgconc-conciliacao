@@ -25,6 +25,7 @@ from api.services.conciliacao_llm import (
     get_api_key,
     sintetizar_consenso,
 )
+from api.services.audit import gravar_audit_independente
 from api.services.db_persistence import salvar_no_banco
 from api.services.render import render_html
 from api.services.storage import read_limited, salvar_dataset
@@ -89,6 +90,18 @@ async def conciliar_ofx(
         relatorio = _conciliacao_local(extratos_parsed, anomalias)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao_local", cliente_id)
+        await gravar_audit_independente(
+            action="conciliacao.criar",
+            resource_type="conciliacao",
+            resource_id=rid,
+            payload={
+                "modo": "simulacao_local",
+                "total_extratos": len(extratos_parsed),
+                "total_anomalias": len(anomalias),
+                "cliente_id": cliente_id,
+            },
+            actor=user,
+        )
         return JSONResponse({
             "modo": "simulacao_local",
             "report_id": rid,
@@ -133,6 +146,19 @@ async def conciliar_ofx(
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
+        await gravar_audit_independente(
+            action="conciliacao.criar",
+            resource_type="conciliacao",
+            resource_id=rid,
+            payload={
+                "modo": "multi_modelo",
+                "total_extratos": len(extratos_parsed),
+                "total_anomalias": len(anomalias),
+                "score_consenso": score_consenso,
+                "cliente_id": cliente_id,
+            },
+            actor=user,
+        )
         return JSONResponse({
             "modo": "multi_modelo",
             "report_id": rid,
@@ -163,6 +189,19 @@ async def conciliar_ofx(
     anomalias = _detectar_anomalias(extratos_parsed)
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
     db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "llm", cliente_id)
+    await gravar_audit_independente(
+        action="conciliacao.criar",
+        resource_type="conciliacao",
+        resource_id=rid,
+        payload={
+            "modo": "claude_llm",
+            "modelo": modelo,
+            "total_extratos": len(extratos_parsed),
+            "total_anomalias": len(anomalias),
+            "cliente_id": cliente_id,
+        },
+        actor=user,
+    )
     return JSONResponse({
         "modo": "claude_llm",
         "modelo": modelo,
@@ -222,6 +261,13 @@ async def conciliar_csv(
         )
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao_local", cliente_id)
+        await gravar_audit_independente(
+            action="conciliacao.criar",
+            resource_type="conciliacao",
+            resource_id=rid,
+            payload={"modo": "simulacao_local_csv", "cliente_id": cliente_id},
+            actor=user,
+        )
         return JSONResponse({
             "modo": "simulacao_local_csv",
             "report_id": rid,
@@ -244,6 +290,13 @@ async def conciliar_csv(
     anomalias = []
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
     db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "llm_csv", cliente_id)
+    await gravar_audit_independente(
+        action="conciliacao.criar",
+        resource_type="conciliacao",
+        resource_id=rid,
+        payload={"modo": "claude_llm_csv", "modelo": modelo, "cliente_id": cliente_id},
+        actor=user,
+    )
     return JSONResponse({
         "modo": "claude_llm_csv",
         "report_id": rid,

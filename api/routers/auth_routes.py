@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from api.core.rate_limit import limiter
 from api.schemas import LoginPayload
+from api.services.audit import gravar_audit_independente
 from api.services.auth import current_user, emitir_token, hash_senha, verificar_senha, TokenPayload
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -47,6 +48,13 @@ async def auth_login(request: Request, response: Response, payload: LoginPayload
         raise HTTPException(status_code=401, detail="Credenciais invalidas")
     token = emitir_token(sub=admin_email, email=admin_email, role="admin")
     _set_auth_cookie(response, token)
+    await gravar_audit_independente(
+        action="login.success",
+        resource_type="auth",
+        resource_id=admin_email,
+        payload={"role": "admin"},
+        actor=TokenPayload(sub=admin_email, email=admin_email, role="admin"),
+    )
     return {"access_token": token, "token_type": "bearer"}
 
 

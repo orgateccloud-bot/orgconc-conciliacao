@@ -5,7 +5,7 @@ from datetime import datetime, date, timezone
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 from sqlalchemy import String, Boolean, Integer, Date, Numeric, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS, JSONB
 TIMESTAMPTZ = _TS(timezone=True)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .client import Base
@@ -45,6 +45,7 @@ class Conciliacao(Base):
     periodo_inicio:       Mapped[date | None]  = mapped_column(Date)
     periodo_fim:          Mapped[date | None]  = mapped_column(Date)
     criado_em:            Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
+    usage_latency_ms:     Mapped[int | None]   = mapped_column(Integer)
 
     cliente:     Mapped["Cliente | None"]   = relationship(back_populates="conciliacoes")
     transacoes:  Mapped[list["Transacao"]]  = relationship(back_populates="conciliacao")
@@ -66,3 +67,30 @@ class Transacao(Base):
     criado_em:        Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
 
     conciliacao: Mapped["Conciliacao | None"] = relationship(back_populates="transacoes")
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id:            Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    ts:            Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
+    actor_email:   Mapped[str | None] = mapped_column(Text)
+    actor_sub:     Mapped[str | None] = mapped_column(Text)
+    action:        Mapped[str]       = mapped_column(Text, nullable=False)
+    resource_type: Mapped[str | None] = mapped_column(Text)
+    resource_id:   Mapped[str | None] = mapped_column(Text)
+    payload:       Mapped[dict | None] = mapped_column(JSONB)
+    payload_hash:  Mapped[str]       = mapped_column(String(64), nullable=False)
+    prev_hash:     Mapped[str]       = mapped_column(String(64), nullable=False)
+    request_id:    Mapped[str | None] = mapped_column(String(32))
+
+
+class AiInsightsCache(Base):
+    __tablename__ = "ai_insights_cache"
+
+    id:           Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    actor_sub:    Mapped[str]       = mapped_column(Text, nullable=False)
+    periodo_dias: Mapped[int]       = mapped_column(Integer, nullable=False)
+    gerado_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
+    expira_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, nullable=False)
+    payload:      Mapped[dict]      = mapped_column(JSONB, nullable=False)

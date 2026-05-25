@@ -2,6 +2,7 @@ import { Logo } from "@/components/Logo";
 import { useTheme } from "@/lib/theme";
 import { Moon, Sun, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ComplianceBadges } from "@/components/dashboard/ComplianceBadges";
 
 interface Props {
   title: string;
@@ -39,6 +40,9 @@ export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }
       </div>
 
       <div className="flex items-center gap-2">
+        <div className="hidden xl:flex mr-2">
+          <ComplianceBadges />
+        </div>
         <span
           className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold font-mono ${dbColor}`}
         >

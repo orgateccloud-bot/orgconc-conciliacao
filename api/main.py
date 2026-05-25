@@ -36,7 +36,20 @@ from api.core.config import (
 )
 from api.core.rate_limit import limiter
 from api.core.templates import LOGO_DATA_URI
-from api.routers import auth_routes, clientes, conciliacao, conciliacoes_list, exports, health, serpro
+from api.routers import (
+    activity,
+    ai,
+    audit,
+    auth_routes,
+    clientes,
+    conciliacao,
+    conciliacoes_list,
+    exports,
+    health,
+    metrics,
+    serpro,
+    transacoes,
+)
 from api.services.logging_estruturado import RequestIdMiddleware, configurar_logging
 
 # Re-export para testes e retrocompat
@@ -134,6 +147,11 @@ app.include_router(serpro.router)
 app.include_router(conciliacao.router)
 app.include_router(exports.router)
 app.include_router(conciliacoes_list.router)
+app.include_router(metrics.router)
+app.include_router(transacoes.router)
+app.include_router(audit.router)
+app.include_router(activity.router)
+app.include_router(ai.router)
 
 # UI legada (periodo de transicao)
 if STATIC_DIR.exists():
