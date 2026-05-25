@@ -32,6 +32,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ListSkeleton } from "@/components/skeletons";
 
 const MODO_LABEL: Record<string, string> = {
   simulacao_local: "Sim.",
@@ -50,12 +51,15 @@ export function DashboardPage() {
   const { user } = useAuth();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [dbRows, setDbRows] = useState<ConciliacaoMeta[]>([]);
+  const [carregando, setCarregando] = useState(true);
   const local = useMemo(() => carregarHistoricoLocal(), []);
   const navigate = useNavigate();
 
   useEffect(() => {
-    listarClientes().then(setClientes).catch(() => {});
-    listarConciliacoes().then(setDbRows).catch(() => {});
+    Promise.allSettled([
+      listarClientes().then(setClientes),
+      listarConciliacoes().then(setDbRows),
+    ]).finally(() => setCarregando(false));
   }, []);
 
   const rows = useMemo<ConciliacaoMeta[]>(() => {
@@ -360,7 +364,9 @@ export function DashboardPage() {
             )}
           </div>
 
-          {rows.length === 0 ? (
+          {carregando && rows.length === 0 ? (
+            <ListSkeleton items={4} />
+          ) : rows.length === 0 ? (
             <EmptyState onAction={() => navigate("/conciliacao")} />
           ) : (
             <ul aria-label="Lista de análises recentes" className="space-y-2 list-none p-0 m-0">

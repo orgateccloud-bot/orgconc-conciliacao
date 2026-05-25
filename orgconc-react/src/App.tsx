@@ -15,20 +15,13 @@ import { Topbar } from "@/components/Topbar";
 import { Toaster } from "@/components/ui/sonner";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { PageSkeleton, AppBootSkeleton } from "@/components/skeletons";
 
 const DashboardPage    = lazy(() => import("@/pages/DashboardPage").then(m => ({ default: m.DashboardPage })));
 const ConciliacaoPage  = lazy(() => import("@/pages/ConciliacaoPage").then(m => ({ default: m.ConciliacaoPage })));
 const ClientesPage     = lazy(() => import("@/pages/ClientesPage").then(m => ({ default: m.ClientesPage })));
 const RelatoriosPage   = lazy(() => import("@/pages/RelatoriosPage").then(m => ({ default: m.RelatoriosPage })));
 const ConfiguracoesPage = lazy(() => import("@/pages/ConfiguracoesPage").then(m => ({ default: m.ConfiguracoesPage })));
-
-function PageLoader() {
-  return (
-    <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-      Carregando…
-    </div>
-  );
-}
 
 const TITULOS: Record<string, string> = {
   dashboard:     "Dashboard",
@@ -40,13 +33,7 @@ const TITULOS: Record<string, string> = {
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-        Carregando…
-      </div>
-    );
-  }
+  if (loading) return <AppBootSkeleton />;
   if (!user) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
@@ -89,7 +76,7 @@ function DashboardLayout() {
         />
         <div className="flex-1 p-4 lg:p-10 xl:p-12 max-w-[1400px] w-full mx-auto pb-24">
           <ErrorBoundary>
-            <Suspense fallback={<PageLoader />}>
+            <Suspense fallback={<PageSkeleton />}>
               <Outlet />
             </Suspense>
           </ErrorBoundary>

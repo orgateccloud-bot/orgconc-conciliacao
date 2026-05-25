@@ -9,6 +9,7 @@ import {
   type ConciliacaoMeta,
 } from "@/lib/api";
 import { HeroCard } from "@/components/HeroCard";
+import { ListSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -293,10 +294,8 @@ export function ClientesPage() {
         </div>
 
         {loading ? (
-          <div className="p-6 space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-10 rounded-md bg-muted animate-pulse" />
-            ))}
+          <div className="p-6">
+            <ListSkeleton items={3} />
           </div>
         ) : clientesFiltrados.length === 0 ? (
           <div className="p-12 flex flex-col items-center gap-3 text-center">
