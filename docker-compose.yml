@@ -22,9 +22,9 @@ services:
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       DATABASE_URL: ${DATABASE_URL}
-      # Autenticacao JWT
-      JWT_SECRET: ${JWT_SECRET:-orgconc-jwt-secret-interno-2026}
-      ORGCONC_AUTH_TOKEN: ${ORGCONC_AUTH_TOKEN:-orgconc-token-interno}
+      # Autenticacao JWT — obrigatorio, sem fallback fraco
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET e obrigatorio (gere com: openssl rand -hex 32)}
+      ORGCONC_AUTH_TOKEN: ${ORGCONC_AUTH_TOKEN:?ORGCONC_AUTH_TOKEN e obrigatorio}
       # API Anthropic (opcional - para analise com IA)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Configuracoes do servidor

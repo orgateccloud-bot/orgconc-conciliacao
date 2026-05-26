@@ -15,7 +15,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response as StarletteResponse
 
-from api.core.config import CORS_ORIGINS, DB_DISPONIVEL, engine, log
+from api.core import config as _config
+from api.core.config import CORS_ORIGINS, engine, log, verificar_db_disponivel
 from api.core.exception_handlers import registrar_handlers
 from api.core.rate_limit import limiter
 from api.services.logging_estruturado import RequestIdMiddleware
@@ -77,12 +78,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.warning("ANTHROPIC_API_KEY nao configurada")
-    if DB_DISPONIVEL:
+    # Ping do DB movido para startup (era feito em import-time e bloqueava ate 14s)
+    db_ok = verificar_db_disponivel()
+    if db_ok:
         log.info("Banco configurado")
     else:
         log.info("Banco nao configurado — persistencia JSON local")
     yield
-    if DB_DISPONIVEL and engine:
+    if _config.DB_DISPONIVEL and engine:
         await engine.dispose()
 
 

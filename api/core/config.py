@@ -74,7 +74,44 @@ def _db_ping_sync(timeout_s: int = 10) -> bool:
     return False
 
 
-DB_DISPONIVEL = _DB_IMPORTS_OK and bool(_DB_URL) and _db_ping_sync()
+# DB_DISPONIVEL e inicializado como False no import-time para nao bloquear startup.
+# O ping real e feito em verificar_db_disponivel(), chamada no lifespan do bootstrap.
+# Isso evita ate 14s de bloqueio na importacao quando o DB esta offline ou lento.
+DB_DISPONIVEL: bool = False
+
+# Modulos que fazem `from api.core.config import DB_DISPONIVEL` capturam o valor
+# como snapshot no proprio namespace. Precisamos propagar o resultado do ping
+# atualizado para cada um deles apos verificar_db_disponivel() rodar no lifespan.
+_DB_DISPONIVEL_CONSUMERS: tuple[str, ...] = (
+    "api.main",
+    "api.routers.activity",
+    "api.routers.ai",
+    "api.routers.audit",
+    "api.routers.clientes",
+    "api.routers.conciliacoes_list",
+    "api.routers.health",
+    "api.routers.metrics",
+    "api.routers.transacoes",
+    "api.services.db_persistence",
+)
+
+
+def verificar_db_disponivel() -> bool:
+    """Executa o ping real do DB e atualiza a flag global DB_DISPONIVEL.
+
+    Deve ser chamada no startup (lifespan). Modulos que fizeram
+    `from api.core.config import DB_DISPONIVEL` recebem o valor propagado
+    em seu proprio namespace (mantem compatibilidade com tests que usam
+    patch("api.routers.X.DB_DISPONIVEL", ...)).
+    """
+    global DB_DISPONIVEL
+    import sys
+    DB_DISPONIVEL = _DB_IMPORTS_OK and bool(_DB_URL) and _db_ping_sync()
+    for mod_name in _DB_DISPONIVEL_CONSUMERS:
+        mod = sys.modules.get(mod_name)
+        if mod is not None and hasattr(mod, "DB_DISPONIVEL"):
+            setattr(mod, "DB_DISPONIVEL", DB_DISPONIVEL)
+    return DB_DISPONIVEL
 
 _LOG_JSON = os.environ.get("ORGCONC_LOG_JSON", "true").strip().lower() not in ("0", "false", "no")
 _LOG_LEVEL = os.environ.get("ORGCONC_LOG_LEVEL", "INFO").strip()
