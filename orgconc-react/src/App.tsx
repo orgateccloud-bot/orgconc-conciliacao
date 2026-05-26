@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { ThemeProvider } from "@/lib/theme";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { listarClientes, listarConciliacoes } from "@/lib/api";
 import { LoginPage } from "@/pages/LoginPage";
 import { Sidebar, SidebarNavContent } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
@@ -54,11 +55,11 @@ function DashboardLayout() {
       .catch(() => setDbStatus("offline"));
 
     Promise.all([
-      fetch("/conciliacoes").then((r) => r.json()).catch(() => []),
-      fetch("/clientes").then((r) => r.json()).catch(() => []),
+      listarConciliacoes().catch(() => []),
+      listarClientes().catch(() => []),
     ]).then(([concs, clts]) => {
       const anomalias = Array.isArray(concs)
-        ? concs.reduce((s: number, c: { total_anomalias?: number }) => s + (c.total_anomalias ?? 0), 0)
+        ? concs.reduce((s: number, c) => s + (c.total_anomalias ?? 0), 0)
         : 0;
       const clientes = Array.isArray(clts) ? clts.length : 0;
       setSidebarCounts({ anomalias, clientes });

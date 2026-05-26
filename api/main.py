@@ -22,7 +22,20 @@ from api.core.config import (
     _MODELOS_VALIDOS,  # noqa: F401 — re-export p/ testes
 )
 from api.core.observability import init_sentry
-from api.routers import auth_routes, clientes, conciliacao, conciliacoes_list, exports, health, serpro
+from api.routers import (
+    activity as activity_router,
+    ai as ai_router,
+    audit as audit_router,
+    auth_routes,
+    clientes,
+    conciliacao,
+    conciliacoes_list,
+    exports,
+    health,
+    metrics as metrics_router,
+    serpro,
+    transacoes as transacoes_router,
+)
 from api.services.logging_estruturado import configurar_logging
 
 # Re-export para testes e retrocompat
@@ -55,6 +68,11 @@ app.include_router(serpro.router)
 app.include_router(conciliacao.router)
 app.include_router(exports.router)
 app.include_router(conciliacoes_list.router)
+app.include_router(metrics_router.router)
+app.include_router(audit_router.router)
+app.include_router(ai_router.router)
+app.include_router(activity_router.router)
+app.include_router(transacoes_router.router)
 
 # UI legada (periodo de transicao)
 if STATIC_DIR.exists():
