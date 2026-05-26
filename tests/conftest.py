@@ -15,6 +15,10 @@ _env = Path(__file__).resolve().parent.parent / ".env"
 if _env.exists():
     load_dotenv(_env, override=True)
 
+# Zera backoff de retry da Anthropic em testes (evita 14s de sleep em testes que
+# disparam APIStatusError 5xx). Setado antes de qualquer import do projeto.
+os.environ.setdefault("ORGCONC_LLM_RETRY_BASE_DELAY", "0")
+
 
 def _db_url_configurada() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()

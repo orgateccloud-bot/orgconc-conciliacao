@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, date, timezone
+from decimal import Decimal
 
 
 def _now() -> datetime:
@@ -113,3 +114,14 @@ class AiInsightsCache(Base):
     gerado_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
     expira_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, nullable=False)
     payload:      Mapped[dict]      = mapped_column(JSONB, nullable=False)
+
+
+class LlmCostDaily(Base):
+    """Custo Claude API acumulado por dia (UTC) — sobrevive a restart do processo."""
+    __tablename__ = "llm_cost_daily"
+
+    id:            Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    dia:           Mapped[date]       = mapped_column(Date, nullable=False, unique=True)
+    custo_usd:     Mapped[Decimal]    = mapped_column(Numeric(10, 4), nullable=False, default=Decimal("0"))
+    chamadas:      Mapped[int]        = mapped_column(Integer, nullable=False, default=0)
+    atualizado_em: Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)

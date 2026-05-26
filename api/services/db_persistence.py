@@ -6,6 +6,7 @@ from datetime import date
 from typing import Optional
 
 from api.core.config import DB_DISPONIVEL, SessionLocal, log, models
+from api.core.llm_metrics import persistir_custo_diario_async
 from api.parsers import _chave_transacao, _classificar, _coletar_chaves_anomalas
 
 
@@ -59,6 +60,15 @@ async def salvar_no_banco(
                 txs = [models.Transacao(conciliacao_id=conc.id, **td) for td in txs_data]
                 db.add_all(txs)
             log.info("Conciliacao %s salva no banco (%d transacoes)", report_id, len(txs))
+
+        # Persiste custo diário acumulado (best-effort, silencioso em erro).
+        # Sessão separada da transação acima — falha aqui não invalida a conciliação.
+        try:
+            async with SessionLocal() as db_cost:
+                await persistir_custo_diario_async(db_cost)
+        except Exception:  # noqa: BLE001
+            log.debug("persistir_custo_diario_async falhou silenciosamente", exc_info=True)
+
         return {"status": "ok", "transacoes_persistidas": len(txs)}
     except Exception as exc:  # noqa: BLE001 — boundary com DB externo; nao deve crashar a request
         log.exception("Falha ao salvar no banco (conciliacao %s)", report_id)

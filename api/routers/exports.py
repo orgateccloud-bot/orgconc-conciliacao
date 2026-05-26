@@ -32,9 +32,10 @@ def export_html(rid: str, user: TokenPayload = Depends(current_user)):
 
 
 @router.get("/export/xlsx/{rid}")
-def export_xlsx(rid: str, user: TokenPayload = Depends(current_user)):
+async def export_xlsx(rid: str, user: TokenPayload = Depends(current_user)):
     ds = carregar_dataset(rid, verify_sub=user.sub)
-    blob = _gerar_xlsx(ds["extratos"], ds["anomalias"])
+    # _gerar_xlsx é síncrono e pesado — roda em thread pool pra não bloquear o event loop
+    blob = await asyncio.to_thread(_gerar_xlsx, ds["extratos"], ds["anomalias"])
     return Response(
         content=blob,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -43,7 +44,7 @@ def export_xlsx(rid: str, user: TokenPayload = Depends(current_user)):
 
 
 @router.get("/export/pdf/{rid}")
-def export_pdf(rid: str, html: bool = False, user: TokenPayload = Depends(current_user)):
+async def export_pdf(rid: str, html: bool = False, user: TokenPayload = Depends(current_user)):
     ds = carregar_dataset(rid, verify_sub=user.sub)
     html_content = render_pdf_html(ds["relatorio"], ds["anomalias"], ds["extratos"], rid)
     if html:
@@ -54,7 +55,10 @@ def export_pdf(rid: str, html: bool = False, user: TokenPayload = Depends(curren
         )
     try:
         import weasyprint
-        pdf_bytes = weasyprint.HTML(string=html_content, base_url=None, url_fetcher=_block_url_fetcher).write_pdf()
+        # weasyprint.write_pdf() é CPU-bound — desloca pra thread pool
+        pdf_bytes = await asyncio.to_thread(
+            lambda: weasyprint.HTML(string=html_content, base_url=None, url_fetcher=_block_url_fetcher).write_pdf()
+        )
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",

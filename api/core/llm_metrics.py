@@ -14,8 +14,12 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime, date as _date, timezone
+from decimal import Decimal
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger("orgconc.llm.metrics")
 
@@ -67,6 +71,7 @@ class _AcumuladorDiario:
         self._lock = threading.Lock()
         self._dia: str = ""
         self._total_usd: float = 0.0
+        self._chamadas: int = 0
         self._alerta_disparado: bool = False
 
     def adicionar(self, custo_usd: float) -> tuple[float, bool]:
@@ -77,13 +82,20 @@ class _AcumuladorDiario:
             if hoje != self._dia:
                 self._dia = hoje
                 self._total_usd = 0.0
+                self._chamadas = 0
                 self._alerta_disparado = False
             self._total_usd += custo_usd
+            self._chamadas += 1
             atingiu = False
             if threshold > 0 and self._total_usd >= threshold and not self._alerta_disparado:
                 self._alerta_disparado = True
                 atingiu = True
             return self._total_usd, atingiu
+
+    def snapshot(self) -> tuple[str, float, int]:
+        """Retorna (dia_iso, total_usd, chamadas) atomicamente."""
+        with self._lock:
+            return self._dia, self._total_usd, self._chamadas
 
 
 def _threshold_alerta() -> float:
@@ -133,3 +145,47 @@ def resetar_acumulador_para_testes() -> None:
     """Util apenas em testes."""
     global _ACUMULADOR
     _ACUMULADOR = _AcumuladorDiario()
+
+
+async def persistir_custo_diario_async(db: "AsyncSession") -> bool:
+    """UPSERT do acumulador in-memory na tabela llm_cost_daily.
+
+    Best-effort: nunca propaga exceção — só loga. Pula se acumulador vazio.
+    Retorna True se persistiu, False caso contrário.
+    """
+    dia_iso, total_usd, chamadas = _ACUMULADOR.snapshot()
+    if not dia_iso or chamadas == 0:
+        return False
+    try:
+        from sqlalchemy.dialects.postgresql import insert as _pg_insert
+        from api.db.models import LlmCostDaily
+
+        dia_obj = _date.fromisoformat(dia_iso)
+        valor = Decimal(str(round(total_usd, 4)))
+
+        stmt = _pg_insert(LlmCostDaily).values(
+            dia=dia_obj,
+            custo_usd=valor,
+            chamadas=chamadas,
+            atualizado_em=datetime.now(timezone.utc),
+        )
+        # UPSERT atômico — em conflito (dia já existe), substitui pelos valores atuais
+        # (o acumulador in-memory já contém o total do dia, então é set, não increment)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["dia"],
+            set_={
+                "custo_usd": stmt.excluded.custo_usd,
+                "chamadas": stmt.excluded.chamadas,
+                "atualizado_em": stmt.excluded.atualizado_em,
+            },
+        )
+        await db.execute(stmt)
+        await db.commit()
+        return True
+    except Exception:  # noqa: BLE001 — best-effort, não pode quebrar request
+        log.exception("Falha persistindo custo diário (dia=%s, total=%.4f)", dia_iso, total_usd)
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return False
