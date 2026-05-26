@@ -21,7 +21,7 @@ async def chamar_modelo_async(
     label: str,
     max_tokens: int,
 ) -> dict:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _call():
         c = Anthropic(api_key=api_key)

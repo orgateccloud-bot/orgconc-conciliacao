@@ -15,6 +15,18 @@ def _uuid() -> uuid.UUID:
     return uuid.uuid4()
 
 
+class Org(Base):
+    __tablename__ = "orgs"
+
+    id:           Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    nome:         Mapped[str]       = mapped_column(Text, nullable=False)
+    plano:        Mapped[str]       = mapped_column(String(20), default="basico")
+    cnpj:         Mapped[str | None] = mapped_column(Text)
+    ativo:        Mapped[bool]      = mapped_column(Boolean, default=True)
+    criado_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now)
+    atualizado_em: Mapped[datetime] = mapped_column(TIMESTAMPTZ, default=_now)
+
+
 class Cliente(Base):
     __tablename__ = "clientes"
 
@@ -35,6 +47,7 @@ class Conciliacao(Base):
     __tablename__ = "conciliacoes"
 
     id:                   Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    org_id:               Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     cliente_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="SET NULL"))
     report_id:            Mapped[str]          = mapped_column(Text, unique=True, nullable=False)
     modo:                 Mapped[str]          = mapped_column(String(20), nullable=False)
@@ -55,6 +68,7 @@ class Transacao(Base):
     __tablename__ = "transacoes"
 
     id:               Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    org_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     conciliacao_id:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("conciliacoes.id"))
     cliente_id:       Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="SET NULL"))
     data_lancamento:  Mapped[date]         = mapped_column(Date, nullable=False)
