@@ -16,8 +16,8 @@ type SidebarItem = {
 
 const OPERACAO_ITEMS: SidebarItem[] = [
   { id: "dashboard",   label: "Visão Geral",  icon: LayoutDashboard },
+  { id: "upload",      label: "Upload",       icon: Upload },
   { id: "conciliacao", label: "Análises",     icon: LineChart },
-  { id: "conciliacao", label: "Upload",       icon: Upload },
   { id: "relatorios",  label: "Transações",   icon: Activity },
   { id: "clientes",    label: "Clientes",     icon: Users },
   { id: "anomalias",   label: "Anomalias",    icon: AlertTriangle },
@@ -52,13 +52,12 @@ export function SidebarNavContent({
   }));
 
   function go(id: string) {
-    const routableIds = ["dashboard","conciliacao","clientes","relatorios","configuracoes"];
+    const routableIds = ["dashboard","conciliacao","upload","clientes","relatorios","configuracoes"];
     if (routableIds.includes(id)) navigate(`/${id}`);
     onNavigate?.();
   }
 
   function isActive(id: string, label: string) {
-    if (label === "Upload" || label === "Análises") return pathname === "/conciliacao";
     if (label === "Transações") return pathname === "/relatorios";
     return pathname === `/${id}` || (id === "dashboard" && (pathname === "/" || pathname === "/dashboard"));
   }

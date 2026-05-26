@@ -22,10 +22,12 @@ const ConciliacaoPage  = lazy(() => import("@/pages/ConciliacaoPage").then(m => 
 const ClientesPage     = lazy(() => import("@/pages/ClientesPage").then(m => ({ default: m.ClientesPage })));
 const RelatoriosPage   = lazy(() => import("@/pages/RelatoriosPage").then(m => ({ default: m.RelatoriosPage })));
 const ConfiguracoesPage = lazy(() => import("@/pages/ConfiguracoesPage").then(m => ({ default: m.ConfiguracoesPage })));
+const UploadPage        = lazy(() => import("@/pages/UploadPage").then(m => ({ default: m.UploadPage })));
 
 const TITULOS: Record<string, string> = {
   dashboard:     "Dashboard",
-  conciliacao:   "Conciliação Bancária",
+  conciliacao:   "Análises",
+  upload:        "Upload de Extratos",
   clientes:      "Clientes",
   relatorios:    "Histórico de Relatórios",
   configuracoes: "Configurações",
@@ -114,6 +116,7 @@ export default function App() {
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/conciliacao" element={<ConciliacaoPage />} />
+                <Route path="/upload" element={<UploadPage />} />
                 <Route path="/clientes" element={<ClientesPage />} />
                 <Route path="/relatorios" element={<RelatoriosPage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />
