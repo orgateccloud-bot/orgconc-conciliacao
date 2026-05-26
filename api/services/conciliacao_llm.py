@@ -5,11 +5,13 @@ import asyncio
 import logging
 import os
 import re
+import time
 
 from anthropic import Anthropic, APIStatusError
 from fastapi import HTTPException
 
 from api.core.config import SYSTEM_PROMPT, _MODELOS_MULTI
+from api.core.llm_metrics import registrar_uso
 
 log = logging.getLogger("orgconc.llm")
 
@@ -37,6 +39,7 @@ async def chamar_modelo_async(
             "output_tokens": resp.usage.output_tokens,
         }
 
+    inicio = time.perf_counter()
     try:
         res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90.0)
     except asyncio.TimeoutError:
@@ -49,6 +52,22 @@ async def chamar_modelo_async(
         res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": msg}
     else:
         res["erro"] = None
+
+    dur_ms = (time.perf_counter() - inicio) * 1000
+
+    if not res.get("erro") and (res.get("input_tokens") or res.get("output_tokens")):
+        try:
+            metrics = registrar_uso(
+                model_id=model_id,
+                label=label,
+                input_tokens=res.get("input_tokens", 0),
+                output_tokens=res.get("output_tokens", 0),
+                duracao_ms=dur_ms,
+            )
+            res["cost_usd"] = metrics["cost_total_usd"]
+            res["cost_dia_usd"] = metrics["cost_dia_usd"]
+        except Exception:  # noqa: BLE001 — fallback de telemetria nao deve quebrar response
+            log.exception("Falha registrando metrica LLM para %s", model_id)
 
     res.update({"modelo": model_id, "label": label})
     return res

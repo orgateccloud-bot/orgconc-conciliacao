@@ -1,76 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { useClock } from "@/lib/hooks";
+import { Starfield } from "@/components/Starfield";
 import { toast } from "sonner";
 import s from "./LoginPage.module.css";
-
-// ── Hooks ─────────────────────────────────────────────────────────────────
-
-function useClock() {
-  const [time, setTime] = useState("");
-  useEffect(() => {
-    const fmt = () => {
-      const now = new Date();
-      const h = String(now.getHours()).padStart(2, "0");
-      const m = String(now.getMinutes()).padStart(2, "0");
-      setTime(`${h}:${m} BRT`);
-    };
-    fmt();
-    const id = setInterval(fmt, 1000);
-    return () => clearInterval(id);
-  }, []);
-  return time;
-}
-
-function useStarfield(canvasRef: React.RefObject<HTMLCanvasElement>) {
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    type Star = { x: number; y: number; r: number; a: number; da: number };
-    let stars: Star[] = [];
-    let rafId: number;
-
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    const init = () => {
-      stars = Array.from({ length: 180 }, () => ({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        r: Math.random() * 1.2 + 0.3,
-        a: Math.random(),
-        da: (Math.random() - 0.5) * 0.004,
-      }));
-    };
-    const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const s of stars) {
-        s.a = Math.max(0.05, Math.min(1, s.a + s.da));
-        if (s.a <= 0.05 || s.a >= 1) s.da *= -1;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(200,220,255,${s.a})`;
-        ctx.fill();
-      }
-      rafId = requestAnimationFrame(draw);
-    };
-
-    const onResize = () => { resize(); init(); };
-
-    resize();
-    init();
-    draw();
-    window.addEventListener("resize", onResize);
-    return () => {
-      cancelAnimationFrame(rafId);
-      window.removeEventListener("resize", onResize);
-    };
-  }, [canvasRef]);
-}
 
 // ── Component ─────────────────────────────────────────────────────────────
 
@@ -84,10 +18,7 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [lastLogin, setLastLogin] = useState("primeira vez");
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const clock = useClock();
-
-  useStarfield(canvasRef);
 
   useEffect(() => {
     const stored = localStorage.getItem(LAST_LOGIN_KEY);
@@ -123,7 +54,7 @@ export function LoginPage() {
 
   return (
     <div className={s.root}>
-      <canvas ref={canvasRef} className={s.starCanvas} />
+      <Starfield className={s.starCanvas} />
 
       <div className={`${s.auroraBand} ${s.a1}`} />
       <div className={`${s.auroraBand} ${s.a2}`} />

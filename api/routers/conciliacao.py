@@ -25,7 +25,6 @@ from api.services.conciliacao_llm import (
     get_api_key,
     sintetizar_consenso,
 )
-from api.services.audit import gravar_audit_independente
 from api.services.db_persistence import salvar_no_banco
 from api.services.render import render_html
 from api.services.storage import read_limited, salvar_dataset
@@ -73,9 +72,11 @@ async def conciliar_ofx(
             txs = _parse_arquivo(content, up.filename)
         except HTTPException:
             raise
-        except Exception:
-            log.exception("Falha parseando %s", safe_name)
-            raise HTTPException(400, detail=f"Falha ao parsear arquivo")
+        except (ValueError, KeyError, UnicodeDecodeError) as exc:
+            # parsers OFX/XML/PDF lancam diversos tipos; HTTPException ja
+            # foi tratada acima. Demais erros viram 400 generico sem leak.
+            log.exception("Falha parseando %s (%s)", safe_name, type(exc).__name__)
+            raise HTTPException(400, detail="Falha ao parsear arquivo")
         if not txs:
             raise HTTPException(400, detail=f"Nao foi possivel extrair transacoes de {safe_name}")
         extratos_parsed.append({
@@ -90,18 +91,6 @@ async def conciliar_ofx(
         relatorio = _conciliacao_local(extratos_parsed, anomalias)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao_local", cliente_id)
-        await gravar_audit_independente(
-            action="conciliacao.criar",
-            resource_type="conciliacao",
-            resource_id=rid,
-            payload={
-                "modo": "simulacao_local",
-                "total_extratos": len(extratos_parsed),
-                "total_anomalias": len(anomalias),
-                "cliente_id": cliente_id,
-            },
-            actor=user,
-        )
         return JSONResponse({
             "modo": "simulacao_local",
             "report_id": rid,
@@ -146,29 +135,19 @@ async def conciliar_ofx(
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
-        await gravar_audit_independente(
-            action="conciliacao.criar",
-            resource_type="conciliacao",
-            resource_id=rid,
-            payload={
-                "modo": "multi_modelo",
-                "total_extratos": len(extratos_parsed),
-                "total_anomalias": len(anomalias),
-                "score_consenso": score_consenso,
-                "cliente_id": cliente_id,
-            },
-            actor=user,
-        )
+        custo_total_usd = round(sum(r.get("cost_usd", 0.0) for r in resultados), 6)
         return JSONResponse({
             "modo": "multi_modelo",
             "report_id": rid,
             "score_consenso": score_consenso,
+            "custo_total_usd": custo_total_usd,
             "modelos": [
                 {
                     "modelo": r["modelo"],
                     "label": r["label"],
                     "input_tokens": r.get("input_tokens", 0),
                     "output_tokens": r.get("output_tokens", 0),
+                    "cost_usd": r.get("cost_usd", 0.0),
                     "erro": r.get("erro"),
                 }
                 for r in resultados
@@ -189,19 +168,6 @@ async def conciliar_ofx(
     anomalias = _detectar_anomalias(extratos_parsed)
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
     db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "llm", cliente_id)
-    await gravar_audit_independente(
-        action="conciliacao.criar",
-        resource_type="conciliacao",
-        resource_id=rid,
-        payload={
-            "modo": "claude_llm",
-            "modelo": modelo,
-            "total_extratos": len(extratos_parsed),
-            "total_anomalias": len(anomalias),
-            "cliente_id": cliente_id,
-        },
-        actor=user,
-    )
     return JSONResponse({
         "modo": "claude_llm",
         "modelo": modelo,
@@ -210,7 +176,11 @@ async def conciliar_ofx(
         "report_id": rid,
         "extratos": [{"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]} for e in extratos_parsed],
         "anomalias": anomalias,
-        "usage": {"input_tokens": res.get("input_tokens", 0), "output_tokens": res.get("output_tokens", 0)},
+        "usage": {
+            "input_tokens": res.get("input_tokens", 0),
+            "output_tokens": res.get("output_tokens", 0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        },
         "relatorio_md": relatorio,
         "relatorio_html": render_html(relatorio),
         "persistencia": db_status,
@@ -261,13 +231,6 @@ async def conciliar_csv(
         )
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao_local", cliente_id)
-        await gravar_audit_independente(
-            action="conciliacao.criar",
-            resource_type="conciliacao",
-            resource_id=rid,
-            payload={"modo": "simulacao_local_csv", "cliente_id": cliente_id},
-            actor=user,
-        )
         return JSONResponse({
             "modo": "simulacao_local_csv",
             "report_id": rid,
@@ -290,19 +253,16 @@ async def conciliar_csv(
     anomalias = []
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
     db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "llm_csv", cliente_id)
-    await gravar_audit_independente(
-        action="conciliacao.criar",
-        resource_type="conciliacao",
-        resource_id=rid,
-        payload={"modo": "claude_llm_csv", "modelo": modelo, "cliente_id": cliente_id},
-        actor=user,
-    )
     return JSONResponse({
         "modo": "claude_llm_csv",
         "report_id": rid,
         "extrato": extrato.filename,
         "razao": razao.filename,
-        "usage": {"input_tokens": res.get("input_tokens", 0), "output_tokens": res.get("output_tokens", 0)},
+        "usage": {
+            "input_tokens": res.get("input_tokens", 0),
+            "output_tokens": res.get("output_tokens", 0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        },
         "relatorio_md": relatorio,
         "relatorio_html": render_html(relatorio),
         "persistencia": db_status,

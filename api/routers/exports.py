@@ -60,8 +60,9 @@ def export_pdf(rid: str, html: bool = False, user: TokenPayload = Depends(curren
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="conciliacao_{rid}.pdf"'},
         )
-    except Exception as exc:
-        log.warning("weasyprint falhou: %s", exc)
+    except (ImportError, OSError, RuntimeError) as exc:
+        # weasyprint requer libpango; em hosts sem ele cai pro HTML imprimivel
+        log.warning("weasyprint falhou (%s): %s", type(exc).__name__, exc)
         return Response(
             content=html_content,
             media_type="text/html; charset=utf-8",

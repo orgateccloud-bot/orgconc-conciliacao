@@ -1,0 +1,100 @@
+"""Testes para api/core/llm_metrics.py — calculo de custo e acumulador diario."""
+from __future__ import annotations
+
+import logging
+import os
+
+import pytest
+
+from api.core import llm_metrics
+
+
+@pytest.fixture(autouse=True)
+def _limpar_estado():
+    llm_metrics.resetar_acumulador_para_testes()
+    for var in [
+        "ORGCONC_LLM_COST_ALERT_USD",
+        "ORGCONC_LLM_PRICE_OPUS_IN", "ORGCONC_LLM_PRICE_OPUS_OUT",
+        "ORGCONC_LLM_PRICE_SONNET_IN", "ORGCONC_LLM_PRICE_SONNET_OUT",
+        "ORGCONC_LLM_PRICE_HAIKU_IN", "ORGCONC_LLM_PRICE_HAIKU_OUT",
+    ]:
+        os.environ.pop(var, None)
+    yield
+    llm_metrics.resetar_acumulador_para_testes()
+
+
+def test_calcular_custo_opus_usa_default():
+    m = llm_metrics.calcular_custo("claude-opus-4-7", 1_000_000, 1_000_000)
+    assert m["cost_input_usd"] == 15.0
+    assert m["cost_output_usd"] == 75.0
+    assert m["cost_total_usd"] == 90.0
+    assert m["model_id"] == "claude-opus-4-7"
+
+
+def test_calcular_custo_sonnet_pequeno():
+    m = llm_metrics.calcular_custo("claude-sonnet-4-6", 10_000, 5_000)
+    # 10k input * 3/1M = 0.03; 5k output * 15/1M = 0.075; total 0.105
+    assert m["cost_total_usd"] == pytest.approx(0.105, rel=1e-3)
+
+
+def test_calcular_custo_haiku_zero_tokens():
+    m = llm_metrics.calcular_custo("claude-haiku-4-5-20251001", 0, 0)
+    assert m["cost_total_usd"] == 0.0
+
+
+def test_calcular_custo_modelo_desconhecido_cai_em_haiku():
+    # Fallback: modelo nao reconhecido vira haiku (mais barato → mais seguro)
+    m = llm_metrics.calcular_custo("modelo-novo-2099", 1_000_000, 1_000_000)
+    assert m["cost_input_usd"] == 1.0
+    assert m["cost_output_usd"] == 5.0
+
+
+def test_override_preco_via_env():
+    os.environ["ORGCONC_LLM_PRICE_OPUS_IN"] = "20.0"
+    os.environ["ORGCONC_LLM_PRICE_OPUS_OUT"] = "100.0"
+    m = llm_metrics.calcular_custo("claude-opus-4-7", 1_000_000, 1_000_000)
+    assert m["cost_input_usd"] == 20.0
+    assert m["cost_output_usd"] == 100.0
+
+
+def test_override_preco_invalido_cai_em_default(caplog):
+    os.environ["ORGCONC_LLM_PRICE_OPUS_IN"] = "nao-eh-numero"
+    with caplog.at_level(logging.WARNING):
+        m = llm_metrics.calcular_custo("claude-opus-4-7", 1_000_000, 0)
+    assert m["cost_input_usd"] == 15.0
+
+
+def test_registrar_uso_loga_estruturado(caplog):
+    with caplog.at_level(logging.INFO, logger="orgconc.llm.metrics"):
+        metrics = llm_metrics.registrar_uso(
+            "claude-sonnet-4-6", "Sonnet 4.6", 10_000, 5_000, duracao_ms=120.5
+        )
+    assert metrics["cost_total_usd"] == pytest.approx(0.105, rel=1e-3)
+    assert metrics["cost_dia_usd"] == pytest.approx(0.105, rel=1e-3)
+    rec = next(r for r in caplog.records if r.message == "llm_uso")
+    assert rec.llm_model == "claude-sonnet-4-6"
+    assert rec.llm_input_tokens == 10_000
+    assert rec.llm_duracao_ms == 120.5
+
+
+def test_acumulador_soma_no_mesmo_dia():
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)
+    metrics2 = llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)
+    # 100k * (1+5)/1M = 0.6 por chamada → 1.2 acumulado
+    assert metrics2["cost_dia_usd"] == pytest.approx(1.2, rel=1e-3)
+
+
+def test_threshold_dispara_warning_uma_vez(caplog):
+    os.environ["ORGCONC_LLM_COST_ALERT_USD"] = "0.5"
+    with caplog.at_level(logging.WARNING, logger="orgconc.llm.metrics"):
+        llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)  # 0.6 USD
+        llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)  # 1.2 USD
+    avisos = [r for r in caplog.records if r.message == "llm_custo_threshold_atingido"]
+    assert len(avisos) == 1  # so dispara 1x por dia
+
+
+def test_threshold_zero_nao_dispara(caplog):
+    os.environ["ORGCONC_LLM_COST_ALERT_USD"] = "0"
+    with caplog.at_level(logging.WARNING, logger="orgconc.llm.metrics"):
+        llm_metrics.registrar_uso("claude-opus-4-7", "O", 1_000_000, 1_000_000)
+    assert not any(r.message == "llm_custo_threshold_atingido" for r in caplog.records)

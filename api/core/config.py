@@ -27,7 +27,8 @@ try:
     models = _models
     crud_clientes = _crud_clientes
     _DB_IMPORTS_OK = True
-except Exception:
+except ImportError:
+    # api.db nao disponivel (asyncpg/sqlalchemy ausentes em ambiente minimo)
     pass
 
 _IS_PROD_ENV = os.environ.get("ORGCONC_ENV", "").strip().lower() in ("production", "prod")
@@ -60,14 +61,14 @@ def _db_ping_sync(timeout_s: int = 10) -> bool:
         return False
     url = _DB_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
     import time
+    import psycopg2
     for attempt in range(3):
         try:
-            import psycopg2
             with psycopg2.connect(url, connect_timeout=timeout_s) as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1")
             return True
-        except Exception:
+        except (psycopg2.OperationalError, psycopg2.DatabaseError):
             if attempt < 2:
                 time.sleep(2 ** attempt)
     return False

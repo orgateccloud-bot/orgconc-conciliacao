@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { carregarHistoricoLocal, listarConciliacoes, type ConciliacaoMeta } from "@/lib/api";
 import { HeroCard } from "@/components/HeroCard";
+import { ListSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -210,10 +211,8 @@ export function RelatoriosPage() {
         </div>
 
         {loading ? (
-          <div className="p-6 space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-10 rounded-md bg-muted animate-pulse" />
-            ))}
+          <div className="p-6">
+            <ListSkeleton items={5} />
           </div>
         ) : rowsFiltradas.length === 0 ? (
           <div className="p-12 flex flex-col items-center gap-4 text-center">

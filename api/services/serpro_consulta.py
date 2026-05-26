@@ -292,7 +292,8 @@ def _resetar_singleton_para_testes() -> None:
         if _client is not None:
             try:
                 _client.fechar()
-            except Exception:
+            except (AttributeError, OSError, RuntimeError):
+                # cliente ja fechado ou metodo ausente — ignora no reset
                 pass
         _client = None
         _exc_module = None

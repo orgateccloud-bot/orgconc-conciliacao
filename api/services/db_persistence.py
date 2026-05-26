@@ -60,6 +60,6 @@ async def salvar_no_banco(
                 db.add_all(txs)
             log.info("Conciliacao %s salva no banco (%d transacoes)", report_id, len(txs))
         return {"status": "ok", "transacoes_persistidas": len(txs)}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — boundary com DB externo; nao deve crashar a request
         log.exception("Falha ao salvar no banco (conciliacao %s)", report_id)
         return {"status": "error", "erro": type(exc).__name__, "mensagem": str(exc)[:200]}

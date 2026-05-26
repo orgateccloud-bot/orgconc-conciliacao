@@ -1,23 +1,5 @@
-fastapi==0.136.1
-uvicorn[standard]==0.47.0
-python-multipart==0.0.28
-anthropic==0.102.0
-pdfplumber==0.11.9
-openpyxl==3.1.5
-Markdown==3.10.2
-python-dotenv==1.2.2
-slowapi==0.1.9
-weasyprint==68.0
-jinja2==3.1.6
-pyjwt[crypto]==2.12.0
-passlib[bcrypt]==1.7.4
-bleach==6.1.0
-defusedxml==0.7.1
-requests==2.33.0
-
-# banco de dados
-asyncpg==0.31.0
-psycopg2-binary==2.9.12
-sqlalchemy==2.0.49
-alembic==1.18.4
-
+# Compat shim — instala TUDO (prod + dev). Para producao use:
+#   pip install -r requirements-prod.txt
+# Para desenvolvimento/CI:
+#   pip install -r requirements-dev.txt
+-r requirements-dev.txt

@@ -125,7 +125,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             )
             response.headers["X-Request-ID"] = rid
             return response
-        except Exception:
+        except Exception:  # noqa: BLE001 — middleware loga e re-raise p/ handler global
             dur_ms = round((time.perf_counter() - inicio) * 1000, 1)
             self.log.exception(
                 "http_error",
