@@ -49,7 +49,18 @@ const COMPLIANCE_ITEMS: NavItemDef[] = [
   { id: "configuracoes", label: "Configurações", icon: Settings },
 ];
 
-export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
+interface SidebarCounts {
+  anomalias?: number;
+  clientes?: number;
+}
+
+export function SidebarNavContent({
+  onNavigate,
+  counts,
+}: {
+  onNavigate?: () => void;
+  counts?: SidebarCounts;
+}) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
@@ -60,6 +71,12 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
 
   function isActive(id: string) {
     return pathname === `/${id}` || (id === "dashboard" && pathname === "/");
+  }
+
+  function getBadge(id: Secao): string | undefined {
+    if (id === "anomalias" && counts?.anomalias) return String(counts.anomalias);
+    if (id === "clientes" && counts?.clientes) return String(counts.clientes);
+    return undefined;
   }
 
   return (
@@ -81,27 +98,27 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto" aria-label="Navegação principal">
         <NavGroup label="Operação">
-          {OPERACAO_ITEMS.map(({ id, label, icon: Icon, badge }) => (
+          {OPERACAO_ITEMS.map(({ id, label, icon: Icon }) => (
             <NavItem
               key={id}
               active={isActive(id)}
               onClick={() => go(id)}
               icon={<Icon className="h-4 w-4" />}
               label={label}
-              badge={badge}
+              badge={getBadge(id)}
+              badgeVariant={id === "anomalias" ? "warning" : "info"}
             />
           ))}
         </NavGroup>
 
         <NavGroup label="Compliance">
-          {COMPLIANCE_ITEMS.map(({ id, label, icon: Icon, badge }) => (
+          {COMPLIANCE_ITEMS.map(({ id, label, icon: Icon }) => (
             <NavItem
               key={id}
               active={isActive(id)}
               onClick={() => go(id)}
               icon={<Icon className="h-4 w-4" />}
               label={label}
-              badge={badge}
             />
           ))}
           <a
@@ -136,11 +153,11 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ counts }: { counts?: SidebarCounts }) {
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-card/95 backdrop-blur-sm relative">
       <span aria-hidden className="absolute top-0 bottom-0 right-0 w-px coastline-r opacity-60" />
-      <SidebarNavContent />
+      <SidebarNavContent counts={counts} />
     </aside>
   );
 }
@@ -162,13 +179,21 @@ function NavItem({
   icon,
   label,
   badge,
+  badgeVariant = "info",
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
   badge?: string;
+  badgeVariant?: "info" | "warning";
 }) {
+  const badgeCls = active
+    ? "bg-primary/20 text-primary"
+    : badgeVariant === "warning"
+    ? "bg-orange-100 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400"
+    : "bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400";
+
   return (
     <button
       onClick={onClick}
@@ -183,7 +208,7 @@ function NavItem({
       {icon}
       <span className="flex-1 text-left">{label}</span>
       {badge && (
-        <span className="ml-auto inline-flex items-center justify-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold font-mono text-primary">
+        <span className={cn("ml-auto inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold font-mono min-w-[18px]", badgeCls)}>
           {badge}
         </span>
       )}

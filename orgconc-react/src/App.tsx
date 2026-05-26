@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { ThemeProvider } from "@/lib/theme";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { listarConciliacoes, listarClientes } from "@/lib/api";
 import { LoginPage } from "@/pages/LoginPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { Sidebar, SidebarNavContent } from "@/components/Sidebar";
@@ -67,12 +68,24 @@ function DashboardLayout() {
   const location = useLocation();
   const [dbStatus, setDbStatus] = useState<"online" | "offline" | "checking">("checking");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCounts, setSidebarCounts] = useState({ anomalias: 0, clientes: 0 });
 
   useEffect(() => {
     fetch("/health")
       .then((r) => r.json())
       .then((d) => setDbStatus(d.banco_dados === "ok" ? "online" : "offline"))
       .catch(() => setDbStatus("offline"));
+
+    Promise.all([
+      listarConciliacoes().catch(() => []),
+      listarClientes().catch(() => []),
+    ]).then(([concs, clts]) => {
+      const anomalias = Array.isArray(concs)
+        ? concs.reduce((s, c) => s + (c.total_anomalias ?? 0), 0)
+        : 0;
+      const clientes = Array.isArray(clts) ? clts.length : 0;
+      setSidebarCounts({ anomalias, clientes });
+    });
   }, []);
 
   const secao = location.pathname.replace(/^\//, "");
@@ -81,12 +94,12 @@ function DashboardLayout() {
   return (
     <div className="flex min-h-screen" style={{ background: "var(--d-bg)" }}>
       {/* Desktop sidebar */}
-      <Sidebar />
+      <Sidebar counts={sidebarCounts} />
 
       {/* Mobile sidebar Sheet */}
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetContent side="left" className="p-0 w-60 bg-card/95 flex flex-col">
-          <SidebarNavContent onNavigate={() => setMobileSidebarOpen(false)} />
+          <SidebarNavContent onNavigate={() => setMobileSidebarOpen(false)} counts={sidebarCounts} />
         </SheetContent>
       </Sheet>
 

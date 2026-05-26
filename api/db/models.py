@@ -15,6 +15,18 @@ def _uuid() -> uuid.UUID:
     return uuid.uuid4()
 
 
+class Org(Base):
+    __tablename__ = "orgs"
+
+    id:           Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    nome:         Mapped[str]       = mapped_column(Text, nullable=False)
+    plano:        Mapped[str]       = mapped_column(String(20), default="basico")
+    cnpj:         Mapped[str | None] = mapped_column(Text)
+    ativo:        Mapped[bool]      = mapped_column(Boolean, default=True)
+    criado_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now)
+    atualizado_em: Mapped[datetime] = mapped_column(TIMESTAMPTZ, default=_now)
+
+
 class Cliente(Base):
     __tablename__ = "clientes"
 
