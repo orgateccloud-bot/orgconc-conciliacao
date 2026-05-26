@@ -9,9 +9,9 @@
     },
     {
       "name": "orgconc-react",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "orgconc-react", "run", "dev"],
-      "port": 5173
+      "runtimeExecutable": "C:/OrgConc/orgconc-react/node_modules/.bin/vite.cmd",
+      "runtimeArgs": ["--host", "127.0.0.1", "--port", "5176"],
+      "port": 5176
     }
   ]
 }

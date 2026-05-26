@@ -61,6 +61,9 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
 
     try:
         with pdfplumber.open(io.BytesIO(content)) as pdf:
+            # FIX 3: vistos deve ser por extrato (fora do loop de paginas)
+            # para deduplicar transacoes identicas entre paginas adjacentes
+            vistos: set = set()
             for page in pdf.pages:
                 text = page.extract_text() or ""
                 if conta_detectada is None:
@@ -69,7 +72,6 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
                         ag, cc = m_conta.groups()
                         conta_detectada = f"AG {ag} / CC {cc}"
 
-                vistos = set()
 
                 for m in rx_sinal_dc.finditer(text):
                     data_br, desc, valor_s, sinal = m.groups()
