@@ -35,6 +35,7 @@ class Conciliacao(Base):
     __tablename__ = "conciliacoes"
 
     id:                   Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    org_id:               Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     cliente_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="SET NULL"))
     report_id:            Mapped[str]          = mapped_column(Text, unique=True, nullable=False)
     modo:                 Mapped[str]          = mapped_column(String(20), nullable=False)
@@ -55,6 +56,7 @@ class Transacao(Base):
     __tablename__ = "transacoes"
 
     id:               Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    org_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     conciliacao_id:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("conciliacoes.id"))
     cliente_id:       Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="SET NULL"))
     data_lancamento:  Mapped[date]         = mapped_column(Date, nullable=False)
