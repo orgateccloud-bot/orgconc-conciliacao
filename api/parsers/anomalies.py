@@ -3,16 +3,28 @@ from __future__ import annotations
 from collections import Counter
 from itertools import combinations
 
+from api.parsers.constants import (  # FIX 6
+    LIMITE_VALOR_ALTO,
+    LIMITE_VALOR_CRITICO,
+    PALAVRAS_ESTORNO,
+    _KEYWORDS_TRANSF,
+)
+
 
 def _chave_transacao(conta: str, t: dict) -> tuple[str, str, float, str]:
-    """Chave unica para marcar transacao anomala na persistencia."""
+    """Chave unica para marcar transacao anomala na persistencia.
+
+    FIX 4: usa fitid quando disponivel para maior precisao.
+    """
+    fitid = t.get("fitid") or ""
+    if fitid:
+        return (conta, t["data"], round(t["valor"], 2), fitid)
     return (conta, t["data"], round(t["valor"], 2), (t.get("memo") or "")[:40])
 
 
 def _coletar_chaves_anomalas(extratos: list[dict]) -> set[tuple[str, str, float, str]]:
     """Retorna chaves exatas das transacoes sinalizadas pelo detector."""
     chaves: set[tuple[str, str, float, str]] = set()
-    _KEYWORDS_TRANSF = ("INTERCREDIS", "TRANSF.CONTAS", "TRANSF MESMA TIT", "TRANSFERENCIA ENTRE CONTAS")
 
     for e in extratos:
         contagem = Counter(
@@ -27,10 +39,10 @@ def _coletar_chaves_anomalas(extratos: list[dict]) -> set[tuple[str, str, float,
 
         for t in e["transacoes"]:
             v = abs(t["valor"])
-            if v > 10000:
+            if v > LIMITE_VALOR_ALTO:  # FIX 6: usa constante centralizada
                 chaves.add(_chave_transacao(e["conta"], t))
             s = (t.get("memo", "") + t.get("nome", "")).upper()
-            if "ESTORNO" in s:
+            if any(p in s for p in PALAVRAS_ESTORNO):  # FIX 8: palavras ampliadas
                 chaves.add(_chave_transacao(e["conta"], t))
 
     if len(extratos) >= 2:
@@ -82,19 +94,19 @@ def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
                 "detalhe": f"R$ {valor:,.2f} | {memo} | {n} ocorrências",
             })
 
-    # Transacoes atipicas
+    # Transacoes atipicas (FIX 6: usa constantes centralizadas)
     for e in extratos:
         for t in e["transacoes"]:
             v = abs(t["valor"])
             memo = (t["memo"] or t["nome"])[:60]
-            if v > 50000:
+            if v > LIMITE_VALOR_CRITICO:
                 anomalias.append({
                     "severidade": "alerta", "tipo": "Valor alto",
                     "titulo": f"Transação de R$ {v:,.2f}",
                     "conta": e["conta"], "valor": t["valor"],
                     "detalhe": f"{t['data']} | {memo}",
                 })
-            elif v > 10000:
+            elif v > LIMITE_VALOR_ALTO:
                 anomalias.append({
                     "severidade": "atencao", "tipo": "Valor alto",
                     "titulo": f"Transação de R$ {v:,.2f}",
@@ -102,11 +114,11 @@ def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
                     "detalhe": f"{t['data']} | {memo}",
                 })
 
-    # Estornos
+    # Estornos — FIX 8: palavras ampliadas via PALAVRAS_ESTORNO
     for e in extratos:
         for t in e["transacoes"]:
             s = (t["memo"] + t["nome"]).upper()
-            if "ESTORNO" in s:
+            if any(p in s for p in PALAVRAS_ESTORNO):
                 anomalias.append({
                     "severidade": "critico", "tipo": "Estorno",
                     "titulo": "Operação estornada",
@@ -114,8 +126,7 @@ def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
                     "detalhe": f"{t['data']} | R$ {t['valor']:,.2f} | {t['memo'][:60]}",
                 })
 
-    # Transferencias internas sem par
-    _KEYWORDS_TRANSF = ("INTERCREDIS", "TRANSF.CONTAS", "TRANSF MESMA TIT", "TRANSFERENCIA ENTRE CONTAS")
+    # Transferencias internas sem par (FIX 6: _KEYWORDS_TRANSF de constants)
     if len(extratos) >= 2:
         for c1, c2 in combinations(extratos, 2):
             def _eh_transf(t):

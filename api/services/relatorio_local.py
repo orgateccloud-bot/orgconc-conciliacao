@@ -9,6 +9,7 @@ from datetime import datetime
 from itertools import combinations as _combis
 
 from api.parsers import _classificar, _top_categorias_e_contrapartes
+from api.parsers.constants import _KEYWORDS_TRANSF  # FIX 6
 
 
 def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
@@ -73,9 +74,13 @@ def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
     # === 2. INDICADORES OPERACIONAIS ===
     out.append("## 2. Indicadores Operacionais\n\n")
     sev_count = {"critico": len(crit), "alerta": len(alerta), "atencao": len(atencao)}
-    saude = "🟢 Boa" if sev_count["critico"] == 0 else (
-        "🟡 Atenção" if sev_count["critico"] <= 2 else "🔴 Crítica"
-    )
+    # FIX 7: saude considera alertas alem de criticos
+    if sev_count["critico"] > 0 or sev_count["alerta"] > 10:
+        saude = "🔴 Crítica"
+    elif sev_count["alerta"] > 0:
+        saude = "🟡 Atenção"
+    else:
+        saude = "🟢 Boa"
     n_dias = len(datas) or 1
     media_diaria_tx = total_tx / n_dias
     cats_count = sum(1 for k in stats["cats"] if k != "A classificar")
@@ -93,7 +98,7 @@ def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
 
     # === 3. TRANSFERENCIAS ENTRE CONTAS ===
     out.append("## 3. Transferências entre Contas Próprias\n\n")
-    _KEYWORDS_TRANSF = ("INTERCREDIS", "TRANSF.CONTAS", "TRANSF MESMA TIT", "TRANSFERENCIA ENTRE CONTAS")
+    # FIX 6: _KEYWORDS_TRANSF importada de constants.py
 
     def _eh_transf(t):
         s = (t["memo"] + t["nome"]).upper()

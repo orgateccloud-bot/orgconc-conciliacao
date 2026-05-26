@@ -11,7 +11,7 @@ import { HeroCard } from "@/components/HeroCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
-import { Upload, FileText, Download, X, CheckCircle2 } from "lucide-react";
+import { Upload, FileText, Download, X, CheckCircle2, ChevronDown, ChevronUp, Hash, AlertTriangle, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Modo = "simulacao" | "haiku" | "sonnet" | "opus" | "multi";
@@ -23,6 +23,28 @@ const MODO_LABELS: Record<Modo, string> = {
   sonnet: "Sonnet",
   opus: "Opus",
   multi: "Multi-modelo",
+};
+
+const MODO_CX: Record<string, string> = {
+  simulacao_local: "bg-gray-100 text-gray-700 border-gray-200",
+  simulacao:       "bg-gray-100 text-gray-700 border-gray-200",
+  claude_llm:      "bg-blue-100 text-blue-700 border-blue-200",
+  haiku:           "bg-sky-100 text-sky-700 border-sky-200",
+  sonnet:          "bg-blue-100 text-blue-700 border-blue-200",
+  opus:            "bg-purple-100 text-purple-700 border-purple-200",
+  multi_modelo:    "bg-purple-100 text-purple-700 border-purple-200",
+  multi:           "bg-purple-100 text-purple-700 border-purple-200",
+};
+
+const MODO_LABEL_DISPLAY: Record<string, string> = {
+  simulacao_local: "Simulação",
+  simulacao:       "Simulação",
+  claude_llm:      "Claude LLM",
+  haiku:           "Haiku",
+  sonnet:          "Sonnet",
+  opus:            "Opus",
+  multi_modelo:    "Multi-modelo",
+  multi:           "Multi-modelo",
 };
 
 const SEVERIDADE_CX: Record<string, string> = {
@@ -55,6 +77,8 @@ export function ConciliacaoPage() {
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState<ConciliacaoResponse | null>(null);
+  // MELHORIA 3: toggle para expandir/recolher relatório
+  const [expandido, setExpandido] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const accept = formato === "csv" ? ".csv" : ".ofx,.pdf,.xml";
@@ -82,6 +106,7 @@ export function ConciliacaoPage() {
     if (!arquivos.length) return;
     setBusy(true);
     setResultado(null);
+    setExpandido(false);
     try {
       const opts = {
         simular: modo === "simulacao",
@@ -137,17 +162,26 @@ export function ConciliacaoPage() {
         </div>
 
         {/* Mode selector */}
-        <div className="flex flex-wrap gap-2">
-          {(["simulacao", "haiku", "sonnet", "opus", "multi"] as Modo[]).map((m) => (
-            <Button
-              key={m}
-              variant={modo === m ? "default" : "outline"}
-              size="sm"
-              onClick={() => setModo(m)}
-            >
-              {MODO_LABELS[m]}
-            </Button>
-          ))}
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {(["simulacao", "haiku", "sonnet", "opus", "multi"] as Modo[]).map((m) => (
+              <Button
+                key={m}
+                variant={modo === m ? "default" : "outline"}
+                size="sm"
+                onClick={() => setModo(m)}
+              >
+                {MODO_LABELS[m]}
+              </Button>
+            ))}
+          </div>
+          {/* MELHORIA 6: aviso de custo quando Opus selecionado */}
+          {modo === "opus" && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <span>⚠️</span>
+              <span>Opus consome ~10× mais créditos que Sonnet</span>
+            </p>
+          )}
         </div>
 
         {/* Drop zone */}
@@ -231,6 +265,8 @@ export function ConciliacaoPage() {
                 <a
                   key={label}
                   href={path}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5 transition-colors"
                 >
                   <Download className="h-3.5 w-3.5" />
@@ -240,13 +276,126 @@ export function ConciliacaoPage() {
             </div>
           </div>
 
+          {/* MELHORIA 2: KPI cards pós-conciliação */}
+          <KpiCards resultado={resultado} modoLabel={MODO_LABEL_DISPLAY} modoCx={MODO_CX} />
+
           <AnomaliasTable anomalias={resultado.anomalias} />
 
-          <article className="prose prose-sm dark:prose-invert max-w-none rounded-2xl border glass p-6 overflow-auto max-h-[60vh]">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{resultado.relatorio_md}</ReactMarkdown>
-          </article>
+          {/* MELHORIA 3: relatório Markdown com toggle expandir/recolher */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground font-mono uppercase tracking-wide">Relatório</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-7 text-xs"
+                onClick={() => setExpandido((v) => !v)}
+              >
+                {expandido ? (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    Recolher
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    Expandir relatório
+                  </>
+                )}
+              </Button>
+            </div>
+            <div className="relative rounded-2xl border glass overflow-hidden">
+              <article
+                className={cn(
+                  "prose prose-sm dark:prose-invert max-w-none p-6",
+                  expandido ? "" : "max-h-[40vh] overflow-y-auto"
+                )}
+              >
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{resultado.relatorio_md}</ReactMarkdown>
+              </article>
+              {/* gradiente de fade quando recolhido */}
+              {!expandido && (
+                <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-card to-transparent" />
+              )}
+            </div>
+          </div>
         </section>
       )}
+    </div>
+  );
+}
+
+// MELHORIA 2: componente de KPI cards
+function KpiCards({
+  resultado,
+  modoLabel,
+  modoCx,
+}: {
+  resultado: ConciliacaoResponse;
+  modoLabel: Record<string, string>;
+  modoCx: Record<string, string>;
+}) {
+  const totalTx = resultado.extratos.reduce((s, e) => s + e.qtd, 0);
+  const totalAnom = resultado.anomalias.length;
+  const modoBadgeCx = modoCx[resultado.modo] ?? "bg-gray-100 text-gray-700 border-gray-200";
+  const modoDisplay = modoLabel[resultado.modo] ?? resultado.modo;
+
+  return (
+    <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      {/* Total Transações */}
+      <div className="rounded-xl border glass p-4 flex items-start gap-3">
+        <div className="rounded-lg p-2 text-primary bg-primary/10 shrink-0">
+          <Hash className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">Total Transações</p>
+          <p className="text-xl font-bold mt-0.5">{totalTx.toLocaleString("pt-BR")}</p>
+        </div>
+      </div>
+
+      {/* Total Créditos — sem dados diretos no response */}
+      <div className="rounded-xl border glass p-4 flex items-start gap-3">
+        <div className="rounded-lg p-2 text-blue-500 bg-blue-50 dark:bg-blue-950/30 shrink-0">
+          <Activity className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">Total Créditos</p>
+          <p className="text-sm font-medium mt-1 text-muted-foreground">Ver relatório</p>
+        </div>
+      </div>
+
+      {/* Total Anomalias */}
+      <div className="rounded-xl border glass p-4 flex items-start gap-3">
+        <div className="rounded-lg p-2 text-orange-500 bg-orange-50 dark:bg-orange-950/30 shrink-0">
+          <AlertTriangle className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">Total Anomalias</p>
+          <p className={cn("text-xl font-bold mt-0.5", totalAnom > 0 ? "text-orange-500" : "")}>
+            {totalAnom}
+          </p>
+        </div>
+      </div>
+
+      {/* Modo */}
+      <div className="rounded-xl border glass p-4 flex items-start gap-3">
+        <div className="rounded-lg p-2 text-purple-500 bg-purple-50 dark:bg-purple-950/30 shrink-0">
+          <Activity className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">Modo</p>
+          <div className="mt-1.5">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold",
+                modoBadgeCx
+              )}
+            >
+              {modoDisplay}
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -271,12 +420,20 @@ function AnomaliasTable({ anomalias }: { anomalias: Anomalia[] }) {
             <th className="text-left p-2 font-semibold">Título</th>
             <th className="text-left p-2 font-semibold">Conta</th>
             <th className="text-right p-2 font-semibold">Valor (R$)</th>
+            {/* MELHORIA 1: coluna Detalhe */}
+            <th className="text-left p-2 font-semibold">Detalhe</th>
           </tr>
         </thead>
         <tbody>
           {anomalias.slice(0, 50).map((a, i) => {
             const sevLower = a.severidade?.toLowerCase() ?? "info";
             const cx = SEVERIDADE_CX[sevLower] ?? SEVERIDADE_CX.info;
+            // truncar detalhe a 80 chars para exibição
+            const detalheDisplay = a.detalhe
+              ? a.detalhe.length > 80
+                ? a.detalhe.slice(0, 80) + "…"
+                : a.detalhe
+              : "—";
             return (
               <tr key={i} className="border-t hover:bg-muted/30">
                 <td className="p-2">
@@ -291,6 +448,13 @@ function AnomaliasTable({ anomalias }: { anomalias: Anomalia[] }) {
                   {a.valor != null
                     ? a.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })
                     : "—"}
+                </td>
+                {/* MELHORIA 1: célula Detalhe com tooltip no title */}
+                <td
+                  className="p-2 text-xs text-muted-foreground max-w-[200px] truncate"
+                  title={a.detalhe ?? undefined}
+                >
+                  {detalheDisplay}
                 </td>
               </tr>
             );

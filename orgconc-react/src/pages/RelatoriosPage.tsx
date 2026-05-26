@@ -23,8 +23,10 @@ import {
   AlertTriangle,
   Hash,
   Activity,
+  Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const MODO_CX: Record<string, string> = {
   simulacao_local: "bg-gray-100 text-gray-700 border-gray-200",
@@ -110,6 +112,15 @@ export function RelatoriosPage() {
       anomalias: r.total_anomalias,
     }));
   }, [allRows]);
+
+  // MELHORIA 5: função para copiar report ID
+  function copiarReportId(reportId: string) {
+    navigator.clipboard.writeText(reportId).then(() => {
+      toast.success("ID copiado!");
+    }).catch(() => {
+      toast.error("Falha ao copiar ID");
+    });
+  }
 
   return (
     <div className="space-y-8">
@@ -245,8 +256,21 @@ export function RelatoriosPage() {
               <tbody>
                 {rowsFiltradas.map((r) => (
                   <tr key={r.report_id} className="border-t hover:bg-muted/20">
-                    <td className="p-3 font-mono text-xs" title={r.report_id}>
-                      {r.report_id.slice(0, 8)}…
+                    {/* MELHORIA 5: 12 chars + botão copy */}
+                    <td className="p-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs" title={r.report_id}>
+                          {r.report_id.slice(0, 12)}…
+                        </span>
+                        <button
+                          onClick={() => copiarReportId(r.report_id)}
+                          className="rounded p-0.5 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label="Copiar Report ID"
+                          title="Copiar ID completo"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      </div>
                     </td>
                     <td className="p-3">
                       <span
@@ -269,6 +293,7 @@ export function RelatoriosPage() {
                     </td>
                     <td className="p-3">
                       <div className="flex items-center justify-center gap-1">
+                        {/* MELHORIA 4: target="_blank" em todos os links de download */}
                         {[
                           { label: "HTML", path: r.exports.html },
                           { label: "XLS",  path: r.exports.xlsx },
@@ -278,6 +303,8 @@ export function RelatoriosPage() {
                             key={label}
                             href={path}
                             title={label}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold font-mono border hover:bg-muted transition-colors text-primary"
                           >
                             <Download className="h-2.5 w-2.5" />

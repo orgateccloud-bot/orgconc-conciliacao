@@ -30,6 +30,10 @@ def _parse_xml(text: str, filename: str) -> list[dict]:
         conta = f"Conta {acct.text.strip()}"
 
     for ntry in root.iter("Ntry"):
+        # FIX 5: pula transacoes pendentes (PDNG)
+        sts_el = ntry.find("Sts")
+        if sts_el is not None and (sts_el.text or "").strip().upper() == "PDNG":
+            continue
         amt = ntry.find("Amt")
         cdtdbt = ntry.find("CdtDbtInd")
         dt_el = ntry.find("BookgDt/Dt")
