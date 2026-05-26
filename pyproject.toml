@@ -1,0 +1,38 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    "migrations",
+    "orgconc-react",
+    ".claude",
+]
+
+[tool.ruff.lint]
+# Defaults do ruff (E + F). Não habilitamos B/W para evitar refactors em massa.
+select = ["E", "F"]
+ignore = [
+    "E501",   # line-too-long — algumas linhas longas são intencionais (URLs, strings)
+    "E731",   # lambda-assignment — usado em parsers para closures de regra
+    "E402",   # module-import-not-at-top-of-file — intencional em main.py (.env first)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# api/services/excel.py: helpers de estilização XLSX usam ; intencionalmente
+# para denso (ex: cell.font = Font(...); cell.fill = PatternFill(...)).
+"api/services/excel.py" = ["E702"]
+
+# api/parsers/__init__.py: regex de PDF tem semicolon legítimo em definições
+# de fallback compactas.
+"api/parsers/__init__.py" = ["E702"]
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    migrations
+  | orgconc-react
+  | \.claude
+)/
+'''

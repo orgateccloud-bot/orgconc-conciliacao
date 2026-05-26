@@ -1,11 +1,16 @@
 """Modelos SQLAlchemy — espelham o schema do Supabase."""
+
 import uuid
 from datetime import datetime, date, timezone
 
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
 from sqlalchemy import String, Boolean, Integer, Date, Numeric, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS, JSONB
+
 TIMESTAMPTZ = _TS(timezone=True)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .client import Base
@@ -30,15 +35,15 @@ class Org(Base):
 class Cliente(Base):
     __tablename__ = "clientes"
 
-    id:           Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    nome:         Mapped[str]        = mapped_column(Text, nullable=False)
-    cnpj:         Mapped[str | None] = mapped_column(String(18), unique=True)
-    email:        Mapped[str | None] = mapped_column(Text)
-    telefone:     Mapped[str | None] = mapped_column(Text)
-    plano:        Mapped[str]        = mapped_column(String(20), default="basico")
-    ativo:        Mapped[bool]       = mapped_column(Boolean, default=True)
-    criado_em:    Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
-    atualizado_em: Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    cnpj: Mapped[str | None] = mapped_column(String(18), unique=True)
+    email: Mapped[str | None] = mapped_column(Text)
+    telefone: Mapped[str | None] = mapped_column(Text)
+    plano: Mapped[str] = mapped_column(String(20), default="basico")
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    criado_em: Mapped[datetime] = mapped_column(TIMESTAMPTZ, default=_now)
+    atualizado_em: Mapped[datetime] = mapped_column(TIMESTAMPTZ, default=_now)
 
     conciliacoes: Mapped[list["Conciliacao"]] = relationship(back_populates="cliente")
 
@@ -60,8 +65,8 @@ class Conciliacao(Base):
     criado_em:            Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
     usage_latency_ms:     Mapped[int | None]   = mapped_column(Integer)
 
-    cliente:     Mapped["Cliente | None"]   = relationship(back_populates="conciliacoes")
-    transacoes:  Mapped[list["Transacao"]]  = relationship(back_populates="conciliacao")
+    cliente: Mapped["Cliente | None"] = relationship(back_populates="conciliacoes")
+    transacoes: Mapped[list["Transacao"]] = relationship(back_populates="conciliacao")
 
 
 class Transacao(Base):

@@ -3,13 +3,17 @@
 Implementa:
 - Hashing de senhas com bcrypt (via passlib)
 - Geracao e validacao de JWT (HS256)
-- Dependency FastAPI `current_user` com acesso anonimo em dev/staging
+- Dependency FastAPI `current_user` que substitui o Bearer compartilhado
+- Fallback compativel: se ORGCONC_AUTH_TOKEN ainda existir, aceita como
+  token "service" sem expiracao (uso em CI/scripts internos)
 
 Variaveis de ambiente:
 - ORGCONC_JWT_SECRET     : chave de assinatura (>=32 chars). Se ausente, gera
                            uma random no startup (tokens nao sobrevivem restart)
 - ORGCONC_JWT_TTL_MIN    : expiracao em minutos (default 120)
+- ORGCONC_AUTH_TOKEN     : (legacy) token compartilhado, aceito como service token
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,9 +22,9 @@ import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import bcrypt as _bcrypt
 import jwt
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException
+from passlib.context import CryptContext
 from pydantic import BaseModel
 
 log = logging.getLogger("orgconc.auth")
@@ -35,8 +39,7 @@ _JWT_SECRET = os.environ.get("ORGCONC_JWT_SECRET", "").strip()
 if not _JWT_SECRET:
     if _IS_PROD:
         raise RuntimeError(
-            "ORGCONC_JWT_SECRET e OBRIGATORIO em producao (>= 32 chars). "
-            "Gere com: openssl rand -hex 32"
+            "ORGCONC_JWT_SECRET e OBRIGATORIO em producao (>= 32 chars). " "Gere com: openssl rand -hex 32"
         )
     _JWT_SECRET = _secrets.token_urlsafe(48)
     log.warning(
@@ -54,29 +57,40 @@ elif len(_JWT_SECRET) < 32:
 _JWT_TTL_MIN = int(os.environ.get("ORGCONC_JWT_TTL_MIN", "120"))
 _JWT_ALG = "HS256"
 
+# Token legacy de servico (mantem retrocompat em dev/staging)
+_LEGACY_SERVICE_TOKEN = os.environ.get("ORGCONC_AUTH_TOKEN", "").strip()
+
+# Hashing (passlib)
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
 def hash_senha(senha: str) -> str:
     """Hash bcrypt da senha (uso: criar usuario, atualizar senha)."""
-    return _bcrypt.hashpw(senha.encode(), _bcrypt.gensalt()).decode()
+    return _pwd_ctx.hash(senha)
 
 
 def verificar_senha(senha: str, hash_armazenado: str) -> bool:
     """Constant-time comparison via bcrypt."""
     try:
-        return _bcrypt.checkpw(senha.encode(), hash_armazenado.encode())
+        return _pwd_ctx.verify(senha, hash_armazenado)
     except Exception:
         return False
 
 
 # ── JWT ─────────────────────────────────────────────────────────────────────
 
+
 class TokenPayload(BaseModel):
     """Claims tipados do JWT."""
-    sub: str          # subject (cliente_id ou identificador)
+
+    sub: str  # subject (cliente_id ou identificador)
+    jti: Optional[str] = None  # JWT ID — identificador único para revogação futura
     email: Optional[str] = None
     cliente_id: Optional[str] = None
     role: str = "user"
     exp: Optional[int] = None
     iat: Optional[int] = None
+    nbf: Optional[int] = None
 
 
 def emitir_token(
@@ -90,7 +104,9 @@ def emitir_token(
     agora = datetime.now(timezone.utc)
     payload = {
         "sub": sub,
+        "jti": _secrets.token_urlsafe(16),  # JWT ID único — suporta revogação futura
         "iat": int(agora.timestamp()),
+        "nbf": int(agora.timestamp()),  # não válido antes do momento de emissão
         "exp": int((agora + timedelta(minutes=ttl_min or _JWT_TTL_MIN)).timestamp()),
         "role": role,
     }
@@ -107,30 +123,39 @@ def decodificar_token(token: str) -> TokenPayload:
         claims = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALG])
         return TokenPayload(**claims)
     except jwt.ExpiredSignatureError:
+        log.warning("security_event", extra={"event": "token_expired"})
         raise HTTPException(status_code=401, detail="Token expirado")
     except jwt.InvalidTokenError as e:
+        log.warning("security_event", extra={"event": "token_invalid", "error": type(e).__name__})
         raise HTTPException(status_code=401, detail=f"Token invalido: {type(e).__name__}")
 
 
 # ── Dependency FastAPI ──────────────────────────────────────────────────────
 
-def auth_optional(
-    request: Request,
-    authorization: Optional[str] = Header(None),
-) -> Optional[TokenPayload]:
-    """Auth opcional via Bearer header ou cookie httpOnly.
 
-    Retorna None se nao houver credencial. Levanta 401 se credencial invalida.
+def auth_optional(authorization: Optional[str] = Header(None)) -> Optional[TokenPayload]:
+    """Auth opcional. Retorna None se nao houver header. Levanta 401 se invalido.
+
+    Usado em endpoints publicos que podem se beneficiar de saber quem chamou
+    (ex: /health expoe banco_dados=ok mesmo sem auth).
     """
-    if authorization:
-        if not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Use 'Bearer <token>'")
-        token = authorization.split(" ", 1)[1].strip()
-        return decodificar_token(token)
-    cookie_token = request.cookies.get("orgconc_token")
-    if cookie_token:
-        return decodificar_token(cookie_token)
-    return None
+    if not authorization:
+        return None
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Use 'Bearer <token>'")
+    token = authorization.split(" ", 1)[1].strip()
+
+    # Aceita token legacy (compatibilidade ate migrar 100%)
+    if _LEGACY_SERVICE_TOKEN:
+        match = _secrets.compare_digest(token, _LEGACY_SERVICE_TOKEN)
+        if match and _IS_PROD:
+            log.error("security_event", extra={"event": "legacy_token_rejected_prod"})
+            raise HTTPException(status_code=401, detail="Token invalido")
+        if match:
+            log.warning("security_event", extra={"event": "legacy_token_used_dev"})
+            return TokenPayload(sub="legacy-service", role="service")
+
+    return decodificar_token(token)
 
 
 def current_user(
@@ -149,9 +174,13 @@ def current_user(
     # Producao: anonimo SEMPRE bloqueado
     if _IS_PROD:
         raise HTTPException(status_code=401, detail="Token Bearer obrigatorio em producao")
+    # Dev/staging com token legacy configurado: exige header
+    if _LEGACY_SERVICE_TOKEN:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente")
     # Dev/staging sem auth configurada: usuario anonimo (apenas para conveniencia local)
     log.warning(
         "Acesso anonimo liberado (ORGCONC_ENV=%s, sem ORGCONC_AUTH_TOKEN). "
-        "Configure auth antes de promover para producao.", _ENV
+        "Configure auth antes de promover para producao.",
+        _ENV,
     )
     return TokenPayload(sub="anonymous", role="anonymous")
