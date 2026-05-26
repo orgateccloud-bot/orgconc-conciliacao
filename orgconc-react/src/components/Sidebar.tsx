@@ -1,51 +1,75 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { Logo } from "@/components/Logo";
 import {
-  Users,
-  FileText,
-  Code2,
-  HeartPulse,
-  LayoutDashboard,
-  LineChart,
-  Settings,
+  Users, FileText, LayoutDashboard, LineChart, Settings,
+  Upload, AlertTriangle, ShieldCheck, Lock, Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Secao = "dashboard" | "conciliacao" | "clientes" | "relatorios" | "configuracoes";
+type SidebarItem = {
+  id: string;
+  label: string;
+  icon: typeof LineChart;
+  badge?: number;
+  href?: string;
+};
 
-const MAIN_ITEMS: Array<{ id: Secao; label: string; icon: typeof LineChart }> = [
-  { id: "dashboard",   label: "Dashboard",   icon: LayoutDashboard },
-  { id: "conciliacao", label: "Conciliação", icon: LineChart },
-  { id: "clientes",    label: "Clientes",    icon: Users },
-  { id: "relatorios",  label: "Relatórios",  icon: FileText },
+const OPERACAO_ITEMS: SidebarItem[] = [
+  { id: "dashboard",   label: "Visão Geral",  icon: LayoutDashboard },
+  { id: "conciliacao", label: "Análises",     icon: LineChart },
+  { id: "conciliacao", label: "Upload",       icon: Upload },
+  { id: "relatorios",  label: "Transações",   icon: Activity },
+  { id: "clientes",    label: "Clientes",     icon: Users },
+  { id: "anomalias",   label: "Anomalias",    icon: AlertTriangle },
 ];
 
-const SYSTEM_ITEMS: Array<{ id: Secao; label: string; icon: typeof LineChart }> = [
+const COMPLIANCE_ITEMS: SidebarItem[] = [
+  { id: "auditoria",   label: "Auditoria",    icon: ShieldCheck },
+  { id: "seguranca",   label: "Segurança",    icon: Lock },
   { id: "configuracoes", label: "Configurações", icon: Settings },
 ];
 
-export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarNavContent({
+  onNavigate,
+  anomalias = 0,
+  clientes = 0,
+}: {
+  onNavigate?: () => void;
+  anomalias?: number;
+  clientes?: number;
+}) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
+  const operacaoWithBadges = OPERACAO_ITEMS.map((item) => ({
+    ...item,
+    badge:
+      item.label === "Clientes" && clientes > 0
+        ? clientes
+        : item.label === "Anomalias" && anomalias > 0
+        ? anomalias
+        : undefined,
+  }));
+
   function go(id: string) {
-    navigate(`/${id}`);
+    const routableIds = ["dashboard","conciliacao","clientes","relatorios","configuracoes"];
+    if (routableIds.includes(id)) navigate(`/${id}`);
     onNavigate?.();
   }
 
-  function isActive(id: string) {
-    return pathname === `/${id}` || (id === "dashboard" && pathname === "/");
+  function isActive(id: string, label: string) {
+    if (label === "Upload" || label === "Análises") return pathname === "/conciliacao";
+    if (label === "Transações") return pathname === "/relatorios";
+    return pathname === `/${id}` || (id === "dashboard" && (pathname === "/" || pathname === "/dashboard"));
   }
 
   return (
     <>
+      {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b">
-        <Logo size={56} />
+        <Logo size={52} />
         <div className="flex flex-col">
-          <h1
-            className="font-bold text-lg tracking-tight text-foreground leading-tight"
-            style={{ letterSpacing: "-0.025em" }}
-          >
+          <h1 className="font-bold text-lg tracking-tight leading-tight" style={{ letterSpacing: "-0.025em" }}>
             ORGATEC
           </h1>
           <span className="text-[10px] font-semibold tracking-[0.18em] uppercase text-muted-foreground mt-0.5 font-mono">
@@ -54,64 +78,69 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
 
-      <nav className="flex-1 px-2 py-4 space-y-0.5" aria-label="Navegação principal">
-        <NavGroup label="Principal">
-          {MAIN_ITEMS.map(({ id, label, icon: Icon }) => (
+      <nav className="flex-1 px-2 py-4 overflow-y-auto" aria-label="Navegação principal">
+        {/* OPERAÇÃO */}
+        <NavGroup label="Operação">
+          {operacaoWithBadges.map((item) => (
             <NavItem
-              key={id}
-              active={isActive(id)}
-              onClick={() => go(id)}
-              icon={<Icon className="h-4 w-4" />}
-              label={label}
+              key={item.label}
+              active={isActive(item.id, item.label)}
+              onClick={() => go(item.id)}
+              icon={<item.icon className="h-4 w-4" />}
+              label={item.label}
+              badge={item.badge}
             />
           ))}
         </NavGroup>
 
-        <NavGroup label="Sistema">
-          {SYSTEM_ITEMS.map(({ id, label, icon: Icon }) => (
+        {/* COMPLIANCE */}
+        <NavGroup label="Compliance">
+          {COMPLIANCE_ITEMS.map((item) => (
             <NavItem
-              key={id}
-              active={isActive(id)}
-              onClick={() => go(id)}
-              icon={<Icon className="h-4 w-4" />}
-              label={label}
+              key={item.id}
+              active={isActive(item.id, item.label)}
+              onClick={() => go(item.id)}
+              icon={<item.icon className="h-4 w-4" />}
+              label={item.label}
             />
           ))}
-          <a
-            href="/docs"
-            target="_blank"
-            rel="noopener"
-            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-          >
-            <Code2 className="h-4 w-4" />
-            API Docs
-          </a>
-          <a
-            href="/health"
-            target="_blank"
-            rel="noopener"
-            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-          >
-            <HeartPulse className="h-4 w-4" />
-            Health Check
-          </a>
         </NavGroup>
       </nav>
 
-      <div className="border-t px-4 py-3">
-        <div className="inline-flex items-center rounded-md border bg-secondary px-2 py-1 text-[11px] font-mono font-semibold text-muted-foreground">
-          v0.5.0
+      {/* Criptografia Ativa card */}
+      <div className="px-3 py-3 border-t">
+        <div className="rounded-xl bg-primary/10 border border-primary/20 px-3 py-2.5 flex items-start gap-2.5">
+          <div className="mt-0.5 shrink-0 rounded-lg bg-primary/20 p-1">
+            <Lock className="h-3 w-3 text-primary" />
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold text-primary">Criptografia Ativa</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+              Todos os dados protegidos com AES-256 e TLS 1.3
+            </p>
+          </div>
+        </div>
+        <div className="mt-2 px-1">
+          <span className="inline-flex items-center rounded-md border bg-secondary px-2 py-0.5 text-[10px] font-mono font-semibold text-muted-foreground">
+            v0.5.0
+          </span>
         </div>
       </div>
     </>
   );
 }
 
-export function Sidebar() {
+export function Sidebar({
+  anomalias,
+  clientes,
+}: {
+  anomalias?: number;
+  clientes?: number;
+}) {
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-card/95 backdrop-blur-sm relative">
       <span aria-hidden className="absolute top-0 bottom-0 right-0 w-px coastline-r opacity-60" />
-      <SidebarNavContent />
+      <SidebarNavContent anomalias={anomalias} clientes={clientes} />
     </aside>
   );
 }
@@ -128,15 +157,13 @@ function NavGroup({ label, children }: { label: string; children: React.ReactNod
 }
 
 function NavItem({
-  active,
-  onClick,
-  icon,
-  label,
+  active, onClick, icon, label, badge,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  badge?: number;
 }) {
   return (
     <button
@@ -150,7 +177,19 @@ function NavItem({
       )}
     >
       {icon}
-      {label}
+      <span className="flex-1 text-left">{label}</span>
+      {badge !== undefined && (
+        <span className={cn(
+          "inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold min-w-[18px]",
+          active
+            ? "bg-primary/20 text-primary"
+            : label === "Anomalias"
+            ? "bg-orange-100 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400"
+            : "bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400"
+        )}>
+          {badge}
+        </span>
+      )}
     </button>
   );
 }

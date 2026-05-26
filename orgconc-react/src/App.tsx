@@ -56,12 +56,24 @@ function DashboardLayout() {
   const location = useLocation();
   const [dbStatus, setDbStatus] = useState<"online" | "offline" | "checking">("checking");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCounts, setSidebarCounts] = useState({ anomalias: 0, clientes: 0 });
 
   useEffect(() => {
     fetch("/health")
       .then((r) => r.json())
       .then((d) => setDbStatus(d.banco_dados === "ok" ? "online" : "offline"))
       .catch(() => setDbStatus("offline"));
+
+    Promise.all([
+      fetch("/conciliacoes").then((r) => r.json()).catch(() => []),
+      fetch("/clientes").then((r) => r.json()).catch(() => []),
+    ]).then(([concs, clts]) => {
+      const anomalias = Array.isArray(concs)
+        ? concs.reduce((s: number, c: { total_anomalias?: number }) => s + (c.total_anomalias ?? 0), 0)
+        : 0;
+      const clientes = Array.isArray(clts) ? clts.length : 0;
+      setSidebarCounts({ anomalias, clientes });
+    });
   }, []);
 
   const secao = location.pathname.replace(/^\//, "");
@@ -70,12 +82,16 @@ function DashboardLayout() {
   return (
     <div className="flex min-h-screen" style={{ background: "var(--d-bg)" }}>
       {/* Desktop sidebar */}
-      <Sidebar />
+      <Sidebar anomalias={sidebarCounts.anomalias} clientes={sidebarCounts.clientes} />
 
       {/* Mobile sidebar Sheet */}
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetContent side="left" className="p-0 w-60 bg-card/95 flex flex-col">
-          <SidebarNavContent onNavigate={() => setMobileSidebarOpen(false)} />
+          <SidebarNavContent
+            onNavigate={() => setMobileSidebarOpen(false)}
+            anomalias={sidebarCounts.anomalias}
+            clientes={sidebarCounts.clientes}
+          />
         </SheetContent>
       </Sheet>
 
@@ -87,7 +103,7 @@ function DashboardLayout() {
           onLogout={logout}
           onToggleSidebar={() => setMobileSidebarOpen(true)}
         />
-        <div className="flex-1 p-4 lg:p-10 xl:p-12 max-w-[1400px] w-full mx-auto pb-24">
+        <div className="flex-1 p-4 lg:p-6 xl:p-8 max-w-[1600px] w-full mx-auto pb-16">
           <ErrorBoundary>
             <Suspense fallback={<PageLoader />}>
               <Outlet />
