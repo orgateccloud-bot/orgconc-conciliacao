@@ -23,7 +23,7 @@ install-prod: ## Instala somente prod (sem pytest/ruff/etc)
 dev: ## Sobe API local em 8765 (autoreload)
 	$(PY) -m uvicorn api.main:app --reload --port 8765
 
-frontend: ## Sobe Vite dev server em 5173
+frontend: ## Sobe Vite dev server em 5176
 	cd $(FRONT_DIR) && $(NPM) run dev
 
 test: ## Roda pytest backend com cobertura

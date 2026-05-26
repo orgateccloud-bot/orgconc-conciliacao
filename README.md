@@ -24,7 +24,7 @@ cd orgconc-react && npm install && npm run dev
 ```
 
 - API: http://127.0.0.1:8765/docs
-- React (dev): http://127.0.0.1:5173
+- React (dev): http://127.0.0.1:5176
 - UI legada: http://127.0.0.1:8765/ui/
 
 ## Produção (React servido pela API)
