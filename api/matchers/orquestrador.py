@@ -15,13 +15,29 @@ Estágios:
 """
 from __future__ import annotations
 
+import logging
+import re
 import uuid
 from typing import Optional
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.matchers import contrapartes, contrato as m_contrato, documento, guia as m_guia, nfe as m_nfe
 from api.matchers.cascata import Disposicao, Resultado
+from api.matchers.cnpj_enricher import _carregar_cache, _salvar_cache, enriquecer_um
+
+log = logging.getLogger("orgconc.matchers.orquestrador")
+
+_RX_CNPJ_BANK = re.compile(r"(\d{2})[.](\d{3})[.](\d{3})[ /](\d{4})[-](\d{2})")
+
+
+def _extrair_cnpj(texto: str) -> Optional[str]:
+    """Extrai CNPJ de texto livre (memo/nome bancário) — aceita 'X.X.X X-X' ou 'X.X.X/X-X'."""
+    if not texto:
+        return None
+    m = _RX_CNPJ_BANK.search(texto)
+    return "".join(m.groups()) if m else None
 
 
 async def conciliar(
@@ -29,8 +45,14 @@ async def conciliar(
     db: AsyncSession,
     cliente_id: uuid.UUID,
     xmls_nfe: Optional[list[tuple[str, bytes]]] = None,
+    enriquecer_cnpj: bool = True,
 ) -> list[Disposicao]:
-    """Despacha cada Resultado para o matcher do seu estágio."""
+    """Despacha cada Resultado para o matcher do seu estágio.
+
+    Quando `enriquecer_cnpj=True` (padrão), enriquece contrapartes via
+    cnpj_enricher após a cascata terminar: cada Disposicao com CNPJ no memo
+    ganha razão social + situação cadastral + UF/CNAE.
+    """
     xmls_nfe = xmls_nfe or []
 
     # ── Estágio 1: cadastro primeiro, base CNPJ como fallback ────────────
@@ -158,7 +180,68 @@ async def conciliar(
                     flag="sem alias no cadastro — vai para o matcher fuzzy/LLM",
                 ))
 
+    # ── Pós-processamento: enriquecer CNPJs via BrasilAPI/RFB ──────────
+    if enriquecer_cnpj:
+        await _enriquecer_disposicoes(disp, db)
+
     return disp
+
+
+async def _enriquecer_disposicoes(disposicoes: list[Disposicao], db: AsyncSession) -> None:
+    """Enriquece cada Disposicao cujo memo/nome contém CNPJ com razão social.
+
+    Cascata: cache local -> BrasilAPI -> base RFB local (fallback).
+    Atualiza `contraparte` (razão social) e `flag` (alerta de baixada/inapta).
+    Modifica in-place.
+    """
+    # Coleta CNPJs únicos
+    cnpjs_por_disp: dict[int, str] = {}
+    for i, d in enumerate(disposicoes):
+        cnpj = _extrair_cnpj(d.transacao.nome or "") or _extrair_cnpj(d.transacao.memo or "")
+        if cnpj:
+            cnpjs_por_disp[i] = cnpj
+    if not cnpjs_por_disp:
+        return
+
+    unicos = list(set(cnpjs_por_disp.values()))
+    cache = _carregar_cache()
+
+    import asyncio
+    semaforo = asyncio.Semaphore(2)  # ~2 req/s sustentado no BrasilAPI
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0),
+                                  headers={"User-Agent": "OrgConc/0.5"}) as client:
+        async def _job(c: str):
+            info = await enriquecer_um(c, cache, client, db, semaforo)
+            return c, info
+
+        try:
+            results = await asyncio.gather(*[_job(c) for c in unicos],
+                                            return_exceptions=True)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("falha no enriquecimento em lote: %s", exc)
+            return
+
+    info_map = {}
+    for r in results:
+        if isinstance(r, tuple):
+            c, info = r
+            info_map[c] = info
+
+    _salvar_cache(cache)
+
+    # Aplica nos disposicoes
+    for i, cnpj in cnpjs_por_disp.items():
+        info = info_map.get(cnpj)
+        if not info or not info.razao_social:
+            continue
+        d = disposicoes[i]
+        # Só sobrescreve contraparte se ainda estiver vazia ou se RFB trouxe nome melhor
+        if not d.contraparte:
+            d.contraparte = info.razao_social
+        # Alerta de baixada / inapta agrega na flag
+        if info.flag and info.flag not in (d.flag or ""):
+            d.flag = (d.flag + " | " + info.flag).strip(" |") if d.flag else info.flag
 
 
 _AUTOMATICO = {
