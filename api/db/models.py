@@ -127,6 +127,44 @@ class LlmCostDaily(Base):
     atualizado_em: Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
 
 
+class GuiaTributo(Base):
+    """Guias tributárias cadastradas pela firma (DARF, DAS, GPS, GNRE, etc.).
+
+    Usado pelo matcher do estágio 4 (api/matchers/guia.py) para casar
+    pagamentos no extrato com tributos previamente gerados.
+    """
+    __tablename__ = "guia_tributo"
+
+    id:              Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    cliente_id:      Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    tipo:            Mapped[str]          = mapped_column(Text, nullable=False)  # DARF/DAS/GPS/GNRE
+    codigo_receita:  Mapped[str | None]   = mapped_column(Text)
+    valor:           Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False)
+    competencia:     Mapped[str | None]   = mapped_column(Text)  # AAAA-MM
+    data_vencimento: Mapped[date | None]  = mapped_column(Date)
+    conta_contabil:  Mapped[str | None]   = mapped_column(Text)
+    ativo:           Mapped[bool]         = mapped_column(Boolean, default=True)
+    criado_em:       Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
+
+
+class Contrato(Base):
+    """Contratos recorrentes (aluguel, seguro, leasing, consórcio) — valor fixo.
+
+    Usado pelo matcher do estágio 5 (api/matchers/contrato.py).
+    """
+    __tablename__ = "contrato"
+
+    id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    cliente_id:     Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    descricao:      Mapped[str]          = mapped_column(Text, nullable=False)
+    valor:          Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False)
+    periodicidade:  Mapped[str | None]   = mapped_column(String(20))  # mensal/anual/etc.
+    padrao_memo:    Mapped[str | None]   = mapped_column(Text)        # trecho esperado para desempate
+    conta_contabil: Mapped[str | None]   = mapped_column(Text)
+    ativo:          Mapped[bool]         = mapped_column(Boolean, default=True)
+    criado_em:      Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
+
+
 class TransacaoDisposicao(Base):
     """Disposição contábil de cada transação após a cascata de matchers (OrgNeural2).
 

@@ -30,7 +30,9 @@ from api.routers import (
     clientes,
     conciliacao,
     conciliacoes_list,
+    contratos as contratos_router,
     exports,
+    guias as guias_router,
     health,
     matchers as matchers_router,
     metrics as metrics_router,
@@ -73,6 +75,8 @@ app.include_router(ai_router.router)
 app.include_router(activity_router.router)
 app.include_router(transacoes_router.router)
 app.include_router(matchers_router.router)
+app.include_router(guias_router.router)
+app.include_router(contratos_router.router)
 
 # UI legada (periodo de transicao)
 if STATIC_DIR.exists():
