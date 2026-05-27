@@ -253,10 +253,32 @@ def gerar_markdown(dados: dict) -> str:
             flag = (disp.flag or "").replace("|", "/")[:80]
             lines.append(f"| {disp.transacao.data} | {valor:,.2f} | {cp} | {flag} |")
 
+    # Transações (extrato com saldo acumulado)
+    saldo_inicial = d['saldo_final'] - (d['credito_total'] + d['debito_total'])
+    lines += [
+        "",
+        "## 4. Transacoes (Extrato Detalhado)",
+        "",
+        f"Saldo inicial: R$ {saldo_inicial:,.2f} | Saldo final: R$ {d['saldo_final']:,.2f}",
+        "",
+        "| # | Data | Valor (R$) | Memo | Nome | Saldo Acumulado (R$) |",
+        "|---|---|---|---|---|---|",
+    ]
+    txs_ord = sorted(d["disposicoes"], key=lambda x: x.transacao.data)
+    saldo_corrente = saldo_inicial
+    for i, disp in enumerate(txs_ord, start=1):
+        t = disp.transacao
+        saldo_corrente += t.valor
+        memo_s = (t.memo or "")[:30].replace("|", "/")
+        nome_s = (t.nome or "")[:30].replace("|", "/")
+        lines.append(
+            f"| {i} | {t.data} | {t.valor:,.2f} | {memo_s} | {nome_s} | {saldo_corrente:,.2f} |"
+        )
+
     # Disposições
     lines += [
         "",
-        "## 4. Disposicoes por Transacao",
+        "## 5. Disposicoes por Transacao",
         "",
         "| Data | Valor (R$) | Memo | Nome (banco) | Disposicao | Contraparte (RFB) |",
         "|---|---|---|---|---|---|",
@@ -392,6 +414,73 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
     for col, w in {1: 26, 2: 24, 3: 14, 4: 10}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = "A4"
+
+    # ── Aba Transacoes (extrato com saldo acumulado) ────────────────────
+    ws = wb.create_sheet("Transacoes")
+    ws["A1"] = f"EXTRATO - Conta {d['conta']} (Ag {d['agencia']})"
+    ws["A1"].font = TITLE_FONT
+    ws.merge_cells("A1:G1")
+    ws["A2"] = f"Periodo {d['periodo_ini']} a {d['periodo_fim']} - Saldo final R$ {d['saldo_final']:,.2f}"
+    ws["A2"].font = Font(italic=True, color="64748B", size=9)
+    ws.merge_cells("A2:G2")
+
+    headers_t = ["#", "Data", "Tipo", "Valor (R$)", "Memo", "Nome", "Saldo Acumulado (R$)"]
+    for c, h in enumerate(headers_t, start=1):
+        ws.cell(row=4, column=c, value=h)
+    style_header(ws, 4, 7)
+
+    # Calcula saldo inicial = saldo final - soma de todos os fluxos
+    saldo_inicial = d['saldo_final'] - (d['credito_total'] + d['debito_total'])
+
+    txs_ord = sorted(d['disposicoes'], key=lambda x: x.transacao.data)
+    saldo_corrente = saldo_inicial
+    r = 5
+    total_cred = 0.0
+    total_deb = 0.0
+    for i, disp in enumerate(txs_ord, start=1):
+        t = disp.transacao
+        saldo_corrente += t.valor
+        if t.valor > 0:
+            total_cred += t.valor
+        else:
+            total_deb += t.valor
+
+        ws.cell(row=r, column=1, value=i)
+        ws.cell(row=r, column=2, value=t.data)
+        ws.cell(row=r, column=3, value=t.tipo)
+        cv = ws.cell(row=r, column=4, value=round(t.valor, 2))
+        cv.number_format = "#,##0.00"
+        cv.font = Font(color=("DC2626" if t.valor < 0 else "16A34A"))
+        ws.cell(row=r, column=5, value=t.memo or "")
+        ws.cell(row=r, column=6, value=t.nome or "")
+        cs = ws.cell(row=r, column=7, value=round(saldo_corrente, 2))
+        cs.number_format = "#,##0.00"
+        cs.font = Font(bold=True, color=("DC2626" if saldo_corrente < 0 else "0F172A"))
+        for c in range(1, 8):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+            if r % 2 == 0:
+                ws.cell(row=r, column=c).fill = ZEBRA_FILL
+        r += 1
+
+    # Linha de totais
+    ws.cell(row=r, column=1, value="TOTAL").font = TOTAL_FONT
+    ws.cell(row=r, column=2, value=f"{d['n_transacoes']} transacoes")
+    cv = ws.cell(row=r, column=4, value=round(total_cred + total_deb, 2))
+    cv.number_format = "#,##0.00"
+    ws.cell(row=r, column=5, value=f"+ {total_cred:,.2f}").font = Font(color="16A34A", bold=True)
+    ws.cell(row=r, column=6, value=f"{total_deb:,.2f}").font = Font(color="DC2626", bold=True)
+    ws.cell(row=r, column=7, value=round(d['saldo_final'], 2)).number_format = "#,##0.00"
+    ws.cell(row=r, column=7).font = TOTAL_FONT
+    for c in range(1, 8):
+        ws.cell(row=r, column=c).fill = TOTAL_FILL
+        if c != 5 and c != 6:
+            ws.cell(row=r, column=c).font = TOTAL_FONT
+        ws.cell(row=r, column=c).border = THIN_BORDER
+
+    for col, w in {1: 5, 2: 12, 3: 8, 4: 16, 5: 38, 6: 35, 7: 22}.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = "A5"
+    ws.auto_filter.ref = f"A4:G{r-1}"
 
     # ── Aba Disposicoes ────────────────────────────────────────────────
     ws = wb.create_sheet("Disposicoes")
