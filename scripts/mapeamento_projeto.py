@@ -276,22 +276,22 @@ O motor de matching contabil **OrgNeural2** esta **100% integrado** ao OrgConc e
 
 ```
 ENTREGAS AO CLIENTE
-├── CARTA_APRESENTACAO_LOCAR.{pdf, html, md}
-├── CARTA_CONSTATACAO_LOCAR.{pdf, html, md}
-├── APRESENTACAO_EXECUTIVA_LOCAR.{pdf, html}
-└── PERFIL_AUDITORIA_LOCAR.{pdf, html, md}
+├── CARTA_APRESENTACAO_LOCAR.{{pdf, html, md}}
+├── CARTA_CONSTATACAO_LOCAR.{{pdf, html, md}}
+├── APRESENTACAO_EXECUTIVA_LOCAR.{{pdf, html}}
+└── PERFIL_AUDITORIA_LOCAR.{{pdf, html, md}}
 
 RELATORIOS COMPLETOS
-├── RELATORIO_INTEGRADO_LOCAR_v2.{xlsx, pdf, html, md}
-├── AUDITORIA_LOCAR_TRANSPORTE_BOVINOS.{xlsx, pdf, html, md}
-└── AUDITORIA_CONSOLIDADA_158083-3_5MESES.{xlsx, pdf, html, md}
+├── RELATORIO_INTEGRADO_LOCAR_v2.{{xlsx, pdf, html, md}}
+├── AUDITORIA_LOCAR_TRANSPORTE_BOVINOS.{{xlsx, pdf, html, md}}
+└── AUDITORIA_CONSOLIDADA_158083-3_5MESES.{{xlsx, pdf, html, md}}
 
 RELATORIOS MENSAIS (5 meses)
-└── AUDIT_LOCAR_158083-3_{JAN,FEV,MAR,ABR,MAI}_2026.{xlsx, pdf, html, md}
+└── AUDIT_LOCAR_158083-3_{{JAN,FEV,MAR,ABR,MAI}}_2026.{{xlsx, pdf, html, md}}
 
 LEGADOS / VERSOES ANTERIORES
-├── CARTA_CONSTATACAO_LOCAR_TRANSPORTE.{pdf, html, md}
-└── RELATORIO_CONSOLIDADO.{xlsx, md}
+├── CARTA_CONSTATACAO_LOCAR_TRANSPORTE.{{pdf, html, md}}
+└── RELATORIO_CONSOLIDADO.{{xlsx, md}}
 ```
 
 ### 5.3 Infraestrutura de Branding
