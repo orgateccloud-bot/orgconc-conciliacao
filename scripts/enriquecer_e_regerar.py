@@ -6,7 +6,7 @@ import re
 import sys
 import time
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -29,7 +29,7 @@ ARQUIVOS = [
 ESTAGIOS = {0: "TRANSF.INTERNA", 1: "CNPJ/CPF", 2: "NF-e", 3: "TARIFA",
             4: "TRIBUTO", 5: "CONTRATO", 6: "ALIAS/FUZZY"}
 
-OUT_PATH = Path(r"C:\Users\Veloso\Downloads\RELATORIO_ENRIQUECIDO.xlsx")
+OUT_PATH = Path(r"C:\Users\Veloso\Downloads\RELATORIO_ENRIQUECIDO_v3.xlsx")
 RX_CNPJ = re.compile(r"(\d{2})[.](\d{3})[.](\d{3})[ /](\d{4})[-](\d{2})")
 
 NAVY = "0F172A"
@@ -163,11 +163,11 @@ def gerar_xlsx_enriquecido(todos, infos: dict[str, CnpjInfo]) -> None:
     ws["A2"].font = Font(italic=True, color="64748B", size=9)
     ws.merge_cells("A2:J2")
 
-    headers = ["CNPJ", "Razao Social", "Nome Fantasia", "Situacao", "UF", "Municipio",
-               "CNAE", "CNAE Descricao", "Porte", "Aparicoes"]
+    headers = ["CNPJ", "Razao Social", "Nome Fantasia", "Situacao", "Data Baixa/Situacao",
+               "UF", "Municipio", "CNAE", "CNAE Descricao", "Porte", "Aparicoes"]
     for c, h in enumerate(headers, start=1):
         ws.cell(row=4, column=c, value=h)
-    style_header_row(ws, 4, 10)
+    style_header_row(ws, 4, 11)
 
     aparicoes = Counter(c for _, _, _, _, c in todos if c)
     items = sorted(infos.items(), key=lambda x: -aparicoes.get(x[0], 0))
@@ -179,26 +179,29 @@ def gerar_xlsx_enriquecido(todos, infos: dict[str, CnpjInfo]) -> None:
         ws.cell(row=r, column=2, value=info.razao_social or "(nao encontrado)")
         ws.cell(row=r, column=3, value=info.nome_fantasia)
         ws.cell(row=r, column=4, value=info.situacao)
-        ws.cell(row=r, column=5, value=info.uf)
-        ws.cell(row=r, column=6, value=info.municipio)
-        ws.cell(row=r, column=7, value=info.cnae_principal)
-        ws.cell(row=r, column=8, value=info.cnae_descricao)
-        ws.cell(row=r, column=9, value=info.porte)
-        ws.cell(row=r, column=10, value=aparicoes.get(cnpj, 0)).number_format = "#,##0"
-        for c in range(1, 11):
+        ws.cell(row=r, column=5, value=info.data_situacao or "")
+        ws.cell(row=r, column=6, value=info.uf)
+        ws.cell(row=r, column=7, value=info.municipio)
+        ws.cell(row=r, column=8, value=info.cnae_principal)
+        ws.cell(row=r, column=9, value=info.cnae_descricao)
+        ws.cell(row=r, column=10, value=info.porte)
+        ws.cell(row=r, column=11, value=aparicoes.get(cnpj, 0)).number_format = "#,##0"
+        for c in range(1, 12):
             cell = ws.cell(row=r, column=c)
             cell.border = THIN_BORDER
             if is_baixada:
                 cell.fill = ALERT_FILL
                 if c == 4:
                     cell.font = Font(bold=True, color="DC2626")
+                elif c == 5:
+                    cell.font = Font(bold=True, color="DC2626")
             elif r % 2 == 0:
                 cell.fill = ZEBRA_FILL
         r += 1
 
-    auto_width(ws, {1: 20, 2: 42, 3: 30, 4: 22, 5: 5, 6: 22, 7: 10, 8: 42, 9: 22, 10: 12})
+    auto_width(ws, {1: 20, 2: 42, 3: 30, 4: 22, 5: 16, 6: 5, 7: 22, 8: 10, 9: 42, 10: 22, 11: 12})
     ws.freeze_panes = "A5"
-    ws.auto_filter.ref = f"A4:J{r-1}"
+    ws.auto_filter.ref = f"A4:K{r-1}"
 
     # ── Aba 3: Transações com enriquecimento ─────────────────────────────
     ws = wb.create_sheet("Transacoes Enriquecidas")
@@ -206,11 +209,11 @@ def gerar_xlsx_enriquecido(todos, infos: dict[str, CnpjInfo]) -> None:
     ws["A1"].font = TITLE_FONT
     ws.merge_cells("A1:K1")
 
-    headers = ["Mes", "Conta", "Data", "Tipo", "Valor (R$)", "Estagio", "Memo",
-               "Nome (banco)", "CNPJ", "Razao Social (RFB)", "Situacao"]
+    headers = ["Mes", "Conta", "Data Trans.", "Tipo", "Valor (R$)", "Estagio", "Memo",
+               "Nome (banco)", "CNPJ", "Razao Social (RFB)", "Situacao", "Data Baixa"]
     for c, h in enumerate(headers, start=1):
         ws.cell(row=3, column=c, value=h)
-    style_header_row(ws, 3, 11)
+    style_header_row(ws, 3, 12)
 
     r = 4
     for mes, conta, t, res, cnpj in todos:
@@ -231,16 +234,21 @@ def gerar_xlsx_enriquecido(todos, infos: dict[str, CnpjInfo]) -> None:
             if info:
                 ws.cell(row=r, column=10, value=info.razao_social or "")
                 ws.cell(row=r, column=11, value=info.situacao or "")
-                if "BAIXADA" in (info.situacao or "") or "INAPTA" in (info.situacao or ""):
-                    for c in range(1, 12):
+                is_baixada = "BAIXADA" in (info.situacao or "") or "INAPTA" in (info.situacao or "")
+                # Data da baixa: só exibe quando empresa está baixada/inapta (a data_situacao
+                # de empresas ATIVAS é a data de abertura — irrelevante aqui)
+                if is_baixada:
+                    cell_db = ws.cell(row=r, column=12, value=info.data_situacao or "")
+                    cell_db.font = Font(bold=True, color="DC2626")
+                    for c in range(1, 13):
                         ws.cell(row=r, column=c).fill = ALERT_FILL
-        for c in range(1, 12):
+        for c in range(1, 13):
             ws.cell(row=r, column=c).border = THIN_BORDER
         r += 1
 
-    auto_width(ws, {1: 11, 2: 12, 3: 12, 4: 8, 5: 14, 6: 8, 7: 32, 8: 32, 9: 20, 10: 40, 11: 18})
+    auto_width(ws, {1: 11, 2: 12, 3: 12, 4: 8, 5: 14, 6: 8, 7: 32, 8: 32, 9: 20, 10: 40, 11: 18, 12: 13})
     ws.freeze_panes = "A4"
-    ws.auto_filter.ref = f"A3:K{r-1}"
+    ws.auto_filter.ref = f"A3:L{r-1}"
 
     # ── Aba 4: Alertas (situação ≠ ATIVA) ────────────────────────────────
     ws = wb.create_sheet("Alertas CNPJ")
@@ -284,7 +292,89 @@ def gerar_xlsx_enriquecido(todos, infos: dict[str, CnpjInfo]) -> None:
     if r > 4:
         ws.auto_filter.ref = f"A3:F{r-1}"
 
+    # ── Aba 5: Pagamentos Pos-Baixa (CRITICO para auditoria) ────────────
+    aba_pos_baixa(wb, todos, infos)
+
     wb.save(str(OUT_PATH))
+
+
+def aba_pos_baixa(wb, todos, infos: dict) -> None:
+    """Transacoes feitas APOS a data de baixa do CNPJ - achado critico."""
+    ws = wb.create_sheet("Pagamentos Pos-Baixa")
+    ws["A1"] = "PAGAMENTOS REALIZADOS APOS A BAIXA DO CNPJ - CRITICO"
+    ws["A1"].font = TITLE_FONT
+    ws.merge_cells("A1:I1")
+    ws["A2"] = (
+        "Transacoes posteriores a data de baixa/inaptidao da contraparte. "
+        "Para auditoria forense: pagamentos suspeitos para empresas extintas."
+    )
+    ws["A2"].font = Font(italic=True, color="64748B", size=9)
+    ws.merge_cells("A2:I2")
+
+    headers = ["Data Trans.", "Conta", "Valor (R$)", "Memo", "Nome (banco)",
+               "CNPJ", "Razao Social", "Data Baixa", "Dias Apos Baixa"]
+    for c, h in enumerate(headers, start=1):
+        ws.cell(row=4, column=c, value=h)
+    style_header_row(ws, 4, 9)
+
+    # Filtra transacoes pos-baixa
+    pos_baixa = []
+    for mes, conta, t, _, cnpj in todos:
+        if not cnpj or cnpj not in infos:
+            continue
+        info = infos[cnpj]
+        sit = info.situacao or ""
+        if "BAIXADA" not in sit and "INAPTA" not in sit:
+            continue
+        if not info.data_situacao:
+            continue
+        try:
+            data_baixa = date.fromisoformat(info.data_situacao[:10])
+            data_trans = date.fromisoformat(t.data[:10])
+        except (ValueError, TypeError):
+            continue
+        if data_trans > data_baixa:
+            dias = (data_trans - data_baixa).days
+            pos_baixa.append((data_trans, conta, t, cnpj, info, dias, data_baixa))
+
+    # Ordenar pelos mais antigos pagamentos pos-baixa primeiro (maior intervalo = mais grave)
+    pos_baixa.sort(key=lambda x: -x[5])
+
+    r = 5
+    total_volume = 0.0
+    for data_trans, conta, t, cnpj, info, dias, data_baixa in pos_baixa:
+        fmt = f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:14]}"
+        ws.cell(row=r, column=1, value=t.data).font = Font(bold=True, color="DC2626")
+        ws.cell(row=r, column=2, value=conta)
+        cv = ws.cell(row=r, column=3, value=round(t.valor, 2))
+        cv.number_format = "#,##0.00"
+        cv.font = Font(color="DC2626", bold=True)
+        ws.cell(row=r, column=4, value=(t.memo or "")[:50])
+        ws.cell(row=r, column=5, value=(t.nome or "")[:50])
+        ws.cell(row=r, column=6, value=fmt).font = Font(name="Consolas", size=10)
+        ws.cell(row=r, column=7, value=info.razao_social[:50])
+        ws.cell(row=r, column=8, value=info.data_situacao or "")
+        ws.cell(row=r, column=9, value=dias).number_format = "#,##0"
+        for c in range(1, 10):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+            ws.cell(row=r, column=c).fill = ALERT_FILL
+        total_volume += abs(t.valor)
+        r += 1
+
+    if r == 5:
+        ws.cell(row=5, column=1, value="(nenhuma transacao pos-baixa detectada)").font = Font(italic=True, color="16A34A")
+    else:
+        # Linha de total
+        ws.cell(row=r, column=1, value=f"TOTAL ({r-5} transacoes)")
+        ws.cell(row=r, column=3, value=round(total_volume, 2)).number_format = "#,##0.00"
+        for c in range(1, 10):
+            ws.cell(row=r, column=c).fill = TOTAL_FILL
+            ws.cell(row=r, column=c).font = TOTAL_FONT
+
+    auto_width(ws, {1: 12, 2: 12, 3: 14, 4: 38, 5: 38, 6: 20, 7: 42, 8: 13, 9: 15})
+    ws.freeze_panes = "A5"
+    if r > 5:
+        ws.auto_filter.ref = f"A4:I{r-1}"
 
 
 if __name__ == "__main__":
