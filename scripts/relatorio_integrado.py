@@ -81,7 +81,7 @@ OFX_LIST = [
     (r"C:\Users\Veloso\Downloads\extrato-conta-corrente-ofx-unix_202605_20260514110938.ofx", "MAI/2026"),
 ]
 
-OUT_BASE = r"C:\Users\Veloso\Downloads\RELATORIO_INTEGRADO_LOCAR"
+OUT_BASE = r"C:\Users\Veloso\Downloads\RELATORIO_INTEGRADO_LOCAR_v2"
 OUT_XLSX = Path(f"{OUT_BASE}.xlsx")
 OUT_MD = Path(f"{OUT_BASE}.md")
 OUT_HTML = Path(f"{OUT_BASE}.html")
@@ -273,21 +273,25 @@ def gerar_xlsx(todos, saldos, cache):
     r += 1
 
     indice = [
-        ("1", "Capa", "Indice, sumario executivo, totais"),
-        ("2", "Identificacao Cadastral", "Dados RFB + contrato social + quadro societario"),
-        ("3", "Resumo Executivo", "KPIs principais e evolucao mensal"),
-        ("4", "Transacoes", "7.110 lancamentos com saldo acumulado e contraparte"),
-        ("5", "Disposicoes Forenses", "Classificacao em 27 colunas + Risk Score"),
-        ("6", "Risk Heatmap", "Distribuicao por classe (CRITICO/ALTO/MEDIO/BAIXO)"),
-        ("7", "CNPJs Enriquecidos", "Contrapartes identificadas via RFB / BrasilAPI"),
-        ("8", "Partes Relacionadas", "LOCAR LOCADORA + MAQUINAS + Renato PF + MESMA TIT"),
-        ("9", "MEIs Estourando Teto", "32 fornecedores PJ acima de R\$ 81k/ano"),
-        ("10", "Status Tributario", "Categorias fiscais + retencoes estimadas"),
-        ("11", "Pagamentos Pos-Baixa", "Transacoes a CNPJs ja baixados"),
+        ("1", "Capa", "Indice, sumario executivo, totais", "1. Capa"),
+        ("2", "Identificacao Cadastral", "Dados RFB + contrato social + quadro societario", "2. Identificacao"),
+        ("3", "Resumo Executivo", "KPIs principais e evolucao mensal", "3. Resumo Executivo"),
+        ("4", "Transacoes", "7.110 lancamentos com saldo acumulado e contraparte", "4. Transacoes"),
+        ("5", "Disposicoes Forenses", "Classificacao em 27 colunas + Risk Score", "5. Disposicoes"),
+        ("6", "Risk Heatmap", "Distribuicao por classe (CRITICO/ALTO/MEDIO/BAIXO)", "6. Risk Heatmap"),
+        ("7", "CNPJs Enriquecidos", "Contrapartes identificadas via RFB / BrasilAPI", "7. CNPJs"),
+        ("8", "Partes Relacionadas", "LOCAR LOCADORA + MAQUINAS + Renato PF + MESMA TIT", "8. Partes Relacionadas"),
+        ("9", "MEIs Estourando Teto", "32 fornecedores PJ acima de R$ 81k/ano", "9. MEIs Teto"),
+        ("10", "Status Tributario", "Categorias fiscais + retencoes estimadas", "10. Status Tributario"),
+        ("11", "Pagamentos Pos-Baixa", "Transacoes a CNPJs ja baixados", "11. Pos-Baixa"),
     ]
-    for num, sec, desc in indice:
+    for num, sec, desc, sheet_name in indice:
         ws.cell(row=r, column=1, value=num)
-        ws.cell(row=r, column=2, value=sec).font = Font(bold=True)
+        c_sec = ws.cell(row=r, column=2, value=sec)
+        c_sec.font = Font(bold=True, color="0052FF", underline="single")
+        # Hyperlink para a aba correspondente
+        c_sec.hyperlink = f"#'{sheet_name}'!A1"
+        c_sec.style = "Hyperlink"
         ws.cell(row=r, column=3, value=desc)
         ws.merge_cells(f"C{r}:F{r}")
         for c in range(1, 7):
