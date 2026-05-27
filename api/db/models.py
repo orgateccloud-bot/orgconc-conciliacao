@@ -125,3 +125,24 @@ class LlmCostDaily(Base):
     custo_usd:     Mapped[Decimal]    = mapped_column(Numeric(10, 4), nullable=False, default=Decimal("0"))
     chamadas:      Mapped[int]        = mapped_column(Integer, nullable=False, default=0)
     atualizado_em: Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
+
+
+class TransacaoDisposicao(Base):
+    """Disposição contábil de cada transação após a cascata de matchers (OrgNeural2).
+
+    Cada conciliação produz N disposições, uma por transação. Disposição = decisão
+    final do orquestrador (RESOLVIDO_NFE, RESOLVIDO_GUIA, PENDENTE_REVISAO, etc.).
+    """
+    __tablename__ = "transacao_disposicao"
+
+    id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    conciliacao_id: Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("conciliacoes.id", ondelete="CASCADE"), nullable=False)
+    transacao_idx:  Mapped[int]          = mapped_column(Integer, nullable=False)
+    estagio:        Mapped[int]          = mapped_column(Integer, nullable=False)
+    disposicao:     Mapped[str]          = mapped_column(Text, nullable=False)
+    contraparte:    Mapped[str | None]   = mapped_column(Text)
+    conta_contabil: Mapped[str | None]   = mapped_column(Text)
+    origem:         Mapped[str | None]   = mapped_column(Text)
+    flag:           Mapped[str | None]   = mapped_column(Text)
+    nfe_chave:      Mapped[str | None]   = mapped_column(String(44))
+    criado_em:      Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)

@@ -32,6 +32,7 @@ from api.routers import (
     conciliacoes_list,
     exports,
     health,
+    matchers as matchers_router,
     metrics as metrics_router,
     transacoes as transacoes_router,
 )
@@ -71,6 +72,7 @@ app.include_router(audit_router.router)
 app.include_router(ai_router.router)
 app.include_router(activity_router.router)
 app.include_router(transacoes_router.router)
+app.include_router(matchers_router.router)
 
 # UI legada (periodo de transicao)
 if STATIC_DIR.exists():
