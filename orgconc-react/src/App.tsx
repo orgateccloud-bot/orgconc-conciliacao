@@ -24,11 +24,17 @@ const ClientesPage     = lazy(() => import("@/pages/ClientesPage").then(m => ({ 
 const RelatoriosPage   = lazy(() => import("@/pages/RelatoriosPage").then(m => ({ default: m.RelatoriosPage })));
 const ConfiguracoesPage = lazy(() => import("@/pages/ConfiguracoesPage").then(m => ({ default: m.ConfiguracoesPage })));
 const UploadPage        = lazy(() => import("@/pages/UploadPage").then(m => ({ default: m.UploadPage })));
+const MatchersPage      = lazy(() => import("@/pages/MatchersPage").then(m => ({ default: m.MatchersPage })));
+const GuiasPage         = lazy(() => import("@/pages/GuiasPage").then(m => ({ default: m.GuiasPage })));
+const ContratosPage     = lazy(() => import("@/pages/ContratosPage").then(m => ({ default: m.ContratosPage })));
 
 const TITULOS: Record<string, string> = {
   dashboard:     "Dashboard",
   conciliacao:   "Análises",
   upload:        "Upload de Extratos",
+  matchers:      "Matchers — Conciliação Automática",
+  guias:         "Guias Tributárias",
+  contratos:     "Contratos Recorrentes",
   clientes:      "Clientes",
   relatorios:    "Histórico de Relatórios",
   configuracoes: "Configurações",
@@ -118,6 +124,9 @@ export default function App() {
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/conciliacao" element={<ConciliacaoPage />} />
                 <Route path="/upload" element={<UploadPage />} />
+                <Route path="/matchers" element={<MatchersPage />} />
+                <Route path="/guias" element={<GuiasPage />} />
+                <Route path="/contratos" element={<ContratosPage />} />
                 <Route path="/clientes" element={<ClientesPage />} />
                 <Route path="/relatorios" element={<RelatoriosPage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />

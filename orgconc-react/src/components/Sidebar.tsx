@@ -3,6 +3,7 @@ import { Logo } from "@/components/Logo";
 import {
   Users, FileText, LayoutDashboard, LineChart, Settings,
   Upload, AlertTriangle, ShieldCheck, Lock, Activity,
+  Network, Receipt, FileSignature,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,9 @@ const OPERACAO_ITEMS: SidebarItem[] = [
   { id: "dashboard",   label: "Visão Geral",  icon: LayoutDashboard },
   { id: "upload",      label: "Upload",       icon: Upload },
   { id: "conciliacao", label: "Análises",     icon: LineChart },
+  { id: "matchers",    label: "Matchers",     icon: Network },
+  { id: "guias",       label: "Guias",        icon: Receipt },
+  { id: "contratos",   label: "Contratos",    icon: FileSignature },
   { id: "relatorios",  label: "Transações",   icon: Activity },
   { id: "clientes",    label: "Clientes",     icon: Users },
   { id: "anomalias",   label: "Anomalias",    icon: AlertTriangle },
@@ -52,7 +56,7 @@ export function SidebarNavContent({
   }));
 
   function go(id: string) {
-    const routableIds = ["dashboard","conciliacao","upload","clientes","relatorios","configuracoes"];
+    const routableIds = ["dashboard","conciliacao","upload","matchers","guias","contratos","clientes","relatorios","configuracoes"];
     if (routableIds.includes(id)) navigate(`/${id}`);
     onNavigate?.();
   }

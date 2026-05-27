@@ -4,16 +4,17 @@ from __future__ import annotations
 import io
 import logging
 import re
+import uuid
 import zipfile
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from api.core.config import MAX_UPLOAD_BYTES, MAX_UPLOAD_TOTAL_BYTES, MAX_UPLOAD_TOTAL_MB
+from api.core.config import DB_DISPONIVEL, MAX_UPLOAD_BYTES, MAX_UPLOAD_TOTAL_BYTES, MAX_UPLOAD_TOTAL_MB, SessionLocal
 from api.core.rate_limit import limiter
 from api.matchers.cascata import Disposicao, classificar, ler_ofx
-from api.matchers.nfe import resolver as resolver_nfe
+from api.matchers.orquestrador import conciliar as orquestrar_cascata, taxa_automatizacao
 from api.services.auth import TokenPayload, current_user
 from api.services.storage import read_limited
 
@@ -104,7 +105,15 @@ async def conciliar_matchers(
     # Separa OFX vs XMLs (expandindo ZIPs)
     ofx_bytes, xmls = _separar_arquivos(coletados)
 
-    # Pipeline: parser OFX → classificador → matchers
+    # Valida cliente_id como UUID
+    try:
+        cid = uuid.UUID(cliente_id)
+    except ValueError:
+        raise HTTPException(400, "cliente_id deve ser UUID válido")
+    if not DB_DISPONIVEL:
+        raise HTTPException(503, "Banco de dados nao configurado")
+
+    # Pipeline: parser OFX → classificador → orquestrador completo
     try:
         transacoes = ler_ofx(ofx_bytes)
     except Exception as exc:  # noqa: BLE001
@@ -112,62 +121,8 @@ async def conciliar_matchers(
         raise HTTPException(400, "Falha ao ler OFX — verifique o arquivo.")
 
     resultados = [classificar(t) for t in transacoes]
-    nfe_resolvidas = await resolver_nfe(resultados, xmls)
-
-    # Constrói tabela de disposições (PR 1: apenas estágio 2 = NFe;
-    # demais transações ficam pendentes para próximos PRs)
-    by_idx: dict[int, Disposicao] = {}
-    fitid_to_idx = {r.transacao.fitid: i for i, r in enumerate(resultados)}
-
-    for nr in nfe_resolvidas:
-        idx = fitid_to_idx.get(nr.resultado.transacao.fitid, -1)
-        if idx < 0:
-            continue
-        if nr.status == "RESOLVIDO":
-            disp = Disposicao(
-                transacao=nr.resultado.transacao,
-                estagio=2,
-                disposicao="RESOLVIDO_NFE",
-                contraparte=nr.nota.emit_nome if nr.nota else "",
-                origem="nfe",
-                flag=nr.flag,
-                nfe_chave=nr.nota.chave if nr.nota else "",
-            )
-        else:
-            disp = Disposicao(
-                transacao=nr.resultado.transacao,
-                estagio=2,
-                disposicao="PENDENTE_REVISAO",
-                origem="match_nfe",
-                flag=nr.flag,
-            )
-        by_idx[idx] = disp
-
-    # Demais transações: marca conforme estágio classificado (sem matcher ainda em PR1)
-    for i, r in enumerate(resultados):
-        if i in by_idx:
-            continue
-        if r.metodo == "transferencia_interna":
-            by_idx[i] = Disposicao(
-                transacao=r.transacao, estagio=0,
-                disposicao="TRANSFERENCIA_INTERNA",
-                origem="regra",
-                flag="nao e evento economico — excluir da conciliacao",
-            )
-        elif r.metodo == "tarifa_bancaria":
-            by_idx[i] = Disposicao(
-                transacao=r.transacao, estagio=3,
-                disposicao="TARIFA_BANCARIA", origem="regra",
-            )
-        else:
-            by_idx[i] = Disposicao(
-                transacao=r.transacao, estagio=r.estagio,
-                disposicao="PENDENTE_MATCHER",
-                origem=r.metodo,
-                flag="matcher do estagio ainda nao implementado (PR1 cobre apenas NFe)",
-            )
-
-    disposicoes = [by_idx[i] for i in range(len(resultados))]
+    async with SessionLocal() as db:
+        disposicoes = await orquestrar_cascata(resultados, db, cid, xmls)
 
     # Serializa resposta
     def _serial(d: Disposicao) -> dict:
@@ -196,7 +151,7 @@ async def conciliar_matchers(
         "cliente_id": cliente_id,
         "total_transacoes": len(disposicoes),
         "automatizadas": automatizadas,
-        "taxa_automatizacao_pct": round(100 * automatizadas / len(disposicoes), 1) if disposicoes else 0.0,
+        "taxa_automatizacao_pct": taxa_automatizacao(disposicoes),
         "disposicoes": [_serial(d) for d in disposicoes],
         "xmls_indexados": len(xmls),
     })

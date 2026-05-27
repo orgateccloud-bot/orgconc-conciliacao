@@ -17,7 +17,6 @@ from datetime import date as _date
 from typing import Optional
 
 from api.parsers.ofx import _parse_ofx
-from api.parsers.constants import _KEYWORDS_TRANSF
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -117,10 +116,22 @@ _RX_NF = re.compile(r"\bnf[\s:]*([0-9]{1,9})\b", re.IGNORECASE)
 _TRIBUTOS = ("DARF", "DAS", "GPS", "GNRE", "DAE", "DARJ")
 _TARIFAS = ("TARIFA", "JUROS", "IOF", "TAR.", "TARIF")
 
+# Palavras-chave que indicam transferência INTERNA real (mesma titularidade).
+# Mais restritivo que parsers.constants._KEYWORDS_TRANSF (que pega qualquer
+# TRANSF.CONTAS, incluindo "DIFERENTE" que é transferência a terceiro).
+_KEYWORDS_TRANSF_INTERNA = (
+    "MESMA TIT",
+    "MESMA TITULARIDADE",
+    "TRANSF MESMA",
+    "TRANSFERENCIA ENTRE CONTAS PROPRIAS",
+    "ENTRE CONTAS PROPRIAS",
+    "PROPRIO CLIENTE",
+)
+
 
 def _detecta_transferencia(memo: str, nome: str) -> bool:
     texto = (memo + " " + nome).upper()
-    return any(k in texto for k in _KEYWORDS_TRANSF)
+    return any(k in texto for k in _KEYWORDS_TRANSF_INTERNA)
 
 
 def _detecta_tarifa(memo: str, nome: str) -> bool:
@@ -180,11 +191,16 @@ def classificar(t: Transacao) -> Resultado:
     if doc:
         return Resultado(t, estagio=1, metodo="match_documento", chave=doc)
 
+    # Estágio 6 — débito a favorecido por nome (FAV.:, PAGAMENTO A, etc.)
+    # — vai direto para alias (não tenta contrato; estes débitos não são fixos)
+    texto = (memo + " " + nome).upper()
+    if "FAV.:" in texto or "FAV:" in texto or "FAVORECIDO" in texto:
+        return Resultado(t, estagio=6, metodo="match_cadastro_alias")
+
     # Estágio 5 — débito recorrente sem identificador → tenta contrato
-    # (heurística simples: débitos sem CNPJ/NF/tarifa vão para contrato; resíduo
-    # cai no estágio 6 de cadastro por alias quando contrato não casar)
+    # (típico: DEB.CONV.SEGUROS, DEB.AUTOMATICO ALUGUEL — sem favorecido nominal)
     if t.tipo.upper() == "DEBIT":
         return Resultado(t, estagio=5, metodo="match_contrato")
 
-    # Estágio 6 — fallback: alias/fuzzy
+    # Estágio 6 — fallback final: alias/fuzzy
     return Resultado(t, estagio=6, metodo="match_cadastro_alias")
