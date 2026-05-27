@@ -49,10 +49,21 @@ def gerar_md() -> str:
 | Frontend Rotas | 9 | 9 | 0 | 100% |
 | Frontend Funcoes API | 20 | 17 | 3 | 85% |
 | Frontend Componentes Dashboard | 17 | 13 | 4 | 76% |
-| Scripts Geradores de Relatorios | 9 | **9** | 0 | **100%** |
+| Scripts Geradores de Relatorios | **10** | **10** | 0 | **100%** |
 | Arquivos Finais em Downloads | 25+ | 25+ | — | 100% |
 
 ### Status Geral: **OPERACIONAL · 96% DOS MODULOS ATIVOS**
+
+### Notas Recentes da Auditoria LOCAR
+
+**Confirmacoes do cliente integradas aos relatorios:**
+
+1. **Regime tributario:** LUCRO REAL (confirmado em 27/05/2026)
+2. **MEI-TAC (Lei Complementar 188/2021):** Aplicado teto correto R$ 251.600/ano para
+   fornecedores caminhoneiros. Resultado: 0 MEI-TAC fora do teto (era 32 detectados com
+   limite incorreto). 5 MEIs padrao com pequenos excessos remanescentes.
+3. **Historico Simples Nacional:** Excluida por Ato Administrativo RFB (2015-2018)
+   + Exclusao voluntaria (2019). Confirmado via Consulta Optantes RFB.
 
 ---
 

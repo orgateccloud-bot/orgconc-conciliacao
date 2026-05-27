@@ -81,14 +81,24 @@ OFX_LIST = [
     (r"C:\Users\Veloso\Downloads\extrato-conta-corrente-ofx-unix_202605_20260514110938.ofx", "MAI/2026"),
 ]
 
-OUT_BASE = r"C:\Users\Veloso\Downloads\RELATORIO_INTEGRADO_LOCAR_v2"
+OUT_BASE = r"C:\Users\Veloso\Downloads\RELATORIO_INTEGRADO_LOCAR_v3"
 OUT_XLSX = Path(f"{OUT_BASE}.xlsx")
 OUT_MD = Path(f"{OUT_BASE}.md")
 OUT_HTML = Path(f"{OUT_BASE}.html")
 OUT_PDF = Path(f"{OUT_BASE}.pdf")
 
 RX_CNPJ = re.compile(r"(\d{2})[.](\d{3})[.](\d{3})[ /](\d{4})[-](\d{2})")
-LIMITE_MEI_ANO = 81_000.0
+LIMITE_MEI_PADRAO = 81_000.0
+LIMITE_MEI_TAC = 251_600.0   # MEI Transportador Autonomo de Cargas (LC 188/2021)
+CNAES_TRANSPORTE = ("4930", "5320", "4911")  # Transporte rodoviario carga, courier, ferroviario
+
+
+def _limite_mei_por_cnae(cnae: str) -> float:
+    """Retorna teto MEI conforme CNAE: TAC para transporte, padrao p/ outros."""
+    cnae_clean = (cnae or "").replace(".", "").replace("-", "").replace("/", "")
+    if any(cnae_clean.startswith(c) for c in CNAES_TRANSPORTE):
+        return LIMITE_MEI_TAC
+    return LIMITE_MEI_PADRAO
 
 NAVY = "0F172A"
 HEADER_FILL = PatternFill("solid", fgColor=NAVY)
@@ -840,16 +850,16 @@ def gerar_xlsx(todos, saldos, cache):
     ws.freeze_panes = f"A{start + 2}"
 
     # ════════════════════════════════════════════════════════════════════
-    # Aba 9: MEIs Estourando Teto
+    # Aba 9: MEIs Teto (com diferenciacao MEI-TAC vs MEI Padrao)
     # ════════════════════════════════════════════════════════════════════
     ws = wb.create_sheet("9. MEIs Teto")
-    start = cabecalho(ws, 8, "MEIs Estourando Teto")
-    ws.cell(row=start, column=1, value=f"MEIs ESTOURANDO TETO R$ {LIMITE_MEI_ANO:,.0f}/ANO").font = TITLE_FONT
-    ws.merge_cells(f"A{start}:H{start}")
-    ws.cell(row=start+1, column=1, value="Fornecedores enquadrados como MEI cujos pagamentos anualizados excedem o teto legal.").font = Font(italic=True, color="64748B", size=9)
-    ws.merge_cells(f"A{start+1}:H{start+1}")
+    start = cabecalho(ws, 10, "MEIs Estourando Teto (MEI-TAC vs Padrao)")
+    ws.cell(row=start, column=1, value="ANALISE DE MEIs - MEI-TAC (R$ 251.600/ano) vs MEI Padrao (R$ 81.000/ano)").font = TITLE_FONT
+    ws.merge_cells(f"A{start}:J{start}")
+    ws.cell(row=start+1, column=1, value="Lei Complementar 188/2021: MEI-TAC (caminhoneiros, CNAEs 4930-*, 5320-*, 4911-*) tem teto de R$ 251.600/ano. MEI padrao mantem R$ 81.000/ano.").font = Font(italic=True, color="64748B", size=9)
+    ws.merge_cells(f"A{start+1}:J{start+1}")
 
-    # Agrega
+    # Agrega todos os MEIs (TAC e padrao)
     por_cnpj_mei = defaultdict(lambda: {"n": 0, "deb": 0.0})
     for d in todas_disps:
         if d.transacao.valor >= 0 or not d.cnpj:
@@ -859,63 +869,140 @@ def gerar_xlsx(todos, saldos, cache):
         por_cnpj_mei[d.cnpj]["n"] += 1
         por_cnpj_mei[d.cnpj]["deb"] += abs(d.transacao.valor)
 
-    meis = []
+    # Classifica cada MEI conforme CNAE
+    meis_tac_ok, meis_tac_estourados = [], []
+    meis_padrao_ok, meis_padrao_estourados = [], []
     for cnpj, dd in por_cnpj_mei.items():
+        info = cache.get(cnpj, {})
+        cnae = info.get("cnae_principal", "")
         anualizado = dd["deb"] * 12 / 4.5
-        if anualizado > LIMITE_MEI_ANO:
-            info = cache.get(cnpj, {})
-            meis.append({
-                "cnpj": cnpj,
-                "razao": info.get("razao_social", ""),
-                "uf": info.get("uf", ""),
-                "n": dd["n"],
-                "deb_5m": dd["deb"],
-                "anualizado": anualizado,
-                "excesso": anualizado - LIMITE_MEI_ANO,
-            })
-    meis.sort(key=lambda x: -x["anualizado"])
+        teto = _limite_mei_por_cnae(cnae)
+        eh_tac = teto == LIMITE_MEI_TAC
+        excesso = anualizado - teto if anualizado > teto else 0.0
+        item = {
+            "cnpj": cnpj, "razao": info.get("razao_social", ""),
+            "cnae": cnae, "cnae_desc": info.get("cnae_descricao", ""),
+            "uf": info.get("uf", ""), "n": dd["n"],
+            "deb_5m": dd["deb"], "anualizado": anualizado,
+            "teto": teto, "excesso": excesso, "eh_tac": eh_tac,
+        }
+        if eh_tac and excesso > 0:
+            meis_tac_estourados.append(item)
+        elif eh_tac:
+            meis_tac_ok.append(item)
+        elif excesso > 0:
+            meis_padrao_estourados.append(item)
+        else:
+            meis_padrao_ok.append(item)
 
-    headers = ["#", "CNPJ", "Razao Social", "UF", "Trans.", "Pago 5m (R$)", "Anualizado (R$)", "Excesso (R$)"]
+    # Sumario
     r = start + 3
-    for c, h in enumerate(headers, start=1):
-        ws.cell(row=r, column=c, value=h)
-    style_header(ws, r, 8)
+    ws.cell(row=r, column=1, value="SUMARIO DA RECLASSIFICACAO").font = SUBTITLE_FONT
+    ws.merge_cells(f"A{r}:J{r}")
     r += 1
-    total_excesso = 0.0
-    for i, m in enumerate(meis[:50], start=1):
-        cnpj_fmt = f"{m['cnpj'][:2]}.{m['cnpj'][2:5]}.{m['cnpj'][5:8]}/{m['cnpj'][8:12]}-{m['cnpj'][12:14]}"
-        ws.cell(row=r, column=1, value=i)
-        ws.cell(row=r, column=2, value=cnpj_fmt).font = Font(name="Consolas", size=10)
-        ws.cell(row=r, column=3, value=m["razao"][:45])
-        ws.cell(row=r, column=4, value=m["uf"])
-        ws.cell(row=r, column=5, value=m["n"]).number_format = "#,##0"
-        ws.cell(row=r, column=6, value=round(m["deb_5m"], 2)).number_format = "#,##0.00"
-        c7 = ws.cell(row=r, column=7, value=round(m["anualizado"], 2))
-        c7.number_format = "#,##0.00"
-        c7.font = Font(bold=True, color="DC2626")
-        c8 = ws.cell(row=r, column=8, value=round(m["excesso"], 2))
-        c8.number_format = "#,##0.00"
-        c8.font = Font(bold=True, color="DC2626")
-        for c in range(1, 9):
+    hdr_sum = ["Categoria", "Teto Legal", "Total MEIs", "Dentro do Teto", "Acima do Teto", "Status"]
+    for c, h in enumerate(hdr_sum, start=1):
+        ws.cell(row=r, column=c, value=h)
+    style_header(ws, r, 6)
+    r += 1
+    linhas_sum = [
+        ("MEI-TAC (caminhoneiros)", f"R$ {LIMITE_MEI_TAC:,.0f}/ano",
+         len(meis_tac_ok) + len(meis_tac_estourados),
+         len(meis_tac_ok), len(meis_tac_estourados),
+         "OK" if not meis_tac_estourados else "ATENCAO"),
+        ("MEI Padrao (outros CNAEs)", f"R$ {LIMITE_MEI_PADRAO:,.0f}/ano",
+         len(meis_padrao_ok) + len(meis_padrao_estourados),
+         len(meis_padrao_ok), len(meis_padrao_estourados),
+         "OK" if not meis_padrao_estourados else "ATENCAO"),
+        ("TOTAL", "—",
+         len(por_cnpj_mei), len(meis_tac_ok) + len(meis_padrao_ok),
+         len(meis_tac_estourados) + len(meis_padrao_estourados), "—"),
+    ]
+    for cat, teto, total, dentro, acima, status in linhas_sum:
+        c1 = ws.cell(row=r, column=1, value=cat)
+        c1.font = Font(bold=True)
+        ws.cell(row=r, column=2, value=teto)
+        ws.cell(row=r, column=3, value=total).number_format = "#,##0"
+        ws.cell(row=r, column=4, value=dentro).number_format = "#,##0"
+        ws.cell(row=r, column=4).font = Font(color="16A34A", bold=True)
+        ws.cell(row=r, column=5, value=acima).number_format = "#,##0"
+        if acima > 0:
+            ws.cell(row=r, column=5).font = Font(color="DC2626", bold=True)
+        c_status = ws.cell(row=r, column=6, value=status)
+        if status == "OK":
+            c_status.fill = SUCCESS_FILL
+            c_status.font = Font(bold=True, color="16A34A")
+        elif status == "ATENCAO":
+            c_status.fill = ALERT_FILL_MEDIO
+            c_status.font = Font(bold=True, color="D97706")
+        for c in range(1, 7):
             ws.cell(row=r, column=c).border = THIN_BORDER
-            if m["anualizado"] > 200_000:
-                ws.cell(row=r, column=c).fill = ALERT_FILL
-            elif r % 2 == 0:
-                ws.cell(row=r, column=c).fill = ZEBRA_FILL
-        total_excesso += m["excesso"]
+        if cat == "TOTAL":
+            for c in range(1, 7):
+                ws.cell(row=r, column=c).fill = TOTAL_FILL
+                ws.cell(row=r, column=c).font = TOTAL_FONT
         r += 1
 
-    ws.cell(row=r, column=1, value=f"TOTAL ({len(meis)} MEIs)").font = TOTAL_FONT
-    ws.cell(row=r, column=8, value=round(total_excesso, 2)).number_format = "#,##0.00"
-    for c in range(1, 9):
-        ws.cell(row=r, column=c).fill = TOTAL_FILL
-        ws.cell(row=r, column=c).font = TOTAL_FONT
+    # Detalhamento dos casos acima do teto
+    r += 1
+    ws.cell(row=r, column=1, value="DETALHAMENTO - CASOS ACIMA DO TETO").font = SUBTITLE_FONT
+    ws.merge_cells(f"A{r}:J{r}")
+    r += 1
 
-    for col, w in {1: 4, 2: 20, 3: 42, 4: 5, 5: 8, 6: 17, 7: 17, 8: 17}.items():
+    headers = ["#", "Tipo", "CNPJ", "Razao Social", "CNAE", "UF",
+               "Trans.", "Pago 5m (R$)", "Anualizado (R$)", "Excesso (R$)"]
+    for c, h in enumerate(headers, start=1):
+        ws.cell(row=r, column=c, value=h)
+    style_header(ws, r, 10)
+    r += 1
+
+    todos_estourados = (
+        [(m, "MEI-TAC") for m in meis_tac_estourados] +
+        [(m, "MEI Padrao") for m in meis_padrao_estourados]
+    )
+    todos_estourados.sort(key=lambda x: -x[0]["anualizado"])
+    total_excesso = 0.0
+
+    if not todos_estourados:
+        ws.cell(row=r, column=1, value="(nenhum MEI excede o teto legal correspondente)").font = Font(italic=True, color="16A34A")
+    else:
+        for i, (m, tipo) in enumerate(todos_estourados, start=1):
+            cnpj_fmt = f"{m['cnpj'][:2]}.{m['cnpj'][2:5]}.{m['cnpj'][5:8]}/{m['cnpj'][8:12]}-{m['cnpj'][12:14]}"
+            ws.cell(row=r, column=1, value=i)
+            c_tipo = ws.cell(row=r, column=2, value=tipo)
+            c_tipo.font = Font(bold=True)
+            ws.cell(row=r, column=3, value=cnpj_fmt).font = Font(name="Consolas", size=10)
+            ws.cell(row=r, column=4, value=m["razao"][:45])
+            ws.cell(row=r, column=5, value=m["cnae_desc"][:35] if m["cnae_desc"] else m["cnae"])
+            ws.cell(row=r, column=6, value=m["uf"])
+            ws.cell(row=r, column=7, value=m["n"]).number_format = "#,##0"
+            ws.cell(row=r, column=8, value=round(m["deb_5m"], 2)).number_format = "#,##0.00"
+            c9 = ws.cell(row=r, column=9, value=round(m["anualizado"], 2))
+            c9.number_format = "#,##0.00"
+            c9.font = Font(bold=True, color="DC2626")
+            c10 = ws.cell(row=r, column=10, value=round(m["excesso"], 2))
+            c10.number_format = "#,##0.00"
+            c10.font = Font(bold=True, color="DC2626")
+            for c in range(1, 11):
+                ws.cell(row=r, column=c).border = THIN_BORDER
+                if m["excesso"] > 100_000:
+                    ws.cell(row=r, column=c).fill = ALERT_FILL
+                elif r % 2 == 0:
+                    ws.cell(row=r, column=c).fill = ZEBRA_FILL
+            total_excesso += m["excesso"]
+            r += 1
+
+        ws.cell(row=r, column=1, value=f"TOTAL ({len(todos_estourados)} MEIs)").font = TOTAL_FONT
+        ws.cell(row=r, column=10, value=round(total_excesso, 2)).number_format = "#,##0.00"
+        for c in range(1, 11):
+            ws.cell(row=r, column=c).fill = TOTAL_FILL
+            ws.cell(row=r, column=c).font = TOTAL_FONT
+
+    for col, w in {1: 4, 2: 12, 3: 20, 4: 38, 5: 32, 6: 5, 7: 8, 8: 16, 9: 17, 10: 17}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = f"A{start + 4}"
-    if r > start + 4:
-        ws.auto_filter.ref = f"A{start + 3}:H{r - 1}"
+    # Mantem para compatibilidade com codigo posterior
+    meis = [m for m, _ in todos_estourados]
 
     # ════════════════════════════════════════════════════════════════════
     # Aba 10: Status Tributario
@@ -1187,20 +1274,33 @@ def gerar_md(stats):
         total_pr += v
     lines.append(f"| **TOTAL** | | | | **R$ {total_pr:,.2f}** |")
 
-    # MEIs
+    # MEIs (com reclassificacao MEI-TAC vs Padrao)
     lines += [
         "",
-        f"## 6. MEIs Estourando Teto ({len(stats['meis'])} fornecedores)",
+        f"## 6. MEIs Fornecedores - Reclassificacao MEI-TAC vs Padrao",
         "",
-        "| # | CNPJ | Razao Social | UF | Pago 5m | Anualizado | Excesso |",
-        "|---|---|---|---|---:|---:|---:|",
+        "**Aplicacao do limite correto** apos confirmacao do cliente que muitos sao caminhoneiros:",
+        "",
+        f"- **MEI-TAC** (caminhoneiros, CNAEs 4930-*, 5320-*, 4911-*): teto **R$ 251.600/ano** (LC 188/2021)",
+        f"- **MEI Padrao** (outros CNAEs): teto **R$ 81.000/ano** (LC 123/2006)",
+        "",
+        f"### Casos acima do teto correspondente ({len(stats['meis'])} fornecedores)",
+        "",
     ]
-    total_exc = 0.0
-    for i, m in enumerate(stats["meis"][:15], start=1):
-        fmt = f"{m['cnpj'][:2]}.{m['cnpj'][2:5]}.{m['cnpj'][5:8]}/{m['cnpj'][8:12]}-{m['cnpj'][12:14]}"
-        lines.append(f"| {i} | {fmt} | {m['razao'][:30]} | {m['uf']} | {m['deb_5m']:,.2f} | **{m['anualizado']:,.2f}** | {m['excesso']:,.2f} |")
-        total_exc += m["excesso"]
-    lines.append(f"| | | | | | **TOTAL EXCESSO:** | **R$ {total_exc:,.2f}** |")
+    if stats["meis"]:
+        lines += [
+            "| # | CNPJ | Razao Social | CNAE | Anualizado | Excesso |",
+            "|---|---|---|---|---:|---:|",
+        ]
+        total_exc = 0.0
+        for i, m in enumerate(stats["meis"][:15], start=1):
+            fmt = f"{m['cnpj'][:2]}.{m['cnpj'][2:5]}.{m['cnpj'][5:8]}/{m['cnpj'][8:12]}-{m['cnpj'][12:14]}"
+            cnae_desc = m.get("cnae_desc", "") or m.get("cnae", "")
+            lines.append(f"| {i} | {fmt} | {m['razao'][:30]} | {cnae_desc[:25]} | **R$ {m['anualizado']:,.2f}** | R$ {m['excesso']:,.2f} |")
+            total_exc += m["excesso"]
+        lines.append(f"| | | | **TOTAL EXCESSO:** | | **R$ {total_exc:,.2f}** |")
+    else:
+        lines.append("**Nenhum MEI excede o teto legal correspondente.**")
 
     # Status Tributario
     lines += [
