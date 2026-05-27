@@ -245,3 +245,167 @@ def _extrair_cnpj_str(t) -> str:
         if m:
             return "".join(m.groups())
     return ""
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Classificador Tributario (para aba "Status Tributario")
+# ────────────────────────────────────────────────────────────────────────
+
+
+_RX_IOF = re.compile(r"\bIOF\b|D[ÉE]B\.IOF", re.I)
+_RX_TARIFA = re.compile(r"TARIFA|TAR\.", re.I)
+_RX_JUROS = re.compile(r"JUROS\s+CONTRATUAIS|JUROS\b", re.I)
+_RX_EMPRESTIMO = re.compile(r"EMPR[ÉE]STIMO|D[ÉE]B\.EMPR|LIBERA[ÇC][ÃA]O\s+TD", re.I)
+_RX_PIX = re.compile(r"\bPIX\b", re.I)
+_RX_TED = re.compile(r"\bTED\b", re.I)
+_RX_TRIBUTO = re.compile(r"\bDARF\b|\bDAS\b|\bGPS\b|\bGNRE\b|\bDAE\b|\bDARJ\b", re.I)
+_RX_CARTAO = re.compile(r"COMPRA\s+(VISA|MASTERCARD|MAESTRO|ELO|HIPER)", re.I)
+_RX_MESMA_TIT = re.compile(r"MESMA\s+TIT|TRANSF\.MESMA", re.I)
+_RX_BOLETO = re.compile(r"TIT\.COMPE|BOLETO|TIT\.PROP", re.I)
+_RX_CPF_MASK = re.compile(r"\*{3}\.\d{3}\.\d{3}-\*{2}")
+
+
+def classificar_tributario(memo: str, nome: str, valor: float, cnpj: str = "", porte: str = "") -> dict:
+    """Classifica a transacao por incidencia tributaria provavel.
+
+    Retorna dict com:
+        - categoria: NAO_TRIBUTAVEL, IOF, TARIFA, JUROS, RETENCAO_PJ, RETENCAO_PF,
+                     OPERACAO_CREDITO, PIX_RECEBIDO, PAGAMENTO_TRIBUTO, OUTRO
+        - tributo: lista de tributos provaveis
+        - aliquota_sugerida: % aproximado de retencao
+        - valor_retencao: estimativa de retencao na fonte
+        - obs: nota textual
+    """
+    texto = (memo or "") + " " + (nome or "")
+    valor_abs = abs(valor)
+
+    # IOF
+    if _RX_IOF.search(texto):
+        return {
+            "categoria": "IOF",
+            "tributo": "IOF",
+            "aliquota_sugerida": "0.0082%/dia ou 0.38% emissao",
+            "valor_retencao": 0.0,  # já é o próprio IOF
+            "obs": "Imposto sobre Operacoes Financeiras (auto-cobrado)",
+        }
+
+    # Tarifa bancaria
+    if _RX_TARIFA.search(texto):
+        return {
+            "categoria": "TARIFA",
+            "tributo": "PIS/COFINS sobre tarifa (responsabilidade do banco)",
+            "aliquota_sugerida": "—",
+            "valor_retencao": 0.0,
+            "obs": "Tarifa bancaria - despesa dedutivel",
+        }
+
+    # Juros contratuais / empréstimo
+    if _RX_JUROS.search(texto):
+        return {
+            "categoria": "JUROS",
+            "tributo": "IRPJ/CSLL (despesa financeira dedutivel) + IOF de credito",
+            "aliquota_sugerida": "dedutivel no lucro",
+            "valor_retencao": 0.0,
+            "obs": "Juros pagos sao despesa financeira dedutivel",
+        }
+    if _RX_EMPRESTIMO.search(texto):
+        return {
+            "categoria": "OPERACAO_CREDITO",
+            "tributo": "IOF crédito",
+            "aliquota_sugerida": "0.0082%/dia + 0.38% adicional PJ",
+            "valor_retencao": round(valor_abs * 0.0038, 2),
+            "obs": "Operacao de credito - sujeita a IOF",
+        }
+
+    # Pagamento de tributo
+    if _RX_TRIBUTO.search(texto):
+        m = _RX_TRIBUTO.search(texto)
+        return {
+            "categoria": "PAGAMENTO_TRIBUTO",
+            "tributo": m.group(0).upper(),
+            "aliquota_sugerida": "—",
+            "valor_retencao": 0.0,
+            "obs": f"Pagamento de {m.group(0).upper()} - quitacao tributaria",
+        }
+
+    # Transferência mesma titularidade
+    if _RX_MESMA_TIT.search(texto):
+        return {
+            "categoria": "NAO_TRIBUTAVEL",
+            "tributo": "Nenhum (transferencia entre contas proprias)",
+            "aliquota_sugerida": "—",
+            "valor_retencao": 0.0,
+            "obs": "Transferencia mesma titularidade - sem fato gerador",
+        }
+
+    # PIX recebido
+    if _RX_PIX.search(texto) and valor > 0:
+        return {
+            "categoria": "PIX_RECEBIDO",
+            "tributo": "PIS/COFINS (regime de competencia)",
+            "aliquota_sugerida": "3.65% (cumul.) ou 9.25% (n-cum.)",
+            "valor_retencao": 0.0,
+            "obs": "Receita potencial - verificar lastro (NF-e)",
+        }
+
+    # PIX emitido para PJ (CNPJ identificado)
+    if _RX_PIX.search(texto) and valor < 0 and cnpj:
+        # Retencoes na fonte para servicos prestados por PJ
+        # PIS+COFINS+CSLL = 4.65% para servicos (Lei 10.833/03 art.30)
+        # IRRF = 1.5% para servicos profissionais
+        return {
+            "categoria": "RETENCAO_PJ",
+            "tributo": "PIS+COFINS+CSLL (4.65%) + IRRF (1.5%) se servico",
+            "aliquota_sugerida": "ate 6.15% sobre valor (se servico)",
+            "valor_retencao": round(valor_abs * 0.0615, 2),
+            "obs": "Pagamento a PJ - verificar se ha retencao na fonte (servico vs mercadoria)",
+        }
+
+    # PIX para PF (CPF mascarado)
+    if _RX_PIX.search(texto) and valor < 0 and _RX_CPF_MASK.search(texto):
+        # IRRF tabela progressiva para servico profissional autonomo
+        return {
+            "categoria": "RETENCAO_PF",
+            "tributo": "IRRF (tabela progressiva) + INSS (11% ou 20%)",
+            "aliquota_sugerida": "ate 27.5% IRRF + INSS",
+            "valor_retencao": round(valor_abs * 0.075, 2),  # estimativa conservadora
+            "obs": "Pagamento a PF - verificar natureza (servico, salario, dividendo)",
+        }
+
+    # TED para PJ
+    if _RX_TED.search(texto) and valor < 0 and cnpj:
+        return {
+            "categoria": "RETENCAO_PJ",
+            "tributo": "PIS+COFINS+CSLL (4.65%) + IRRF (1.5%) se servico",
+            "aliquota_sugerida": "ate 6.15%",
+            "valor_retencao": round(valor_abs * 0.0615, 2),
+            "obs": "TED a PJ - verificar retencao",
+        }
+
+    # Compra cartao
+    if _RX_CARTAO.search(texto):
+        return {
+            "categoria": "COMPRA_CARTAO",
+            "tributo": "ICMS embutido no preco (consumidor final)",
+            "aliquota_sugerida": "—",
+            "valor_retencao": 0.0,
+            "obs": "Compra cartao - despesa de custeio",
+        }
+
+    # Boleto
+    if _RX_BOLETO.search(texto):
+        return {
+            "categoria": "BOLETO",
+            "tributo": "PIS+COFINS+CSLL se servico (4.65%)",
+            "aliquota_sugerida": "verificar natureza",
+            "valor_retencao": 0.0,
+            "obs": "Boleto/titulo - verificar NF de origem",
+        }
+
+    return {
+        "categoria": "OUTRO",
+        "tributo": "Indeterminado",
+        "aliquota_sugerida": "—",
+        "valor_retencao": 0.0,
+        "obs": "Categoria nao identificada automaticamente",
+    }

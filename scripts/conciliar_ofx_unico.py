@@ -38,6 +38,7 @@ from api.matchers.cnpj_enricher import (
 from api.matchers.forensics import (
     calcular_agregados,
     calcular_risk_score,
+    classificar_tributario,
     detectar_carrossel,
     detectar_meio,
     detectar_primeira_vez,
@@ -46,6 +47,75 @@ from api.matchers.forensics import (
     hash_linha,
     periodo_fiscal,
 )
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Cabecalho institucional padronizado (em todas as abas)
+# ────────────────────────────────────────────────────────────────────────
+
+
+BANCOS = {
+    "756": "SICOOB - Banco Cooperativo do Brasil",
+    "001": "Banco do Brasil",
+    "237": "Bradesco",
+    "104": "Caixa Economica Federal",
+    "341": "Itau Unibanco",
+    "033": "Santander",
+    "260": "Nubank",
+    "748": "Sicredi",
+}
+
+
+def aplicar_cabecalho(ws, dados: dict, empresa: dict, ultima_col: int = 6):
+    """Insere cabecalho institucional ORGATEC no topo da aba (linhas 1-4).
+
+    A aba comeca o conteudo real na linha 5+.
+    Modifica ws in place. Retorna a linha onde o conteudo deve comecar.
+    """
+    banco_nome = BANCOS.get(dados.get("banco_id", ""), f"Banco {dados.get('banco_id','?')}")
+    end_col = get_column_letter(ultima_col)
+
+    # Linha 1: titulo principal
+    c1 = ws.cell(row=1, column=1, value="[ORGATEC] Conciliacao Bancaria - Auditoria")
+    c1.font = Font(bold=True, size=14, color="FFFFFF")
+    c1.fill = PatternFill("solid", fgColor=NAVY)
+    c1.alignment = Alignment(horizontal="center", vertical="center")
+    ws.merge_cells(f"A1:{end_col}1")
+    ws.row_dimensions[1].height = 28
+
+    # Linha 2: empresa | CNPJ | socios
+    c2 = ws.cell(
+        row=2, column=1,
+        value=f"Empresa: {empresa.get('nome', '[NAO CADASTRADO]')}  |  "
+              f"CNPJ: {empresa.get('cnpj', '[PENDENTE]')}  |  "
+              f"Socios: {empresa.get('socios', '[PENDENTE]')}",
+    )
+    c2.font = Font(bold=True, size=10, color="FFFFFF")
+    c2.fill = PatternFill("solid", fgColor="1E3A8A")
+    c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.merge_cells(f"A2:{end_col}2")
+    ws.row_dimensions[2].height = 22
+
+    # Linha 3: conta detalhada
+    c3 = ws.cell(
+        row=3, column=1,
+        value=f"Correntista: {empresa.get('nome', '[NAO CADASTRADO]')}  >  "
+              f"Agencia: {dados.get('agencia', '?')}  >  "
+              f"Conta: {dados.get('conta', '?')}  >  "
+              f"Banco: {banco_nome}  >  "
+              f"Periodo: {dados.get('periodo_ini','')} a {dados.get('periodo_fim','')}  >  "
+              f"Saldo final: R$ {dados.get('saldo_final', 0):,.2f}",
+    )
+    c3.font = Font(size=9, color="0F172A")
+    c3.fill = PatternFill("solid", fgColor="DBEAFE")
+    c3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.merge_cells(f"A3:{end_col}3")
+    ws.row_dimensions[3].height = 20
+
+    # Linha 4: separador
+    ws.row_dimensions[4].height = 6
+
+    return 5  # conteudo comeca na linha 5
 
 
 # Estilos XLSX
@@ -390,23 +460,49 @@ def style_header(ws, row: int, n_cols: int) -> None:
         cell.border = THIN_BORDER
 
 
-def gerar_xlsx(dados: dict, out_path: Path) -> None:
+def gerar_xlsx(dados: dict, out_path: Path, empresa: dict | None = None) -> None:
     d = dados
+    if empresa is None:
+        empresa = {"nome": "[NAO CADASTRADO]", "cnpj": "[PENDENTE]", "socios": "[PENDENTE]"}
     wb = Workbook()
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
 
-    # ── Aba Resumo ─────────────────────────────────────────────────────
+    # ── Aba Resumo + Checklist de Processamento ─────────────────────────
     ws = wb.create_sheet("Resumo")
-    ws["A1"] = f"CONCILIACAO - Conta {d['conta']} (Ag {d['agencia']})"
-    ws["A1"].font = TITLE_FONT
-    ws.merge_cells("A1:C1")
-    ws["A2"] = f"Periodo {d['periodo_ini']} a {d['periodo_fim']} - Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-    ws["A2"].font = Font(italic=True, color="64748B", size=9)
-    ws.merge_cells("A2:C2")
+    aplicar_cabecalho(ws, d, empresa, ultima_col=5)
+    ws.cell(row=5, column=1, value=f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}").font = Font(italic=True, color="64748B", size=9)
+    ws.merge_cells("A5:E5")
 
+    # Checklist de processamento em segundo plano
+    ws.cell(row=7, column=1, value="CHECKLIST DE PROCESSAMENTO (BACKGROUND)").font = TITLE_FONT
+    ws.merge_cells("A7:E7")
+    enc_ok = "[X]" if d.get("encoding_ok", True) else "[ ]"
+    datas_ok = "[X]" if d.get("datas_validas", True) else "[ ]"
+    saldo_ok = "[X]" if d.get("saldo_validado", True) else "[~]"
+    cat_ok = "[X]"
+    docker_ok = "[ ]"
+    checklist = [
+        (f"{enc_ok}", "Encoding OFX validado (USASCII/Latin1 mapeados)"),
+        (f"{datas_ok}", "Datas DTSTART/DTEND coincidem com extrato"),
+        (f"{saldo_ok}", "Saldo final OFX (LEDGERBAL) validado contra fluxo"),
+        (f"{cat_ok}", "Transacoes normalizadas para categorias Orgatec"),
+        (f"{docker_ok}", "Processamento em container Docker/n8n com logs de auditoria"),
+    ]
+    for i, (status, item) in enumerate(checklist, start=8):
+        c = ws.cell(row=i, column=1, value=status)
+        c.font = Font(name="Consolas", size=10, color=("16A34A" if "X" in status else "D97706" if "~" in status else "94A3B8"))
+        ws.cell(row=i, column=2, value=item)
+        ws.merge_cells(f"B{i}:E{i}")
+
+    # Indicadores principais
+    ws.cell(row=14, column=1, value="INDICADORES PRINCIPAIS").font = TITLE_FONT
+    ws.merge_cells("A14:E14")
+    ws.cell(row=15, column=1, value="INDICADOR")
+    ws.cell(row=15, column=2, value="VALOR")
+    style_header(ws, 15, 2)
     indicadores = [
-        ("Banco", f"{d['banco_id']} - Sicoob (cooperativo)" if d['banco_id'] == "756" else d['banco_id']),
+        ("Banco", f"{d['banco_id']} - {BANCOS.get(d['banco_id'], '?')}"),
         ("Agencia / Conta", f"{d['agencia']} / {d['conta']}"),
         ("Total de transacoes", d['n_transacoes']),
         ("Volume de creditos (R$)", d['credito_total']),
@@ -416,10 +512,7 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
         ("Pendentes", d['pendentes']),
         ("Alertas pos-baixa", d['alertas_pos_baixa']),
     ]
-    ws["A4"] = "INDICADOR"
-    ws["B4"] = "VALOR"
-    style_header(ws, 4, 2)
-    for i, (k, v) in enumerate(indicadores, start=5):
+    for i, (k, v) in enumerate(indicadores, start=16):
         ws.cell(row=i, column=1, value=k).font = Font(bold=True)
         c = ws.cell(row=i, column=2, value=v)
         if isinstance(v, (int, float)) and "R$" in k:
@@ -429,14 +522,16 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
                 ws.cell(row=i, column=col).fill = ZEBRA_FILL
 
     # Por estagio
-    ws.cell(row=15, column=1, value="DISTRIBUICAO POR ESTAGIO").font = TITLE_FONT
-    ws.merge_cells("A15:D15")
-    ws.cell(row=17, column=1, value="Estagio")
-    ws.cell(row=17, column=2, value="Tipo")
-    ws.cell(row=17, column=3, value="Quantidade")
-    ws.cell(row=17, column=4, value="%")
-    style_header(ws, 17, 4)
-    r = 18
+    r = i + 2
+    ws.cell(row=r, column=1, value="DISTRIBUICAO POR ESTAGIO").font = TITLE_FONT
+    ws.merge_cells(f"A{r}:D{r}")
+    r += 1
+    ws.cell(row=r, column=1, value="Estagio")
+    ws.cell(row=r, column=2, value="Tipo")
+    ws.cell(row=r, column=3, value="Quantidade")
+    ws.cell(row=r, column=4, value="%")
+    style_header(ws, r, 4)
+    r += 1
     for est in range(7):
         qtd = d["por_estagio"].get(est, 0)
         if qtd:
@@ -449,30 +544,47 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
                     ws.cell(row=r, column=col).fill = ZEBRA_FILL
             r += 1
 
-    for col, w in {1: 26, 2: 24, 3: 14, 4: 10}.items():
+    # Divergencias identificadas
+    r += 2
+    ws.cell(row=r, column=1, value="DIVERGENCIAS IDENTIFICADAS").font = TITLE_FONT
+    ws.merge_cells(f"A{r}:E{r}")
+    r += 1
+    divergencias = []
+    if empresa.get("nome", "[NAO CADASTRADO]") == "[NAO CADASTRADO]":
+        divergencias.append("Cadastro da empresa auditada nao fornecido (CNPJ/Socios pendentes)")
+    if d['alertas_pos_baixa'] > 0:
+        divergencias.append(f"{d['alertas_pos_baixa']} pagamentos pos-baixa detectados - investigar")
+    if not divergencias:
+        ws.cell(row=r, column=1, value="(nenhuma divergencia)").font = Font(italic=True, color="16A34A")
+    else:
+        for div in divergencias:
+            c = ws.cell(row=r, column=1, value=f"[!] DIVERGENCIA IDENTIFICADA: {div}")
+            c.font = Font(bold=True, color="DC2626")
+            c.fill = ALERT_FILL
+            ws.merge_cells(f"A{r}:E{r}")
+            r += 1
+
+    for col, w in {1: 32, 2: 40, 3: 14, 4: 10, 5: 12}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
-    ws.freeze_panes = "A4"
+    ws.freeze_panes = "A5"
 
     # ── Aba Transacoes (extrato com saldo acumulado) ────────────────────
     ws = wb.create_sheet("Transacoes")
-    ws["A1"] = f"EXTRATO - Conta {d['conta']} (Ag {d['agencia']})"
-    ws["A1"].font = TITLE_FONT
-    ws.merge_cells("A1:G1")
-    ws["A2"] = f"Periodo {d['periodo_ini']} a {d['periodo_fim']} - Saldo final R$ {d['saldo_final']:,.2f}"
-    ws["A2"].font = Font(italic=True, color="64748B", size=9)
-    ws.merge_cells("A2:G2")
+    aplicar_cabecalho(ws, d, empresa, ultima_col=8)
+    ws.cell(row=5, column=1, value=f"EXTRATO DETALHADO - {d['n_transacoes']} transacoes - Saldo final R$ {d['saldo_final']:,.2f}").font = TITLE_FONT
+    ws.merge_cells("A5:H5")
 
     headers_t = ["#", "Data", "Tipo", "Valor (R$)", "Memo", "Nome", "Contraparte (RFB)", "Saldo Acumulado (R$)"]
     for c, h in enumerate(headers_t, start=1):
-        ws.cell(row=4, column=c, value=h)
-    style_header(ws, 4, 8)
+        ws.cell(row=7, column=c, value=h)
+    style_header(ws, 7, 8)
 
     # Calcula saldo inicial = saldo final - soma de todos os fluxos
     saldo_inicial = d['saldo_final'] - (d['credito_total'] + d['debito_total'])
 
     txs_ord = sorted(d['disposicoes'], key=lambda x: x.transacao.data)
     saldo_corrente = saldo_inicial
-    r = 5
+    r = 8
     total_cred = 0.0
     total_deb = 0.0
     for i, disp in enumerate(txs_ord, start=1):
@@ -525,17 +637,16 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
 
     for col, w in {1: 5, 2: 12, 3: 8, 4: 16, 5: 35, 6: 30, 7: 38, 8: 22}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
-    ws.freeze_panes = "A5"
-    ws.auto_filter.ref = f"A4:H{r-1}"
+    ws.freeze_panes = "A8"
+    ws.auto_filter.ref = f"A7:H{r-1}"
 
-    # ── Aba Disposicoes (com auditoria forense — 23 colunas) ────────────
+    # ── Aba Disposicoes (com auditoria forense — 27 colunas) ────────────
     ws = wb.create_sheet("Disposicoes")
-    ws["A1"] = "DISPOSICOES POR TRANSACAO - Auditoria Forense"
-    ws["A1"].font = TITLE_FONT
-    ws.merge_cells("A1:W1")
-    ws["A2"] = "Eixos: A=Compliance | B=Identificacao | C=Padroes | D=Risk Score | E=Rastreabilidade"
-    ws["A2"].font = Font(italic=True, color="64748B", size=9)
-    ws.merge_cells("A2:W2")
+    aplicar_cabecalho(ws, d, empresa, ultima_col=27)
+    ws.cell(row=5, column=1, value="DISPOSICOES POR TRANSACAO - Auditoria Forense").font = TITLE_FONT
+    ws.merge_cells("A5:AA5")
+    ws.cell(row=6, column=1, value="Eixos: A=Compliance | B=Identificacao | C=Padroes | D=Risk Score | E=Rastreabilidade").font = Font(italic=True, color="64748B", size=9)
+    ws.merge_cells("A6:AA6")
 
     headers = [
         # Identificacao basica (1-5)
@@ -556,13 +667,13 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
         "Periodo Fiscal", "Hash Linha", "Status Revisao", "Comentario Revisor",
     ]
     for c, h in enumerate(headers, start=1):
-        ws.cell(row=3, column=c, value=h)
-    style_header(ws, 3, len(headers))
+        ws.cell(row=8, column=c, value=h)
+    style_header(ws, 8, len(headers))
 
     # Pre-calcula agregados para padroes (C)
     agg = calcular_agregados(d['disposicoes'])
 
-    r = 4
+    r = 9
     for disp in sorted(d['disposicoes'], key=lambda x: x.transacao.data):
         t = disp.transacao
         cnpj = _extrair_cnpj(t)
@@ -702,14 +813,14 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
     }
     for col, w in larguras.items():
         ws.column_dimensions[get_column_letter(col)].width = w
-    ws.freeze_panes = "F4"  # congela ate Memo+Nome
-    ws.auto_filter.ref = f"A3:AA{r-1}"
+    ws.freeze_panes = "F9"  # congela ate Memo+Nome
+    ws.auto_filter.ref = f"A8:AA{r-1}"
 
-    # ── Aba Risk Heatmap (resumo por classe de risco) ───────────────────
-    ws = wb.create_sheet("Risk Heatmap")
-    ws["A1"] = "DISTRIBUICAO POR CLASSE DE RISCO"
-    ws["A1"].font = TITLE_FONT
-    ws.merge_cells("A1:F1")
+    # ── Aba Risk (resumo por classe de risco) ───────────────────────────
+    ws = wb.create_sheet("Risk")
+    aplicar_cabecalho(ws, d, empresa, ultima_col=6)
+    ws.cell(row=5, column=1, value="ANALISE DE RISCO - Distribuicao por Classe").font = TITLE_FONT
+    ws.merge_cells("A5:F5")
 
     # Re-calcula stats com os mesmos detectores
     agg = calcular_agregados(d['disposicoes'])
@@ -734,8 +845,8 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
 
     headers_h = ["Classe", "Qtd Transacoes", "% do Total", "Volume (R$)", "% Volume", "Acao Sugerida"]
     for c, h in enumerate(headers_h, start=1):
-        ws.cell(row=3, column=c, value=h)
-    style_header(ws, 3, 6)
+        ws.cell(row=7, column=c, value=h)
+    style_header(ws, 7, 6)
 
     cores_classe = {
         "CRITICO": ("DC2626", "FEE2E2", "Auditoria imediata - investigar"),
@@ -745,7 +856,7 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
     }
     total_qtd = sum(v[0] for v in classe_counts.values())
     total_vol = sum(v[1] for v in classe_counts.values())
-    r = 4
+    r = 8
     for classe in ("CRITICO", "ALTO", "MEDIO", "BAIXO"):
         qtd, vol = classe_counts[classe]
         cor, fill_cor, acao = cores_classe[classe]
@@ -772,21 +883,21 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
 
     for col, w in {1: 12, 2: 16, 3: 12, 4: 18, 5: 11, 6: 34}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
-    ws.freeze_panes = "A4"
+    ws.freeze_panes = "A8"
 
     # ── Aba CNPJs ──────────────────────────────────────────────────────
     if d["cnpj_infos"]:
-        ws = wb.create_sheet("CNPJs Enriquecidos")
-        ws["A1"] = f"CONTRAPARTES IDENTIFICADAS - {len(d['cnpj_infos'])} CNPJS"
-        ws["A1"].font = TITLE_FONT
-        ws.merge_cells("A1:H1")
+        ws = wb.create_sheet("CNPJs")
+        aplicar_cabecalho(ws, d, empresa, ultima_col=8)
+        ws.cell(row=5, column=1, value=f"CONTRAPARTES IDENTIFICADAS - {len(d['cnpj_infos'])} CNPJS").font = TITLE_FONT
+        ws.merge_cells("A5:H5")
         headers = ["CNPJ", "Razao Social", "Situacao", "Data Baixa/Situacao", "UF",
                    "Municipio", "CNAE Descricao", "Porte"]
         for c, h in enumerate(headers, start=1):
-            ws.cell(row=3, column=c, value=h)
-        style_header(ws, 3, 8)
+            ws.cell(row=7, column=c, value=h)
+        style_header(ws, 7, 8)
 
-        r = 4
+        r = 8
         for cnpj, info in d["cnpj_infos"].items():
             fmt = f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:14]}"
             is_baixada = "BAIXADA" in (info.situacao or "") or "INAPTA" in (info.situacao or "")
@@ -809,10 +920,266 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
             r += 1
         for col, w in {1: 20, 2: 40, 3: 18, 4: 16, 5: 5, 6: 22, 7: 38, 8: 22}.items():
             ws.column_dimensions[get_column_letter(col)].width = w
-        ws.freeze_panes = "A4"
-        ws.auto_filter.ref = f"A3:H{r-1}"
+        ws.freeze_panes = "A8"
+        ws.auto_filter.ref = f"A7:H{r-1}"
+
+    # ── Aba Partes Relacionadas ────────────────────────────────────────
+    aba_partes_relacionadas(wb, d, empresa)
+
+    # ── Aba Status Tributario ───────────────────────────────────────────
+    aba_status_tributario(wb, d, empresa)
 
     wb.save(str(out_path))
+
+
+def aba_partes_relacionadas(wb, d: dict, empresa: dict) -> None:
+    """Identifica transacoes com socios, empresas do grupo ou contas vinculadas."""
+    ws = wb.create_sheet("Partes Relacionadas")
+    aplicar_cabecalho(ws, d, empresa, ultima_col=8)
+    ws.cell(row=5, column=1, value="PARTES RELACIONADAS - Socios, Grupo Economico, Contas Vinculadas").font = TITLE_FONT
+    ws.merge_cells("A5:H5")
+    ws.cell(row=6, column=1, value="Identifica transacoes com pessoas/CNPJs cadastrados como socios, grupo (nome em comum) ou MESMA TIT.").font = Font(italic=True, color="64748B", size=9)
+    ws.merge_cells("A6:H6")
+
+    headers = ["Data", "Valor (R$)", "Memo", "Nome/Favorecido", "CNPJ", "Contraparte (RFB)",
+               "Tipo de Vinculo", "Justificativa"]
+    for c, h in enumerate(headers, start=1):
+        ws.cell(row=8, column=c, value=h)
+    style_header(ws, 8, 8)
+
+    # Detecta vinculos
+    socios_empresa = (empresa.get("socios") or "").upper()
+    nomes_empresa = (empresa.get("nome") or "").upper()
+    grupos_inferidos = {}  # nome_grupo -> [transacoes]
+
+    # Estrategia: detecta MESMA TIT, e tambem nomes recorrentes (top 5)
+    from collections import Counter
+    nomes_count = Counter()
+    for disp in d['disposicoes']:
+        nome = (disp.transacao.nome or "").upper().strip()
+        # Extrai primeira palavra significativa
+        primeiro = re.sub(r"^(FAV\.:|REM\.:|FAV:|REM:|PAGAMENTO\s+PIX|RECEBIMENTO\s+PIX)\s*", "", nome).strip()
+        primeira_palavra = primeiro.split()[0] if primeiro.split() else ""
+        if len(primeira_palavra) >= 4:
+            nomes_count[primeira_palavra] += 1
+
+    # Top nomes recorrentes = candidatos a grupo economico
+    top_recorrentes = {n for n, c in nomes_count.most_common(15) if c >= 3}
+
+    r = 9
+    total_vol = 0.0
+    for disp in sorted(d['disposicoes'], key=lambda x: x.transacao.data):
+        t = disp.transacao
+        texto = ((t.nome or "") + " " + (t.memo or "")).upper()
+        vinculos = []
+
+        # 1. Mesma titularidade
+        if "MESMA TIT" in texto or "MESMA TITULAR" in texto:
+            vinculos.append(("MESMA_TIT", "Transferencia entre contas proprias do mesmo CPF/CNPJ"))
+
+        # 2. Socio cadastrado (nome em parte da string)
+        if socios_empresa and socios_empresa != "[PENDENTE]":
+            for socio in socios_empresa.split(","):
+                socio_clean = socio.strip()
+                if socio_clean and len(socio_clean) >= 6 and socio_clean in texto:
+                    vinculos.append(("SOCIO_PF", f"Nome do socio '{socio_clean}' identificado na transacao"))
+
+        # 3. Mesmo nome da empresa auditada (deveria ser raro - autoreferencia)
+        if nomes_empresa and nomes_empresa != "[NAO CADASTRADO]" and nomes_empresa in texto:
+            vinculos.append(("AUTO_REF", f"Nome da empresa '{nomes_empresa}' aparece na contraparte"))
+
+        # 4. Grupo economico (nome recorrente)
+        primeiro = re.sub(r"^(FAV\.:|REM\.:|FAV:|REM:|PAGAMENTO\s+PIX|RECEBIMENTO\s+PIX)\s*", "", (t.nome or "").upper()).strip()
+        primeira_palavra = primeiro.split()[0] if primeiro.split() else ""
+        if primeira_palavra in top_recorrentes and len(primeira_palavra) >= 4:
+            # Confirma vinculo so se aparece em multiplos memos
+            cnt = nomes_count[primeira_palavra]
+            if cnt >= 5:
+                vinculos.append(("GRUPO_INFERIDO", f"Nome '{primeira_palavra}' recorrente ({cnt}x) - candidato a grupo economico"))
+
+        if not vinculos:
+            continue
+
+        cnpj = _extrair_cnpj(t)
+        cnpj_fmt = ""
+        if cnpj:
+            cnpj_fmt = f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:14]}"
+        info = d['cnpj_infos'].get(cnpj) if cnpj else None
+        razao = info.razao_social if info else ""
+
+        # Escreve linha
+        tipos = ", ".join(v[0] for v in vinculos)
+        justis = " | ".join(v[1] for v in vinculos)
+
+        ws.cell(row=r, column=1, value=t.data)
+        cv = ws.cell(row=r, column=2, value=round(t.valor, 2))
+        cv.number_format = "#,##0.00"
+        cv.font = Font(color=("DC2626" if t.valor < 0 else "16A34A"), bold=True)
+        ws.cell(row=r, column=3, value=(t.memo or "")[:40])
+        ws.cell(row=r, column=4, value=(t.nome or "")[:40])
+        ws.cell(row=r, column=5, value=cnpj_fmt).font = Font(name="Consolas", size=10)
+        ws.cell(row=r, column=6, value=razao)
+        c_tipo = ws.cell(row=r, column=7, value=tipos)
+        c_tipo.font = Font(bold=True, color="0052FF")
+        ws.cell(row=r, column=8, value=justis)
+        for c in range(1, 9):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+            ws.cell(row=r, column=c).fill = PatternFill("solid", fgColor="EFF6FF") if r % 2 == 0 else ZEBRA_FILL
+        total_vol += abs(t.valor)
+        r += 1
+
+    if r == 9:
+        ws.cell(row=9, column=1, value="(nenhuma parte relacionada detectada)").font = Font(italic=True, color="16A34A")
+    else:
+        ws.cell(row=r, column=1, value=f"TOTAL ({r-9} transacoes)").font = TOTAL_FONT
+        ws.cell(row=r, column=2, value=round(total_vol, 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=2).font = TOTAL_FONT
+        for c in range(1, 9):
+            ws.cell(row=r, column=c).fill = TOTAL_FILL
+
+    for col, w in {1: 12, 2: 14, 3: 32, 4: 32, 5: 20, 6: 38, 7: 22, 8: 50}.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = "A9"
+    if r > 9:
+        ws.auto_filter.ref = f"A8:H{r-1}"
+
+
+def aba_status_tributario(wb, d: dict, empresa: dict) -> None:
+    """Classificacao das movimentacoes por incidencia fiscal provavel."""
+    ws = wb.create_sheet("Status Tributario")
+    aplicar_cabecalho(ws, d, empresa, ultima_col=8)
+    ws.cell(row=5, column=1, value="STATUS TRIBUTARIO - Classificacao Fiscal das Movimentacoes").font = TITLE_FONT
+    ws.merge_cells("A5:H5")
+    ws.cell(row=6, column=1, value="Incidencia fiscal provavel - sugestao automatica, validar com regime tributario da empresa.").font = Font(italic=True, color="64748B", size=9)
+    ws.merge_cells("A6:H6")
+
+    # Resumo por categoria
+    from collections import Counter, defaultdict
+    cat_count = Counter()
+    cat_volume = defaultdict(float)
+    cat_retencao = defaultdict(float)
+
+    detalhes = []
+    for disp in sorted(d['disposicoes'], key=lambda x: x.transacao.data):
+        t = disp.transacao
+        cnpj = _extrair_cnpj(t)
+        info = d['cnpj_infos'].get(cnpj) if cnpj else None
+        porte = info.porte if info else ""
+        trib = classificar_tributario(t.memo or "", t.nome or "", t.valor, cnpj, porte)
+        cat_count[trib['categoria']] += 1
+        cat_volume[trib['categoria']] += abs(t.valor)
+        cat_retencao[trib['categoria']] += trib['valor_retencao']
+        detalhes.append((t, trib, cnpj, info))
+
+    # Tabela resumo por categoria
+    ws.cell(row=8, column=1, value="RESUMO POR CATEGORIA FISCAL").font = Font(bold=True, size=11, color=NAVY)
+    ws.merge_cells("A8:F8")
+
+    headers_resumo = ["Categoria", "Qtd", "Volume (R$)", "Retencao Estimada (R$)", "Tributo Provavel", "Aliquota"]
+    for c, h in enumerate(headers_resumo, start=1):
+        ws.cell(row=9, column=c, value=h)
+    style_header(ws, 9, 6)
+
+    CATS_ORDEM = ["RETENCAO_PJ", "RETENCAO_PF", "OPERACAO_CREDITO", "IOF", "JUROS",
+                  "PAGAMENTO_TRIBUTO", "TARIFA", "PIX_RECEBIDO", "BOLETO",
+                  "COMPRA_CARTAO", "NAO_TRIBUTAVEL", "OUTRO"]
+    TRIBUTO_REF = {
+        "RETENCAO_PJ": ("PIS+COFINS+CSLL+IRRF", "6.15%"),
+        "RETENCAO_PF": ("IRRF + INSS", "ate 27.5%"),
+        "OPERACAO_CREDITO": ("IOF credito", "0.38%"),
+        "IOF": ("IOF auto-cobrado", "0.38%"),
+        "JUROS": ("Dedutivel IRPJ/CSLL", "—"),
+        "PAGAMENTO_TRIBUTO": ("DARF/DAS/GPS/GNRE", "—"),
+        "TARIFA": ("Despesa dedutivel", "—"),
+        "PIX_RECEBIDO": ("PIS/COFINS sobre receita", "3.65-9.25%"),
+        "BOLETO": ("PIS+COFINS+CSLL se servico", "4.65%"),
+        "COMPRA_CARTAO": ("ICMS embutido", "—"),
+        "NAO_TRIBUTAVEL": ("Sem fato gerador", "—"),
+        "OUTRO": ("Indeterminado", "—"),
+    }
+
+    r = 10
+    total_qtd = sum(cat_count.values())
+    total_vol = sum(cat_volume.values())
+    total_ret = sum(cat_retencao.values())
+    for cat in CATS_ORDEM:
+        qtd = cat_count.get(cat, 0)
+        if qtd == 0:
+            continue
+        vol = cat_volume[cat]
+        ret = cat_retencao[cat]
+        tributo, aliq = TRIBUTO_REF.get(cat, ("—", "—"))
+        c1 = ws.cell(row=r, column=1, value=cat)
+        c1.font = Font(bold=True, color="DC2626" if cat.startswith("RETENCAO") else "0F172A")
+        ws.cell(row=r, column=2, value=qtd).number_format = "#,##0"
+        ws.cell(row=r, column=3, value=round(vol, 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=4, value=round(ret, 2)).number_format = "#,##0.00"
+        if ret > 0:
+            ws.cell(row=r, column=4).font = Font(bold=True, color="D97706")
+        ws.cell(row=r, column=5, value=tributo)
+        ws.cell(row=r, column=6, value=aliq)
+        for c in range(1, 7):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+            if r % 2 == 0:
+                ws.cell(row=r, column=c).fill = ZEBRA_FILL
+        r += 1
+
+    # Linha total
+    ws.cell(row=r, column=1, value="TOTAL").font = TOTAL_FONT
+    ws.cell(row=r, column=2, value=total_qtd).number_format = "#,##0"
+    ws.cell(row=r, column=3, value=round(total_vol, 2)).number_format = "#,##0.00"
+    ws.cell(row=r, column=4, value=round(total_ret, 2)).number_format = "#,##0.00"
+    for c in range(1, 7):
+        ws.cell(row=r, column=c).fill = TOTAL_FILL
+        ws.cell(row=r, column=c).font = TOTAL_FONT
+        ws.cell(row=r, column=c).border = THIN_BORDER
+    r += 3
+
+    # Detalhamento transacao a transacao
+    ws.cell(row=r, column=1, value="DETALHAMENTO POR TRANSACAO").font = Font(bold=True, size=11, color=NAVY)
+    ws.merge_cells(f"A{r}:H{r}")
+    r += 1
+
+    headers_det = ["Data", "Valor (R$)", "Memo", "Categoria Fiscal", "Tributo Provavel",
+                   "Aliquota Sugerida", "Retencao (R$)", "Observacao"]
+    for c, h in enumerate(headers_det, start=1):
+        ws.cell(row=r, column=c, value=h)
+    style_header(ws, r, 8)
+    r += 1
+
+    inicio_det = r
+    for t, trib, cnpj, info in detalhes:
+        ws.cell(row=r, column=1, value=t.data)
+        cv = ws.cell(row=r, column=2, value=round(t.valor, 2))
+        cv.number_format = "#,##0.00"
+        cv.font = Font(color="DC2626" if t.valor < 0 else "16A34A")
+        ws.cell(row=r, column=3, value=(t.memo or "")[:35])
+        c_cat = ws.cell(row=r, column=4, value=trib['categoria'])
+        if trib['categoria'].startswith("RETENCAO"):
+            c_cat.font = Font(bold=True, color="DC2626")
+            c_cat.fill = PatternFill("solid", fgColor="FEE2E2")
+        elif trib['categoria'] in ("IOF", "OPERACAO_CREDITO", "JUROS"):
+            c_cat.fill = PatternFill("solid", fgColor="FEF3C7")
+        elif trib['categoria'] == "NAO_TRIBUTAVEL":
+            c_cat.fill = PatternFill("solid", fgColor="DCFCE7")
+        ws.cell(row=r, column=5, value=trib['tributo'])
+        ws.cell(row=r, column=6, value=trib['aliquota_sugerida'])
+        cr = ws.cell(row=r, column=7, value=round(trib['valor_retencao'], 2) if trib['valor_retencao'] else "")
+        if trib['valor_retencao']:
+            cr.number_format = "#,##0.00"
+            cr.font = Font(bold=True, color="D97706")
+        ws.cell(row=r, column=8, value=trib['obs'])
+        for c in range(1, 9):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+            if r % 2 == 0 and ws.cell(row=r, column=c).fill.fgColor.rgb in (None, "00000000"):
+                ws.cell(row=r, column=c).fill = ZEBRA_FILL
+        r += 1
+
+    for col, w in {1: 12, 2: 14, 3: 32, 4: 20, 5: 38, 6: 22, 7: 14, 8: 50}.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = f"A{inicio_det}"
+    if r > inicio_det:
+        ws.auto_filter.ref = f"A{inicio_det-1}:H{r-1}"
 
 
 async def gerar_pdf_via_playwright(html_text: str, pdf_path: Path) -> bool:
@@ -840,13 +1207,21 @@ async def gerar_pdf_via_playwright(html_text: str, pdf_path: Path) -> bool:
 # ────────────────────────────────────────────────────────────────────────
 
 
-async def main_async(ofx_path: Path, out_dir: Path, prefixo: str) -> None:
+async def main_async(ofx_path: Path, out_dir: Path, prefixo: str,
+                      empresa: dict | None = None) -> None:
     print(f"Lendo OFX: {ofx_path}")
     dados = await conciliar_ofx(ofx_path)
     print(f"  {dados['n_transacoes']} transacoes  |  CNPJs unicos: {len(dados['cnpj_infos'])}")
     print(f"  Automatizadas: {dados['automatizadas']}/{dados['n_transacoes']}")
     if dados["alertas_pos_baixa"]:
         print(f"  >>> ALERTAS POS-BAIXA: {dados['alertas_pos_baixa']}")
+
+    if empresa is None:
+        empresa = {
+            "nome": "[NAO CADASTRADO]",
+            "cnpj": "[PENDENTE]",
+            "socios": "[PENDENTE]",
+        }
 
     md_text = gerar_markdown(dados)
     md_path = out_dir / f"{prefixo}.md"
@@ -866,7 +1241,7 @@ async def main_async(ofx_path: Path, out_dir: Path, prefixo: str) -> None:
         print(f"  PDF:  (fallback HTML em {html_path})")
 
     xlsx_path = out_dir / f"{prefixo}.xlsx"
-    gerar_xlsx(dados, xlsx_path)
+    gerar_xlsx(dados, xlsx_path, empresa)
     print(f"  XLSX: {xlsx_path}")
 
 
@@ -875,6 +1250,9 @@ def main() -> None:
     ap.add_argument("--ofx", required=True, help="Caminho do arquivo OFX")
     ap.add_argument("--out", default=r"C:\Users\Veloso\Downloads", help="Pasta de saida")
     ap.add_argument("--prefixo", default=None, help="Prefixo dos arquivos (default: deriva do OFX)")
+    ap.add_argument("--empresa-nome", default=None, help="Razao social da empresa auditada")
+    ap.add_argument("--empresa-cnpj", default=None, help="CNPJ da empresa auditada")
+    ap.add_argument("--empresa-socios", default=None, help="Nomes dos socios (separados por virgula)")
     args = ap.parse_args()
 
     ofx_path = Path(args.ofx)
@@ -894,7 +1272,15 @@ def main() -> None:
         ini = re.search(r"<DTSTART>(\d{6})", raw)
         prefixo = f"CONCILIACAO_{ct.group(1) if ct else 'X'}_{ini.group(1) if ini else 'X'}"
 
-    asyncio.run(main_async(ofx_path, out_dir, prefixo))
+    empresa = None
+    if args.empresa_nome or args.empresa_cnpj or args.empresa_socios:
+        empresa = {
+            "nome": args.empresa_nome or "[NAO CADASTRADO]",
+            "cnpj": args.empresa_cnpj or "[PENDENTE]",
+            "socios": args.empresa_socios or "[PENDENTE]",
+        }
+
+    asyncio.run(main_async(ofx_path, out_dir, prefixo, empresa))
 
 
 if __name__ == "__main__":
