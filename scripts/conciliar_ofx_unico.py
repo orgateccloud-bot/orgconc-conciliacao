@@ -27,6 +27,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _logo_helper import html_logo_inline, inserir_logo_xlsx, logo_data_uri
 from api.matchers.cascata import Disposicao, classificar, ler_ofx
 from api.matchers.cnpj_enricher import (
     _carregar_cache,
@@ -75,13 +77,17 @@ def aplicar_cabecalho(ws, dados: dict, empresa: dict, ultima_col: int = 6):
     banco_nome = BANCOS.get(dados.get("banco_id", ""), f"Banco {dados.get('banco_id','?')}")
     end_col = get_column_letter(ultima_col)
 
-    # Linha 1: titulo principal
-    c1 = ws.cell(row=1, column=1, value="[ORGATEC] Conciliacao Bancaria - Auditoria")
+    # Linha 1: titulo principal + logo
+    c1 = ws.cell(row=1, column=1, value="    ORGATEC · Conciliacao Bancaria · Auditoria")
     c1.font = Font(bold=True, size=14, color="FFFFFF")
     c1.fill = PatternFill("solid", fgColor=NAVY)
-    c1.alignment = Alignment(horizontal="center", vertical="center")
+    c1.alignment = Alignment(horizontal="center", vertical="center", indent=2)
     ws.merge_cells(f"A1:{end_col}1")
-    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[1].height = 60
+    # Coluna A precisa ter largura suficiente p/ logo
+    if ws.column_dimensions[get_column_letter(1)].width is None or ws.column_dimensions[get_column_letter(1)].width < 12:
+        ws.column_dimensions[get_column_letter(1)].width = 12
+    inserir_logo_xlsx(ws, "A1", largura_px=60, altura_px=60)
 
     # Linha 2: empresa | CNPJ | socios
     c2 = ws.cell(
@@ -431,18 +437,25 @@ strong { color: #0F172A; font-weight: 700; }
 code { font-family: 'DejaVu Sans Mono', 'Courier New', monospace; font-size: 9pt; background: #F1F5F9; padding: 1px 5px; border-radius: 3px; color: #0052FF; }
 .ft { margin-top: 28px; padding-top: 12px; border-top: 1px solid #E2E8F0; font-size: 8.5pt; color: #94A3B8; }
 """
+    logo_html = html_logo_inline()
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <title>Conciliacao Conta {dados['conta']} - OrgConc</title>
-<style>{css}</style>
+<style>{css}
+.hd {{ display: flex; align-items: center; gap: 18px; }}
+.hd-text {{ flex: 1; }}
+</style>
 </head>
 <body>
   <div class="hd">
-    <h1>ORGATEC</h1>
-    <div class="tag">Contabilidade &amp; Auditoria - Conciliacao Bancaria</div>
-    <div class="meta">Conta {dados['conta']} ({dados['banco_id']}) - Gerado em {agora}</div>
+    {logo_html}
+    <div class="hd-text">
+      <h1>ORGATEC</h1>
+      <div class="tag">Contabilidade &amp; Auditoria - Conciliacao Bancaria</div>
+      <div class="meta">Conta {dados['conta']} ({dados['banco_id']}) - Gerado em {agora}</div>
+    </div>
   </div>
   {body}
   <div class="ft">(c) ORGATEC Contabilidade e Auditoria - OrgConc v0.5.0</div>

@@ -21,6 +21,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _logo_helper import html_logo_inline, inserir_logo_xlsx
 from api.matchers.cascata import classificar, ler_ofx
 from api.matchers.cnpj_enricher import _carregar_cache
 from api.matchers.forensics import (
@@ -84,12 +86,15 @@ def style_header(ws, row, n):
 
 
 def cabecalho(ws, ultima_col=8):
-    c1 = ws.cell(row=1, column=1, value="[ORGATEC] Auditoria Consolidada 5 Meses - Conta 158083-3")
+    c1 = ws.cell(row=1, column=1, value="    ORGATEC · Auditoria Consolidada 5 Meses · Conta 158083-3")
     c1.font = Font(bold=True, size=14, color="FFFFFF")
     c1.fill = PatternFill("solid", fgColor=NAVY)
-    c1.alignment = Alignment(horizontal="center", vertical="center")
+    c1.alignment = Alignment(horizontal="center", vertical="center", indent=2)
     ws.merge_cells(f"A1:{get_column_letter(ultima_col)}1")
-    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[1].height = 60
+    if ws.column_dimensions[get_column_letter(1)].width is None or ws.column_dimensions[get_column_letter(1)].width < 12:
+        ws.column_dimensions[get_column_letter(1)].width = 12
+    inserir_logo_xlsx(ws, "A1", largura_px=60, altura_px=60)
 
     c2 = ws.cell(row=2, column=1,
         value=f"Empresa: [NAO CADASTRADO] | CNPJ: [PENDENTE] | Socios: [PENDENTE]")
@@ -791,13 +796,18 @@ tr:nth-child(even) td { background: #F8FAFC; }
 strong { color: #0F172A; font-weight: 700; }
 .ft { margin-top: 28px; padding-top: 12px; border-top: 1px solid #E2E8F0; font-size: 8.5pt; color: #94A3B8; }
 """
+    logo_html = html_logo_inline()
     return f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Auditoria Consolidada 158083-3</title><style>{css}</style></head>
+<title>Auditoria Consolidada 158083-3</title><style>{css}
+.hd {{ display: flex; align-items: center; gap: 18px; }}
+.hd-text {{ flex: 1; }}
+</style></head>
 <body>
-<div class="hd"><h1>ORGATEC</h1>
+<div class="hd">{logo_html}<div class="hd-text">
+<h1>ORGATEC</h1>
 <div class="tag">Auditoria Consolidada · 5 Meses · Conta 158083-3</div>
 <div style="margin-top:10px;font-size:10pt;opacity:.92">Sicoob 756 · Agencia 3333-2 · Periodo 01/01 a 14/05/2026 · Gerado em {agora}</div>
-</div>
+</div></div>
 {body}
 <div class="ft">(c) ORGATEC Contabilidade e Auditoria - OrgConc v0.5.0</div>
 </body></html>"""
