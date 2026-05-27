@@ -28,7 +28,24 @@ from openpyxl.utils import get_column_letter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from api.matchers.cascata import Disposicao, classificar, ler_ofx
-from api.matchers.cnpj_enricher import _carregar_cache, _salvar_cache, enriquecer_um
+from api.matchers.cnpj_enricher import (
+    _carregar_cache,
+    _salvar_cache,
+    buscar_cnpj_por_nome_no_cache,
+    buscar_cnpj_por_nome_rfb,
+    enriquecer_um,
+)
+from api.matchers.forensics import (
+    calcular_agregados,
+    calcular_risk_score,
+    detectar_carrossel,
+    detectar_meio,
+    detectar_primeira_vez,
+    detectar_smurfing,
+    detectar_valor_redondo,
+    hash_linha,
+    periodo_fiscal,
+)
 
 
 # Estilos XLSX
@@ -117,6 +134,19 @@ async def conciliar_ofx(ofx_path: Path) -> dict:
         await asyncio.gather(*[_job(c) for c in cnpjs])
     _salvar_cache(cache)
 
+    # Mapa nome -> info para fuzzy matching (transacoes sem CNPJ no extrato)
+    nome_match_cache: dict[str, object] = {}
+
+    def _buscar_por_nome(nome: str):
+        if not nome:
+            return None
+        chave = nome.upper().strip()
+        if chave in nome_match_cache:
+            return nome_match_cache[chave]
+        info = buscar_cnpj_por_nome_no_cache(nome, cache, min_score=85)
+        nome_match_cache[chave] = info
+        return info
+
     # Compila disposicoes
     disposicoes = []
     for r in resultados:
@@ -124,6 +154,13 @@ async def conciliar_ofx(ofx_path: Path) -> dict:
         contraparte = ""
         nfe_chave = ""
         cnpj = _extrair_cnpj(r.transacao)
+        if not cnpj:
+            # Sem CNPJ no extrato (ex: COMPRA VISA ELECTRON) -> tenta fuzzy por nome
+            info_fuzzy = _buscar_por_nome(r.transacao.nome or r.transacao.memo)
+            if info_fuzzy and info_fuzzy.razao_social:
+                cnpj = info_fuzzy.cnpj
+                cnpj_infos[cnpj] = info_fuzzy
+                flag = (flag + f" | {info_fuzzy.flag}").strip(" |") if flag else info_fuzzy.flag
         if cnpj and cnpj in cnpj_infos:
             info = cnpj_infos[cnpj]
             contraparte = info.razao_social or ""
@@ -253,7 +290,7 @@ def gerar_markdown(dados: dict) -> str:
             flag = (disp.flag or "").replace("|", "/")[:80]
             lines.append(f"| {disp.transacao.data} | {valor:,.2f} | {cp} | {flag} |")
 
-    # Transações (extrato com saldo acumulado)
+    # Transações (extrato com saldo acumulado + contraparte RFB)
     saldo_inicial = d['saldo_final'] - (d['credito_total'] + d['debito_total'])
     lines += [
         "",
@@ -261,18 +298,19 @@ def gerar_markdown(dados: dict) -> str:
         "",
         f"Saldo inicial: R$ {saldo_inicial:,.2f} | Saldo final: R$ {d['saldo_final']:,.2f}",
         "",
-        "| # | Data | Valor (R$) | Memo | Nome | Saldo Acumulado (R$) |",
-        "|---|---|---|---|---|---|",
+        "| # | Data | Valor (R$) | Memo | Nome | Contraparte (RFB) | Saldo Acumulado (R$) |",
+        "|---|---|---|---|---|---|---|",
     ]
     txs_ord = sorted(d["disposicoes"], key=lambda x: x.transacao.data)
     saldo_corrente = saldo_inicial
     for i, disp in enumerate(txs_ord, start=1):
         t = disp.transacao
         saldo_corrente += t.valor
-        memo_s = (t.memo or "")[:30].replace("|", "/")
-        nome_s = (t.nome or "")[:30].replace("|", "/")
+        memo_s = (t.memo or "")[:25].replace("|", "/")
+        nome_s = (t.nome or "")[:25].replace("|", "/")
+        contrap_s = (disp.contraparte or "")[:30].replace("|", "/")
         lines.append(
-            f"| {i} | {t.data} | {t.valor:,.2f} | {memo_s} | {nome_s} | {saldo_corrente:,.2f} |"
+            f"| {i} | {t.data} | {t.valor:,.2f} | {memo_s} | {nome_s} | {contrap_s} | {saldo_corrente:,.2f} |"
         )
 
     # Disposições
@@ -424,10 +462,10 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
     ws["A2"].font = Font(italic=True, color="64748B", size=9)
     ws.merge_cells("A2:G2")
 
-    headers_t = ["#", "Data", "Tipo", "Valor (R$)", "Memo", "Nome", "Saldo Acumulado (R$)"]
+    headers_t = ["#", "Data", "Tipo", "Valor (R$)", "Memo", "Nome", "Contraparte (RFB)", "Saldo Acumulado (R$)"]
     for c, h in enumerate(headers_t, start=1):
         ws.cell(row=4, column=c, value=h)
-    style_header(ws, 4, 7)
+    style_header(ws, 4, 8)
 
     # Calcula saldo inicial = saldo final - soma de todos os fluxos
     saldo_inicial = d['saldo_final'] - (d['credito_total'] + d['debito_total'])
@@ -453,12 +491,20 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
         cv.font = Font(color=("DC2626" if t.valor < 0 else "16A34A"))
         ws.cell(row=r, column=5, value=t.memo or "")
         ws.cell(row=r, column=6, value=t.nome or "")
-        cs = ws.cell(row=r, column=7, value=round(saldo_corrente, 2))
+        # Coluna Contraparte (RFB) — razao social enriquecida
+        contraparte = disp.contraparte or ""
+        cc = ws.cell(row=r, column=7, value=contraparte)
+        # Destaca quando ha alerta pos-baixa
+        if disp.disposicao == "ALERTA_POS_BAIXA":
+            cc.font = Font(bold=True, color="DC2626")
+        cs = ws.cell(row=r, column=8, value=round(saldo_corrente, 2))
         cs.number_format = "#,##0.00"
         cs.font = Font(bold=True, color=("DC2626" if saldo_corrente < 0 else "0F172A"))
-        for c in range(1, 8):
+        for c in range(1, 9):
             ws.cell(row=r, column=c).border = THIN_BORDER
-            if r % 2 == 0:
+            if disp.disposicao == "ALERTA_POS_BAIXA":
+                ws.cell(row=r, column=c).fill = ALERT_FILL
+            elif r % 2 == 0:
                 ws.cell(row=r, column=c).fill = ZEBRA_FILL
         r += 1
 
@@ -469,30 +515,52 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
     cv.number_format = "#,##0.00"
     ws.cell(row=r, column=5, value=f"+ {total_cred:,.2f}").font = Font(color="16A34A", bold=True)
     ws.cell(row=r, column=6, value=f"{total_deb:,.2f}").font = Font(color="DC2626", bold=True)
-    ws.cell(row=r, column=7, value=round(d['saldo_final'], 2)).number_format = "#,##0.00"
-    ws.cell(row=r, column=7).font = TOTAL_FONT
-    for c in range(1, 8):
+    ws.cell(row=r, column=8, value=round(d['saldo_final'], 2)).number_format = "#,##0.00"
+    ws.cell(row=r, column=8).font = TOTAL_FONT
+    for c in range(1, 9):
         ws.cell(row=r, column=c).fill = TOTAL_FILL
         if c != 5 and c != 6:
             ws.cell(row=r, column=c).font = TOTAL_FONT
         ws.cell(row=r, column=c).border = THIN_BORDER
 
-    for col, w in {1: 5, 2: 12, 3: 8, 4: 16, 5: 38, 6: 35, 7: 22}.items():
+    for col, w in {1: 5, 2: 12, 3: 8, 4: 16, 5: 35, 6: 30, 7: 38, 8: 22}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = "A5"
-    ws.auto_filter.ref = f"A4:G{r-1}"
+    ws.auto_filter.ref = f"A4:H{r-1}"
 
-    # ── Aba Disposicoes ────────────────────────────────────────────────
+    # ── Aba Disposicoes (com auditoria forense — 23 colunas) ────────────
     ws = wb.create_sheet("Disposicoes")
-    ws["A1"] = "DISPOSICOES POR TRANSACAO"
+    ws["A1"] = "DISPOSICOES POR TRANSACAO - Auditoria Forense"
     ws["A1"].font = TITLE_FONT
-    ws.merge_cells("A1:I1")
+    ws.merge_cells("A1:W1")
+    ws["A2"] = "Eixos: A=Compliance | B=Identificacao | C=Padroes | D=Risk Score | E=Rastreabilidade"
+    ws["A2"].font = Font(italic=True, color="64748B", size=9)
+    ws.merge_cells("A2:W2")
 
-    headers = ["Data", "Tipo", "Valor (R$)", "Memo", "Nome (banco)", "CNPJ",
-               "Contraparte (RFB)", "Disposicao", "Flag"]
+    headers = [
+        # Identificacao basica (1-5)
+        "Data", "Tipo", "Valor (R$)", "Memo", "Nome (banco)",
+        # B - Identificacao (6-8)
+        "FITID", "CheckNum", "Meio",
+        # Contraparte (9-10)
+        "CNPJ", "Contraparte (RFB)",
+        # A - Compliance (11-14)
+        "CNAE", "UF", "Municipio", "Porte",
+        # C - Padroes (15-19)
+        "Acumulado Mes (R$)", "1a Vez?", "Valor Redondo", "Smurfing", "Carrossel",
+        # Decisao (20-21)
+        "Disposicao", "Flag",
+        # D - Risk Score (22-23)
+        "Risk Score", "Risk Class",
+        # E - Rastreabilidade (24-27)
+        "Periodo Fiscal", "Hash Linha", "Status Revisao", "Comentario Revisor",
+    ]
     for c, h in enumerate(headers, start=1):
         ws.cell(row=3, column=c, value=h)
-    style_header(ws, 3, 9)
+    style_header(ws, 3, len(headers))
+
+    # Pre-calcula agregados para padroes (C)
+    agg = calcular_agregados(d['disposicoes'])
 
     r = 4
     for disp in sorted(d['disposicoes'], key=lambda x: x.transacao.data):
@@ -501,36 +569,210 @@ def gerar_xlsx(dados: dict, out_path: Path) -> None:
         cnpj_fmt = ""
         if cnpj:
             cnpj_fmt = f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:14]}"
+
+        # Info do cache CNPJ
+        info_cnpj = d['cnpj_infos'].get(cnpj) if cnpj else None
+        cnae_desc = info_cnpj.cnae_descricao if info_cnpj else ""
+        uf = info_cnpj.uf if info_cnpj else ""
+        municipio = info_cnpj.municipio if info_cnpj else ""
+        porte = info_cnpj.porte if info_cnpj else ""
+        situacao = info_cnpj.situacao if info_cnpj else ""
+
+        # B - Meio
+        meio = detectar_meio(t.memo or "", t.nome or "")
+
+        # C - Padroes
+        mes = t.data[:7]
+        acumulado_mes = agg.acumulado_mes.get((cnpj, mes), 0.0) if cnpj else 0.0
+        primeira_vez = detectar_primeira_vez(cnpj, t.data, agg)
+        valor_redondo = detectar_valor_redondo(t.valor)
+        smurfing = detectar_smurfing(cnpj, t.data, agg)
+        carrossel = detectar_carrossel(cnpj, agg)
+
+        # D - Risk Score
+        score, classe = calcular_risk_score(
+            t.valor, disp.disposicao, situacao, porte, meio,
+            valor_redondo, smurfing, carrossel, primeira_vez, acumulado_mes,
+        )
+
+        # E - Rastreabilidade
+        pf = periodo_fiscal(t.data)
+        h_linha = hash_linha(t.data, t.valor, t.memo or "", t.fitid or "")
+
         is_alerta = disp.disposicao == "ALERTA_POS_BAIXA"
+        is_critico = classe == "CRITICO"
+        is_alto = classe == "ALTO"
+
+        # Preenche linha (27 colunas)
         ws.cell(row=r, column=1, value=t.data)
         ws.cell(row=r, column=2, value=t.tipo)
         cv = ws.cell(row=r, column=3, value=round(t.valor, 2))
         cv.number_format = "#,##0.00"
-        cv.font = Font(color=("DC2626" if t.valor < 0 else "16A34A"), bold=is_alerta)
+        cv.font = Font(color=("DC2626" if t.valor < 0 else "16A34A"), bold=is_alerta or is_critico)
         ws.cell(row=r, column=4, value=t.memo or "")
         ws.cell(row=r, column=5, value=t.nome or "")
-        ws.cell(row=r, column=6, value=cnpj_fmt).font = Font(name="Consolas", size=10)
-        ws.cell(row=r, column=7, value=disp.contraparte or "")
-        cell_disp = ws.cell(row=r, column=8, value=disp.disposicao)
+        # B - FITID, CHECKNUM, Meio
+        ws.cell(row=r, column=6, value=t.fitid or "").font = Font(name="Consolas", size=9, color="64748B")
+        ws.cell(row=r, column=7, value=t.checknum or "")
+        c_meio = ws.cell(row=r, column=8, value=meio)
+        if meio == "TRIBUTO":
+            c_meio.fill = PatternFill("solid", fgColor="FEF3C7")
+        elif meio == "PIX":
+            c_meio.fill = PatternFill("solid", fgColor="DBEAFE")
+        elif meio == "CARTAO":
+            c_meio.fill = PatternFill("solid", fgColor="E0E7FF")
+        # Contraparte
+        ws.cell(row=r, column=9, value=cnpj_fmt).font = Font(name="Consolas", size=10)
+        ws.cell(row=r, column=10, value=disp.contraparte or "")
+        # A - Compliance
+        ws.cell(row=r, column=11, value=cnae_desc[:60])
+        ws.cell(row=r, column=12, value=uf)
+        ws.cell(row=r, column=13, value=municipio)
+        c_porte = ws.cell(row=r, column=14, value=porte)
+        # MEI > limite mes = vermelho
+        if porte == "MICRO EMPRESA" and acumulado_mes > 6_750:
+            c_porte.font = Font(bold=True, color="DC2626")
+        # C - Padroes
+        c_acum = ws.cell(row=r, column=15, value=round(acumulado_mes, 2))
+        c_acum.number_format = "#,##0.00"
+        ws.cell(row=r, column=16, value=primeira_vez)
+        c_redondo = ws.cell(row=r, column=17, value=valor_redondo)
+        if valor_redondo in ("REDONDO_10K", "REDONDO_5K"):
+            c_redondo.font = Font(bold=True, color="D97706")
+        c_smur = ws.cell(row=r, column=18, value=smurfing)
+        if smurfing:
+            c_smur.font = Font(bold=True, color="DC2626")
+            c_smur.fill = PatternFill("solid", fgColor="FEE2E2")
+        c_carr = ws.cell(row=r, column=19, value=carrossel)
+        if carrossel:
+            c_carr.font = Font(bold=True, color="DC2626")
+        # Decisao
+        cell_disp = ws.cell(row=r, column=20, value=disp.disposicao)
         if disp.disposicao.startswith("RESOLVIDO_") or disp.disposicao in ("TRANSFERENCIA_INTERNA", "TARIFA_BANCARIA"):
             cell_disp.font = Font(color="16A34A", bold=True)
         elif is_alerta:
             cell_disp.font = Font(color="DC2626", bold=True)
         else:
             cell_disp.font = Font(color="D97706", bold=True)
-        ws.cell(row=r, column=9, value=disp.flag or "")
-        for c in range(1, 10):
+        ws.cell(row=r, column=21, value=disp.flag or "")
+        # D - Risk Score
+        c_score = ws.cell(row=r, column=22, value=score)
+        c_score.number_format = "0"
+        if is_critico:
+            c_score.font = Font(bold=True, color="DC2626")
+        elif is_alto:
+            c_score.font = Font(bold=True, color="D97706")
+        c_classe = ws.cell(row=r, column=23, value=classe)
+        c_classe.font = Font(bold=True)
+        if classe == "CRITICO":
+            c_classe.fill = PatternFill("solid", fgColor="FEE2E2")
+            c_classe.font = Font(bold=True, color="DC2626")
+        elif classe == "ALTO":
+            c_classe.fill = PatternFill("solid", fgColor="FEF3C7")
+            c_classe.font = Font(bold=True, color="D97706")
+        elif classe == "MEDIO":
+            c_classe.fill = PatternFill("solid", fgColor="DBEAFE")
+        else:
+            c_classe.fill = PatternFill("solid", fgColor="DCFCE7")
+        # E - Rastreabilidade
+        ws.cell(row=r, column=24, value=pf)
+        ws.cell(row=r, column=25, value=h_linha).font = Font(name="Consolas", size=8, color="94A3B8")
+        ws.cell(row=r, column=26, value="PENDENTE").font = Font(italic=True, color="64748B", size=9)
+        ws.cell(row=r, column=27, value="")  # comentario livre
+
+        for c in range(1, 28):
             ws.cell(row=r, column=c).border = THIN_BORDER
             if is_alerta:
-                ws.cell(row=r, column=c).fill = ALERT_FILL
-            elif r % 2 == 0:
+                # Nao sobrescreve fills semanticos das colunas 18, 23
+                if c not in (18, 23) and not (c == 17 and valor_redondo):
+                    ws.cell(row=r, column=c).fill = ALERT_FILL
+            elif r % 2 == 0 and ws.cell(row=r, column=c).fill.fgColor.rgb in (None, "00000000"):
                 ws.cell(row=r, column=c).fill = ZEBRA_FILL
         r += 1
 
-    for col, w in {1: 12, 2: 8, 3: 14, 4: 35, 5: 35, 6: 20, 7: 38, 8: 22, 9: 35}.items():
+    larguras = {
+        1: 11, 2: 7, 3: 13, 4: 28, 5: 28,              # Identif basica
+        6: 18, 7: 10, 8: 11,                            # B
+        9: 19, 10: 32,                                  # Contraparte
+        11: 38, 12: 5, 13: 22, 14: 22,                  # A
+        15: 16, 16: 8, 17: 13, 18: 22, 19: 11,          # C
+        20: 22, 21: 32,                                 # Decisao
+        22: 10, 23: 10,                                 # D
+        24: 12, 25: 17, 26: 13, 27: 30,                 # E
+    }
+    for col, w in larguras.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = "F4"  # congela ate Memo+Nome
+    ws.auto_filter.ref = f"A3:AA{r-1}"
+
+    # ── Aba Risk Heatmap (resumo por classe de risco) ───────────────────
+    ws = wb.create_sheet("Risk Heatmap")
+    ws["A1"] = "DISTRIBUICAO POR CLASSE DE RISCO"
+    ws["A1"].font = TITLE_FONT
+    ws.merge_cells("A1:F1")
+
+    # Re-calcula stats com os mesmos detectores
+    agg = calcular_agregados(d['disposicoes'])
+    classe_counts = {"CRITICO": [0, 0.0], "ALTO": [0, 0.0], "MEDIO": [0, 0.0], "BAIXO": [0, 0.0]}
+    for disp in d['disposicoes']:
+        t = disp.transacao
+        cnpj = _extrair_cnpj(t)
+        info_cnpj = d['cnpj_infos'].get(cnpj) if cnpj else None
+        sit = info_cnpj.situacao if info_cnpj else ""
+        porte = info_cnpj.porte if info_cnpj else ""
+        meio = detectar_meio(t.memo or "", t.nome or "")
+        mes = t.data[:7]
+        acumulado = agg.acumulado_mes.get((cnpj, mes), 0.0) if cnpj else 0.0
+        vr = detectar_valor_redondo(t.valor)
+        sm = detectar_smurfing(cnpj, t.data, agg)
+        car = detectar_carrossel(cnpj, agg)
+        pv = detectar_primeira_vez(cnpj, t.data, agg)
+        _, classe = calcular_risk_score(t.valor, disp.disposicao, sit, porte, meio,
+                                         vr, sm, car, pv, acumulado)
+        classe_counts[classe][0] += 1
+        classe_counts[classe][1] += abs(t.valor)
+
+    headers_h = ["Classe", "Qtd Transacoes", "% do Total", "Volume (R$)", "% Volume", "Acao Sugerida"]
+    for c, h in enumerate(headers_h, start=1):
+        ws.cell(row=3, column=c, value=h)
+    style_header(ws, 3, 6)
+
+    cores_classe = {
+        "CRITICO": ("DC2626", "FEE2E2", "Auditoria imediata - investigar"),
+        "ALTO":    ("D97706", "FEF3C7", "Revisao prioritaria"),
+        "MEDIO":   ("0052FF", "DBEAFE", "Conferir em lote"),
+        "BAIXO":   ("16A34A", "DCFCE7", "Auto-aprovar apos confirmacao"),
+    }
+    total_qtd = sum(v[0] for v in classe_counts.values())
+    total_vol = sum(v[1] for v in classe_counts.values())
+    r = 4
+    for classe in ("CRITICO", "ALTO", "MEDIO", "BAIXO"):
+        qtd, vol = classe_counts[classe]
+        cor, fill_cor, acao = cores_classe[classe]
+        c_classe = ws.cell(row=r, column=1, value=classe)
+        c_classe.font = Font(bold=True, color=cor)
+        c_classe.fill = PatternFill("solid", fgColor=fill_cor)
+        ws.cell(row=r, column=2, value=qtd).number_format = "#,##0"
+        ws.cell(row=r, column=3, value=qtd / max(total_qtd, 1)).number_format = "0.0%"
+        ws.cell(row=r, column=4, value=round(vol, 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=5, value=vol / max(total_vol, 1)).number_format = "0.0%"
+        ws.cell(row=r, column=6, value=acao)
+        for c in range(1, 7):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+        r += 1
+
+    # Linha total
+    ws.cell(row=r, column=1, value="TOTAL").font = TOTAL_FONT
+    ws.cell(row=r, column=2, value=total_qtd).number_format = "#,##0"
+    ws.cell(row=r, column=4, value=round(total_vol, 2)).number_format = "#,##0.00"
+    for c in range(1, 7):
+        ws.cell(row=r, column=c).fill = TOTAL_FILL
+        ws.cell(row=r, column=c).font = TOTAL_FONT
+        ws.cell(row=r, column=c).border = THIN_BORDER
+
+    for col, w in {1: 12, 2: 16, 3: 12, 4: 18, 5: 11, 6: 34}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = "A4"
-    ws.auto_filter.ref = f"A3:I{r-1}"
 
     # ── Aba CNPJs ──────────────────────────────────────────────────────
     if d["cnpj_infos"]:

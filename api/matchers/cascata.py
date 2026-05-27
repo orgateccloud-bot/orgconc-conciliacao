@@ -34,6 +34,7 @@ class Transacao:
     memo: str           # descrição do banco
     nome: str           # contraparte/favorecido
     conta: str = ""     # identificação da conta de origem
+    checknum: str = ""  # número do cheque/documento (CHECKNUM do OFX)
 
 
 @dataclass
@@ -100,6 +101,7 @@ def ler_ofx(path_or_bytes) -> list[Transacao]:
             memo=str(t.get("memo") or ""),
             nome=str(t.get("nome") or ""),
             conta=str(t.get("conta") or ""),
+            checknum=str(t.get("checknum") or ""),
         ))
     return saida
 
