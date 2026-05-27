@@ -125,7 +125,7 @@ Foram executados **6 procedimentos** sequenciais, com automacao via sistema OrgC
 | II | **Historico de exclusao administrativa do Simples (2015-2018)** | **Alto** |
 | III | Subcapitalizacao (capital R$ 400k vs giro R$ 187M/ano) | **Critico** |
 | IV | Movimentacao com partes relacionadas sem lastro contratual claro | **Alto** |
-| V | 32 fornecedores enquadrados como MEI com volume superior ao teto | **Alto** |
+| V | **5 MEIs padrao com pequenos excessos** (apos aplicar teto MEI-TAC R$ 251.600 para caminhoneiros: 0 inconformidades em 65 MEI-TAC) | **Baixo** |
 | VI | Retencoes na fonte nao recolhidas: **R$ 488.717,23 estimados em 5 meses** | **Critico** |
 | VII | 17 pagamentos a CNPJ baixado (Percival Dias - R$ 35.626,89) | **Critico** |
 
@@ -331,17 +331,41 @@ A movimentacao bruta apurada totaliza **R$ 70.253.530,38** em **7.110 transacoes
 - Verificar adicoes/exclusoes obrigatorias no LALUR (Lei 12.973/2014);
 - Avaliar se ha **distribuicao disfarcada** (tributada como dividendos com IRRF 27,5%).
 
-### 3.4. CONSTATACAO IV — MICROEMPREENDEDORES INDIVIDUAIS ACIMA DO TETO
+### 3.4. CONSTATACAO IV — RECLASSIFICACAO DOS MEIs FORNECEDORES
 
-**Situacao verificada:** **32 (trinta e dois) fornecedores enquadrados como MEI** com pagamentos anualizados projetados superiores ao teto legal de **R$ 81.000,00/ano** (LC 123/2006, art. 18-A, § 1).
+**Situacao verificada (RETIFICADA):** A analise inicial detectou 32 MEIs com volume aparente acima do teto, considerando o limite padrao de R$ 81.000/ano. Apos aplicar o **limite especifico do MEI-TAC (Transportador Autonomo de Cargas) de R$ 251.600/ano** (LC 188/2021), o quadro real e o seguinte:
 
-**Implicacao juridica:** A LOCAR, como contratante, pode ser solidariamente responsavel por:
+| Categoria | Teto | Total MEIs | Dentro | Acima |
+|---|---:|---:|---:|---:|
+| **MEI-TAC** (CNAEs 4930-*, 5320-*, 4911-*) | **R$ 251.600/ano** | 65 | **65** | **0** |
+| **MEI padrao** (demais CNAEs) | R$ 81.000/ano | 260 | 255 | 5 |
+| **TOTAL** | — | 325 | 320 | 5 |
 
-- **Terceirizacao ilicita** (Sumula 331 do TST);
-- **PJ disfarcada de PF** (pejotizacao, art. 129, Lei 11.196/2005);
-- **Vinculo empregaticio** se houver pessoalidade, subordinacao e habitualidade (CLT art. 3).
+**Conclusao da retificacao:** Os fornecedores caminhoneiros (MEI-TAC), que sao a maioria dos prestadores da LOCAR (atividade de transporte rodoviario), **estao TODOS dentro do limite legal**. Apenas 5 MEIs padrao (CNAEs nao-transporte) apresentam pequenos excessos.
 
-**Em Lucro Real, ha adicional:** as despesas com prestadores MEI que sejam descaracterizadas podem gerar **adicao no LALUR** (despesa nao dedutivel) com **majoracao de IRPJ e CSLL**.
+**MEIs padrao com excesso (a investigar individualmente):**
+
+| Razao Social | CNAE | Anualizado | Excesso |
+|---|---|---:|---:|
+| DELLOS AUTO PECAS E ACESSORIOS LTDA | 4530-7-01 (Comercio autopecas) | R$ 1.953.884 | R$ 1.872.884 |
+| VYNICIUS ATAIDE DA SILVA | 8219-9-99 (Apoio administrativo) | R$ 108.814 | R$ 27.814 |
+| ALEX NELBER RIBEIRO | 5229-0-99 (Servicos auxiliares transp.) | R$ 98.333 | R$ 17.333 |
+| JANISON MOREIRA FEITOSA | 4520-0-01 (Manutencao/reparacao) | R$ 85.993 | R$ 4.993 |
+| LEOMAR BARBOSA SOARES | 8219-9-99 (Apoio administrativo) | R$ 85.390 | R$ 4.390 |
+
+**Observacoes:**
+
+- **DELLOS AUTO PECAS** com R$ 1,95M anualizado e portes "MICRO EMPRESA" e ANOMALIA — pode ser ME (Microempresa, teto R$ 360k) e nao MEI. Investigar individualmente.
+- Os 4 demais com excessos pequenos (R$ 4-28k) tem materialidade baixa.
+
+**Implicacao juridica para Lucro Real:** Restrita aos 5 casos acima. Para os MEI-TAC, a LOCAR pode contratar livremente sem risco de pejotizacao ate o teto de R$ 251.600/ano.
+
+**Recomendacoes ajustadas:**
+
+1. **Investigar DELLOS AUTO PECAS** — confirmar se e MEI ou ME na RFB;
+2. Para os 4 demais com excessos pequenos: notificar contadores ou monitorar 12 meses;
+3. Manter rotina de **conferencia mensal por CNAE** para evitar pejotizacao futura;
+4. Documentar contratos de prestacao de servico com clausulas antipejotizacao.
 
 ### 3.5. CONSTATACAO V — RETENCOES NA FONTE NAO RECOLHIDAS
 
