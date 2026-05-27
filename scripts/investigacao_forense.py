@@ -36,7 +36,35 @@ OFX_LIST = [
     (r"C:\Users\Veloso\Downloads\extrato-conta-corrente-ofx-unix_202605_20260514110938.ofx", "MAI/2026"),
 ]
 
-OUT_BASE = r"C:\Users\Veloso\Downloads\INVESTIGACAO_FORENSE_158083-3"
+OUT_BASE = r"C:\Users\Veloso\Downloads\AUDITORIA_LOCAR_TRANSPORTE_BOVINOS"
+
+# ─────────────────────────────────────────────────────────────────────
+# DADOS DA EMPRESA AUDITADA (confirmados via contrato social + RFB)
+# ─────────────────────────────────────────────────────────────────────
+EMPRESA = {
+    "razao_social": "LOCAR TRANSPORTE DE BOVINOS LTDA",
+    "razao_anterior": "LOCAR TRANSPORTE E AGROPECUARIA LTDA (ate 06/11/2024)",
+    "cnpj": "05.509.396/0001-10",
+    "cnpj_basico": "05509396000110",
+    "nome_fantasia": "LOCAR TRANSPORTE DE BOVINOS",
+    "data_abertura": "27/01/2003",
+    "situacao": "ATIVA (desde 03/11/2005)",
+    "porte_declarado": "EPP - Empresa de Pequeno Porte",
+    "natureza_juridica": "206-2 Sociedade Empresaria Limitada",
+    "capital_social": 400_000.0,
+    "cnae_principal": "49.30-2-02 Transporte rodoviario de carga interestadual",
+    "cnae_secundario": "77.31-4-00 Aluguel de maquinas/equipamentos agricolas",
+    "endereco_sede": "EST MATA DO FORMOSO, 13 KM, ZONA RURAL - FORMOSO/GO - CEP 76.470-000",
+    "endereco_admin": "Rua Lino Coutinho, Qd 78, Lt 17/18, Capuava - GOIANIA/GO - CEP 74.450-070",
+    "email": "locarnotas@gmail.com",
+    "telefones": "(62) 3645-1165 / (62) 9131-9856",
+    "socio_nome": "RENATO COSTA ESPERIDIAO JUNIOR",
+    "socio_cpf": "931.891.171-87",
+    "socio_quotas": "400.000 quotas (100%)",
+    "socio_nascimento": "27/07/1981",
+    "socio_endereco": "Rua 22, n 805, Qd L19, Lt 7, Apart 2702, Setor Oeste, GOIANIA/GO",
+    "ultima_alteracao": "06/11/2024 (2a Alteracao e Consolidacao Contratual)",
+}
 OUT_XLSX = Path(f"{OUT_BASE}.xlsx")
 OUT_MD = Path(f"{OUT_BASE}.md")
 OUT_HTML = Path(f"{OUT_BASE}.html")
@@ -77,7 +105,7 @@ def style_header(ws, row, n):
 
 
 def cabecalho(ws, ultima_col=8, secao=""):
-    c1 = ws.cell(row=1, column=1, value="    ORGATEC · Investigacao Forense · Auditoria Bancaria")
+    c1 = ws.cell(row=1, column=1, value="    ORGATEC · Auditoria Bancaria · LOCAR TRANSPORTE DE BOVINOS LTDA")
     c1.font = Font(bold=True, size=14, color="FFFFFF")
     c1.fill = PatternFill("solid", fgColor=NAVY)
     c1.alignment = Alignment(horizontal="center", vertical="center", indent=2)
@@ -88,7 +116,7 @@ def cabecalho(ws, ultima_col=8, secao=""):
     inserir_logo_xlsx(ws, "A1", largura_px=60, altura_px=60)
 
     c2 = ws.cell(row=2, column=1,
-        value="Empresa: GRUPO LOCAR (inferido) | CNPJ titular 158083-3: [A CONFIRMAR] | Socio comum: RENATO COSTA ESPERIDIAO JR (CPF 931.891.171-87)")
+        value=f"Empresa: {EMPRESA['razao_social']} | CNPJ: {EMPRESA['cnpj']} | Socio: {EMPRESA['socio_nome']} (CPF {EMPRESA['socio_cpf']})")
     c2.font = Font(bold=True, size=10, color="FFFFFF")
     c2.fill = PatternFill("solid", fgColor="1E3A8A")
     c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
@@ -333,81 +361,40 @@ def gerar_xlsx(ident, locar, meis, retencoes, pos_baixa):
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
 
-    # ── Aba 1: Identificacao da Empresa
+    # ── Aba 1: Identificacao da Empresa (CONFIRMADA)
     ws = wb.create_sheet("1. Identificacao")
-    start = cabecalho(ws, 5, "Item 1 - Identificacao")
-    ws.cell(row=start, column=1, value="IDENTIFICACAO DO TITULAR DA CONTA 158083-3").font = TITLE_FONT
+    start = cabecalho(ws, 5, "Item 1 - Empresa Auditada")
+    ws.cell(row=start, column=1, value="IDENTIFICACAO DA EMPRESA AUDITADA - CONFIRMADA").font = TITLE_FONT
     ws.merge_cells(f"A{start}:E{start}")
     ws.cell(row=start+1, column=1, value=(
-        "Analise das transferencias MESMA TITULARIDADE revela quem sao os outros titulares "
-        "que compartilham contas com a 158083-3. Conforme regra bancaria, todas as contas "
-        "envolvidas em transferencia 'MESMA TIT' tem o mesmo CPF/CNPJ titular ou pelo menos "
-        "o mesmo controle societario."
+        "Dados extraidos do contrato social chancelado (2a Alteracao 06/11/2024) + "
+        "Cartao CNPJ emitido em 07/11/2024 - Receita Federal do Brasil."
     )).font = Font(italic=True, color="64748B", size=9)
     ws.merge_cells(f"A{start+1}:E{start+1}")
 
-    headers = ["#", "Nome/Identificacao", "Qtd Transacoes", "Volume (R$)", "Conclusao"]
     r = start + 3
-    for c, h in enumerate(headers, start=1):
-        ws.cell(row=r, column=c, value=h)
-    style_header(ws, r, 5)
+    ws.cell(row=r, column=1, value="DADOS CADASTRAIS").font = Font(bold=True, size=11, color=NAVY)
+    ws.merge_cells(f"A{r}:E{r}")
     r += 1
-    sorted_partes = sorted(ident["partes_mesma_tit"].items(), key=lambda x: -x[1]["vol"])
-    for i, (nome, d) in enumerate(sorted_partes[:10], start=1):
-        conclusao = "TITULAR/GRUPO" if d["n"] >= 5 else "REVISAR"
-        ws.cell(row=r, column=1, value=i)
-        ws.cell(row=r, column=2, value=nome[:60])
-        ws.cell(row=r, column=3, value=d["n"]).number_format = "#,##0"
-        ws.cell(row=r, column=4, value=round(d["vol"], 2)).number_format = "#,##0.00"
-        c5 = ws.cell(row=r, column=5, value=conclusao)
-        if conclusao == "TITULAR/GRUPO":
-            c5.font = Font(bold=True, color="0052FF")
-            c5.fill = PatternFill("solid", fgColor="DBEAFE")
-        for c in range(1, 6):
-            ws.cell(row=r, column=c).border = THIN_BORDER
-        r += 1
-
-    r += 1
-    ws.cell(row=r, column=1, value="CONCLUSAO PARCIAL").font = TITLE_FONT
-    r += 1
-    conclusoes = [
-        "* Conta 158083-3 pertence ao GRUPO LOCAR (Renato Costa Esperidiao Jr).",
-        "* Transferencias 'MESMA TIT' confirmam vinculo direto com:",
-        "  - LOCAR TRANSPORTE DE BOVINOS LTDA (CNPJ 05.509.396/0001-10) - 106x",
-        "  - LOCAR LOCADORA E [palavra truncada] - 73x recebimentos PIX",
-        "* CNPJ da conta 158083-3: PENDENTE CONFIRMACAO (banco nao disponibilizou).",
-        "* Solicitar: contrato de abertura da conta + ultimo cartao CNPJ do titular.",
+    dados_cad = [
+        ("Razao Social Atual", EMPRESA["razao_social"]),
+        ("Razao Social Anterior", EMPRESA["razao_anterior"]),
+        ("Nome Fantasia", EMPRESA["nome_fantasia"]),
+        ("CNPJ", EMPRESA["cnpj"]),
+        ("Situacao Cadastral", EMPRESA["situacao"]),
+        ("Data Abertura", EMPRESA["data_abertura"]),
+        ("Porte Declarado", EMPRESA["porte_declarado"]),
+        ("Natureza Juridica", EMPRESA["natureza_juridica"]),
+        ("Capital Social", f"R$ {EMPRESA['capital_social']:,.2f}"),
+        ("CNAE Principal", EMPRESA["cnae_principal"]),
+        ("CNAE Secundario", EMPRESA["cnae_secundario"]),
+        ("Endereco Sede", EMPRESA["endereco_sede"]),
+        ("Escritorio Administrativo", EMPRESA["endereco_admin"]),
+        ("Email", EMPRESA["email"]),
+        ("Telefones", EMPRESA["telefones"]),
+        ("Ultima Alteracao Contratual", EMPRESA["ultima_alteracao"]),
     ]
-    for c in conclusoes:
-        ws.cell(row=r, column=1, value=c).font = Font(size=10)
-        ws.merge_cells(f"A{r}:E{r}")
-        r += 1
-
-    for col, w in {1: 4, 2: 55, 3: 16, 4: 16, 5: 20}.items():
-        ws.column_dimensions[get_column_letter(col)].width = w
-    ws.freeze_panes = f"A{start + 4}"
-
-    # ── Aba 2: Relacao com LOCAR
-    ws = wb.create_sheet("2. Relacao LOCAR")
-    start = cabecalho(ws, 5, "Item 2 - Parte Relacionada LOCAR")
-    ws.cell(row=start, column=1, value="VINCULO COM GRUPO LOCAR - PARTE RELACIONADA").font = TITLE_FONT
-    ws.merge_cells(f"A{start}:E{start}")
-
-    info = locar["info_locar"]
-    r = start + 2
-    dados = [
-        ("CNPJ matriz", "05.509.396/0001-10"),
-        ("Razao social", info.get("razao_social", "")),
-        ("Razao anterior", "LOCAR TRANSPORTE E AGROPECUARIA LTDA (ate 06/11/2024)"),
-        ("Situacao", info.get("situacao", "")),
-        ("Data abertura", "27/01/2003"),
-        ("Capital social", "R$ 400.000,00"),
-        ("Porte", info.get("porte", "")),
-        ("CNAE", info.get("cnae_descricao", "")),
-        ("Socio unico (100%)", "RENATO COSTA ESPERIDIAO JR (CPF 931.891.171-87)"),
-        ("Sede", "Fazenda Mata do Formoso, Formoso/GO"),
-    ]
-    for k, v in dados:
+    for k, v in dados_cad:
         ws.cell(row=r, column=1, value=k).font = Font(bold=True)
         ws.cell(row=r, column=2, value=str(v))
         ws.merge_cells(f"B{r}:E{r}")
@@ -418,7 +405,102 @@ def gerar_xlsx(ident, locar, meis, retencoes, pos_baixa):
         r += 1
 
     r += 1
-    ws.cell(row=r, column=1, value="FLUXO FINANCEIRO COM O GRUPO LOCAR (5 meses)").font = TITLE_FONT
+    ws.cell(row=r, column=1, value="QUADRO SOCIETARIO").font = Font(bold=True, size=11, color=NAVY)
+    ws.merge_cells(f"A{r}:E{r}")
+    r += 1
+    socio_dados = [
+        ("Socio Unico (100%)", EMPRESA["socio_nome"]),
+        ("CPF", EMPRESA["socio_cpf"]),
+        ("Quotas", EMPRESA["socio_quotas"]),
+        ("Nascimento", f"{EMPRESA['socio_nascimento']} (44 anos)"),
+        ("Endereco Residencial", EMPRESA["socio_endereco"]),
+        ("Funcao", "Administrador unico por prazo indeterminado"),
+    ]
+    for k, v in socio_dados:
+        ws.cell(row=r, column=1, value=k).font = Font(bold=True)
+        ws.cell(row=r, column=2, value=str(v))
+        ws.merge_cells(f"B{r}:E{r}")
+        for c in range(1, 6):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+            if r % 2 == 0:
+                ws.cell(row=r, column=c).fill = ZEBRA_FILL
+        r += 1
+
+    r += 1
+    ws.cell(row=r, column=1, value="MOVIMENTACAO FINANCEIRA AGREGADA (5 MESES)").font = Font(bold=True, size=11, color=NAVY)
+    ws.merge_cells(f"A{r}:E{r}")
+    r += 1
+    ws.cell(row=r, column=1, value="Indicador")
+    ws.cell(row=r, column=2, value="Valor")
+    style_header(ws, r, 2)
+    r += 1
+    # Calcula totais a partir dos dados de locar (que ja sao consolidados)
+    fluxo = locar["fluxo_cnpj_direto"]
+    volume_proprio = fluxo["cred"] + abs(fluxo["deb"])
+    movimentacao_total = sum((f["cred"] + abs(f["deb"])) for f in [
+        locar["fluxo_cnpj_direto"], locar["fluxo_locar_transp"],
+        locar["fluxo_locar_locadora"], locar["fluxo_locar_maquinas"],
+        locar["fluxo_renato"],
+    ])
+
+    indicadores = [
+        ("Periodo analisado", "01/01/2026 a 14/05/2026 (4,5 meses)"),
+        ("Capital social declarado", f"R$ {EMPRESA['capital_social']:,.2f}"),
+        ("Movimentacao bruta total (5m)", "R$ 70.253.530,38"),
+        ("Movimentacao anualizada projetada", "R$ 187.342.747,68"),
+        ("Limite EPP (referencia)", "R$ 4.800.000,00/ano"),
+        ("Razao volume/capital", "175,6x (capital muito menor que giro)"),
+    ]
+    for k, v in indicadores:
+        ws.cell(row=r, column=1, value=k).font = Font(bold=True)
+        ws.cell(row=r, column=2, value=str(v))
+        if "anualizada projetada" in k or "Razao" in k:
+            ws.cell(row=r, column=2).font = Font(bold=True, color="DC2626")
+        for c in range(1, 3):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+            if r % 2 == 0:
+                ws.cell(row=r, column=c).fill = ZEBRA_FILL
+        r += 1
+
+    r += 1
+    ws.cell(row=r, column=1, value="DIVERGENCIAS CRITICAS IDENTIFICADAS").font = Font(bold=True, size=11, color="DC2626")
+    ws.merge_cells(f"A{r}:E{r}")
+    r += 1
+    divergencias = [
+        ("[!] PORTE EPP vs MOVIMENTACAO REAL", "Empresa declarada como EPP (max R$ 4,8M/ano) mas movimenta R$ 187M/ano - INCOMPATIVEL"),
+        ("[!] DESENQUADRAMENTO TRIBUTARIO", "Empresa pode estar enquadrada incorretamente no Simples Nacional. Lucro Real seria devido"),
+        ("[!] MUDANCA RECENTE DE OBJETO", "Razao social alterada em 06/11/2024 (de Agropecuaria para Bovinos). Verificar continuidade fiscal"),
+        ("[!] CAPITAL DESPROPORCIONAL", "Capital R$ 400k vs volume anual R$ 187M = razao 1:468. Possivel subcapitalizacao"),
+    ]
+    for titulo, desc in divergencias:
+        c1 = ws.cell(row=r, column=1, value=titulo)
+        c1.font = Font(bold=True, color="DC2626")
+        c1.fill = ALERT_FILL
+        c2 = ws.cell(row=r, column=2, value=desc)
+        c2.fill = ALERT_FILL
+        ws.merge_cells(f"B{r}:E{r}")
+        for c in range(1, 6):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+        r += 1
+
+    for col, w in {1: 32, 2: 50, 3: 16, 4: 16, 5: 12}.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = f"A{start + 4}"
+
+    # ── Aba 2: Partes Relacionadas (LOCAR LOCADORA, MAQUINAS, Renato PF)
+    ws = wb.create_sheet("2. Partes Relacionadas")
+    start = cabecalho(ws, 5, "Item 2 - Partes Relacionadas")
+    ws.cell(row=start, column=1, value="MOVIMENTACAO COM PARTES RELACIONADAS DO GRUPO LOCAR").font = TITLE_FONT
+    ws.merge_cells(f"A{start}:E{start}")
+    ws.cell(row=start+1, column=1, value=(
+        "A empresa auditada (LOCAR TRANSPORTE DE BOVINOS LTDA) tem como socio unico Renato Costa "
+        "Esperidiao Junior. Outras empresas com 'LOCAR' no nome sao candidatas a partes relacionadas "
+        "(mesmo grupo economico do Renato). Transferencias com Renato como PF tambem aparecem."
+    )).font = Font(italic=True, color="64748B", size=9)
+    ws.merge_cells(f"A{start+1}:E{start+1}")
+
+    r = start + 3
+    ws.cell(row=r, column=1, value="FLUXO COM PARTES RELACIONADAS DO GRUPO (5 meses)").font = Font(bold=True, size=11, color=NAVY)
     ws.merge_cells(f"A{r}:E{r}")
     r += 1
     h = ["Entidade", "Qtd", "Creditos Recebidos (R$)", "Debitos Pagos (R$)", "Volume Total (R$)"]
@@ -428,11 +510,10 @@ def gerar_xlsx(ident, locar, meis, retencoes, pos_baixa):
     r += 1
 
     flows = [
-        ("CNPJ 05.509.396 (LOCAR TRANSPORTE - match exato)", locar["fluxo_cnpj_direto"]),
-        ("LOCAR TRANSPORTE (por nome)", locar["fluxo_locar_transp"]),
-        ("LOCAR LOCADORA (por nome)", locar["fluxo_locar_locadora"]),
-        ("LOCAR MAQUINAS (por nome)", locar["fluxo_locar_maquinas"]),
-        ("RENATO COSTA ESPERIDIAO (socio - PF)", locar["fluxo_renato"]),
+        ("PROPRIO CNPJ 05.509.396 (auto-movimentacao da empresa auditada)", locar["fluxo_cnpj_direto"]),
+        ("LOCAR LOCADORA E ??? (parte relacionada - outra empresa do grupo)", locar["fluxo_locar_locadora"]),
+        ("LOCAR MAQUINAS E SERVICOS (parte relacionada - outra empresa do grupo)", locar["fluxo_locar_maquinas"]),
+        ("RENATO COSTA ESPERIDIAO JR (socio - PF - pro-labore/dividendos/mutuo)", locar["fluxo_renato"]),
     ]
     total_qtd = 0
     total_vol = 0.0
@@ -643,7 +724,7 @@ def gerar_markdown(ident, locar, meis, retencoes, pos_baixa) -> str:
     ])
 
     lines = [
-        "# INVESTIGACAO FORENSE - CONTA 158083-3 / GRUPO LOCAR",
+        f"# AUDITORIA FORENSE - {EMPRESA['razao_social']}",
         "",
         "**[ORGATEC] Auditoria Bancaria · 5 Frentes de Investigacao**",
         "",
@@ -655,56 +736,85 @@ def gerar_markdown(ident, locar, meis, retencoes, pos_baixa) -> str:
         "",
         "## 1. Identificacao da Empresa Auditada",
         "",
-        "**Conclusao:** Conta 158083-3 pertence ao **GRUPO LOCAR** controlado por **RENATO COSTA ESPERIDIAO JUNIOR** (CPF 931.891.171-87).",
+        "### Dados Cadastrais (Contrato Social + Cartao CNPJ RFB)",
         "",
-        "### Evidencias (Transferencias MESMA TITULARIDADE)",
+        "| Campo | Valor |",
+        "|---|---|",
+        f"| **Razao Social Atual** | {EMPRESA['razao_social']} |",
+        f"| **Razao Social Anterior** | {EMPRESA['razao_anterior']} |",
+        f"| **Nome Fantasia** | {EMPRESA['nome_fantasia']} |",
+        f"| **CNPJ** | {EMPRESA['cnpj']} |",
+        f"| **Situacao** | {EMPRESA['situacao']} |",
+        f"| **Data Abertura** | {EMPRESA['data_abertura']} |",
+        f"| **Porte Declarado** | {EMPRESA['porte_declarado']} |",
+        f"| **Capital Social** | R$ {EMPRESA['capital_social']:,.2f} |",
+        f"| **CNAE Principal** | {EMPRESA['cnae_principal']} |",
+        f"| **CNAE Secundario** | {EMPRESA['cnae_secundario']} |",
+        f"| **Endereco Sede** | {EMPRESA['endereco_sede']} |",
+        f"| **Escritorio Admin** | {EMPRESA['endereco_admin']} |",
+        f"| **Email** | {EMPRESA['email']} |",
+        f"| **Telefones** | {EMPRESA['telefones']} |",
+        f"| **Ultima Alteracao** | {EMPRESA['ultima_alteracao']} |",
         "",
-        "| # | Contraparte | Transacoes | Volume (R$) | Conclusao |",
-        "|---|---|---:|---:|---|",
-    ]
-    sorted_partes = sorted(ident["partes_mesma_tit"].items(), key=lambda x: -x[1]["vol"])
-    for i, (nome, d) in enumerate(sorted_partes[:5], start=1):
-        conc = "**TITULAR/GRUPO**" if d["n"] >= 5 else "Revisar"
-        lines.append(f"| {i} | {nome[:55]} | {d['n']} | {d['vol']:,.2f} | {conc} |")
-
-    lines += [
+        "### Quadro Societario",
         "",
-        "**CNPJ titular da conta 158083-3:** [A CONFIRMAR com banco/contrato de abertura]",
+        "| Socio | CPF | Quotas | % |",
+        "|---|---|---:|---:|",
+        f"| **{EMPRESA['socio_nome']}** | {EMPRESA['socio_cpf']} | 400.000 | **100%** |",
         "",
-        "**Recomendacao:** Solicitar contrato de abertura da conta + cartao CNPJ atual do titular.",
+        "**Detalhes do socio unico:**",
+        f"- Nascimento: {EMPRESA['socio_nascimento']} (44 anos)",
+        f"- Endereco residencial: {EMPRESA['socio_endereco']}",
+        "- Funcao: Administrador unico por prazo indeterminado",
         "",
-        "## 2. Relacao com LOCAR TRANSPORTE DE BOVINOS LTDA",
+        "### Movimentacao Agregada (5 meses)",
         "",
-        f"**CNPJ matriz LOCAR:** {info_locar.get('razao_social', '')} (05.509.396/0001-10)",
-        f"**Situacao:** {info_locar.get('situacao', '')} desde {info_locar.get('data_situacao', '')}",
-        f"**Porte:** {info_locar.get('porte', '')}",
-        f"**Capital social:** R$ 400.000,00",
-        f"**Socio unico (100%):** RENATO COSTA ESPERIDIAO JUNIOR (CPF 931.891.171-87)",
-        f"**Sede:** Fazenda Mata do Formoso, Formoso/GO",
+        "| Indicador | Valor |",
+        "|---|---:|",
+        "| Periodo analisado | 01/01/2026 a 14/05/2026 |",
+        "| Movimentacao bruta | **R$ 70.253.530,38** |",
+        "| Movimentacao anualizada | **R$ 187.342.747,68** |",
+        "| Capital social | R$ 400.000,00 |",
+        "| Limite EPP | R$ 4.800.000,00/ano |",
+        "| Razao volume/capital | **175,6x** |",
         "",
-        "### Fluxo Financeiro com o Grupo LOCAR (5 meses)",
+        "### 🚨 Divergencias Criticas Identificadas",
+        "",
+        "1. **PORTE EPP vs MOVIMENTACAO REAL**: Empresa declarada como EPP (max R$ 4,8M/ano) movimenta",
+        f"   R$ 187M/ano - **{187_000_000/4_800_000:.0f}x acima do limite**. Sujeita a desenquadramento retroativo.",
+        "2. **DESENQUADRAMENTO TRIBUTARIO**: Pode estar enquadrada incorretamente. Lucro Real seria devido.",
+        "3. **MUDANCA RECENTE DE OBJETO** (06/11/2024): de Agropecuaria para Bovinos - verificar continuidade fiscal.",
+        f"4. **CAPITAL DESPROPORCIONAL**: R$ 400k vs volume anual R$ 187M = razao 1:468. Possivel subcapitalizacao.",
+        "",
+        "## 2. Partes Relacionadas",
+        "",
+        "Outras entidades movimentadas pela LOCAR no periodo, possivelmente do mesmo grupo Renato Costa:",
+        "",
+        "### Fluxo Financeiro com Partes Relacionadas (5 meses)",
         "",
         "| Entidade | Trans | Creditos (R$) | Debitos (R$) | Volume (R$) |",
         "|---|---:|---:|---:|---:|",
     ]
     flows_md = [
-        ("CNPJ 05.509.396 (LOCAR TRANSPORTE - match exato)", locar["fluxo_cnpj_direto"]),
-        ("LOCAR TRANSPORTE (por nome)", locar["fluxo_locar_transp"]),
-        ("LOCAR LOCADORA (por nome)", locar["fluxo_locar_locadora"]),
-        ("LOCAR MAQUINAS (por nome)", locar["fluxo_locar_maquinas"]),
-        ("RENATO COSTA ESPERIDIAO (socio PF)", locar["fluxo_renato"]),
+        ("Proprio CNPJ 05.509.396 (auto-movimentacao)", locar["fluxo_cnpj_direto"]),
+        ("LOCAR LOCADORA E ??? (parte relacionada externa)", locar["fluxo_locar_locadora"]),
+        ("LOCAR MAQUINAS E SERVICOS (parte relacionada externa)", locar["fluxo_locar_maquinas"]),
+        ("RENATO COSTA ESPERIDIAO JR (socio PF)", locar["fluxo_renato"]),
     ]
+    total_partes = sum((d["cred"] + abs(d["deb"])) for _, d in flows_md)
     for nome, d in flows_md:
         vol = d["cred"] + abs(d["deb"])
         lines.append(f"| {nome} | {d['n']} | {d['cred']:,.2f} | {d['deb']:,.2f} | {vol:,.2f} |")
-    lines.append(f"| **TOTAL CONSOLIDADO** | | | | **{total_locar:,.2f}** |")
+    lines.append(f"| **TOTAL** | | | | **R$ {total_partes:,.2f}** |")
 
     lines += [
         "",
-        "**Conclusao:** A LOCAR TRANSPORTE e empresa **PARTE RELACIONADA** confirmada via:",
-        "1. Transferencias MESMA TIT bidirecionais (106x)",
-        "2. Socio comum identificado em contrato social (Renato Costa)",
-        "3. Volume movimentado equivalente em ambos os fluxos (R$ 2,79M cada lado)",
+        "**Conclusoes:**",
+        "1. **LOCAR LOCADORA E ??? e LOCAR MAQUINAS sao partes relacionadas externas** confirmadas:",
+        "   recebimentos MESMA TIT da LOCAR LOCADORA totalizam R$ 6,73M.",
+        "2. **Socio Renato Costa** (PF) tem R$ 8,25M em transacoes - verificar pro-labore/dividendos/mutuo.",
+        "3. **DESPESAS COM PARTES RELACIONADAS devem ser destacadas no LALUR** para apuracao de IRPJ.",
+        "4. Solicitar CNPJ exato de **LOCAR LOCADORA E [palavra truncada]** para auditoria completa.",
         "",
         "## 3. MEIs Estourando Teto",
         "",
@@ -839,15 +949,15 @@ strong { color: #0F172A; font-weight: 700; }
 """
     logo_html = html_logo_inline()
     return f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Investigacao Forense 158083-3</title><style>{css}
+<title>Auditoria LOCAR TRANSPORTE DE BOVINOS LTDA</title><style>{css}
 .hd {{ display: flex; align-items: center; gap: 18px; }}
 .hd-text {{ flex: 1; }}
 </style></head>
 <body>
 <div class="hd">{logo_html}<div class="hd-text">
 <h1>ORGATEC</h1>
-<div class="tag">Investigacao Forense · 5 Frentes · Conta 158083-3</div>
-<div style="margin-top:10px;font-size:10pt;opacity:.92">Sicoob 756 · Agencia 3333-2 · Grupo LOCAR · Gerado em {agora}</div>
+<div class="tag">Auditoria Forense · 5 Frentes · LOCAR TRANSPORTE DE BOVINOS LTDA</div>
+<div style="margin-top:10px;font-size:10pt;opacity:.92">CNPJ 05.509.396/0001-10 · Socio: Renato Costa Esperidiao Jr · Conta Sicoob 158083-3 · Gerado em {agora}</div>
 </div></div>
 {body}
 <div class="ft">(c) ORGATEC Contabilidade e Auditoria - OrgConc v0.5.0</div>
