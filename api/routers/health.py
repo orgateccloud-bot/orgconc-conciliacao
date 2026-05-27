@@ -23,7 +23,7 @@ def root():
             "/conciliar/ofx", "/conciliar/csv",
             "/export/html/{report_id}", "/export/xlsx/{report_id}", "/export/pdf/{report_id}",
             "/clientes", "/conciliacoes",
-            "/auth/login", "/serpro/cpf", "/serpro/cnpj",
+            "/auth/login",
         ],
     }
 

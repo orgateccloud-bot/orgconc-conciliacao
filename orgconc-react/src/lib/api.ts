@@ -144,13 +144,6 @@ export async function criarCliente(data: Partial<Cliente>) {
   return apiFetch<Cliente>("/clientes", { method: "POST", body: JSON.stringify(data) });
 }
 
-export async function consultarCnpjSerpro(cnpj: string) {
-  return apiFetch<{ tipo: string; documento_mascarado: string; dados: Record<string, unknown> }>(
-    "/serpro/cnpj",
-    { method: "POST", body: JSON.stringify({ cnpj }) },
-  );
-}
-
 export interface ConciliacaoMeta {
   report_id: string;
   modo: string;
@@ -215,13 +208,6 @@ export async function conciliarCsv(
 
 export async function listarConciliacoesDoCliente(clienteId: string) {
   return apiFetch<ConciliacaoMeta[]>(`/conciliacoes/por-cliente/${clienteId}`);
-}
-
-export async function consultarCpfSerpro(cpf: string) {
-  return apiFetch<{ tipo: string; documento_mascarado: string; dados: Record<string, unknown> }>(
-    "/serpro/cpf",
-    { method: "POST", body: JSON.stringify({ cpf }) },
-  );
 }
 
 // ── Dashboard metrics (PR 1 backend) ──────────────────────────────────────

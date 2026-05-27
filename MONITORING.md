@@ -89,7 +89,6 @@ Loggers úteis:
 - `orgconc.observability` — startup do Sentry
 - `orgconc.errors` — handler global 500 (Trilha 4)
 - `orgconc.conciliacao` — endpoint de conciliação
-- `orgconc.serpro` — consultas SERPRO
 
 ## Métricas críticas para acompanhar
 

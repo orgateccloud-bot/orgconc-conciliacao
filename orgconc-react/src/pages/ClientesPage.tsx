@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  consultarCnpjSerpro,
   criarCliente,
   atualizarCliente,
   listarClientes,
@@ -62,12 +61,6 @@ const PLANO_LABELS: Record<string, string> = {
   enterprise: "Enterprise",
 };
 
-type SerproResult = {
-  tipo: string;
-  documento_mascarado: string;
-  dados: Record<string, unknown>;
-};
-
 export function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [busca, setBusca] = useState("");
@@ -79,8 +72,6 @@ export function ClientesPage() {
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
   const [plano, setPlano] = useState("basico");
-  const [serpro, setSerpro] = useState<SerproResult | null>(null);
-  const [busySerpro, setBusySerpro] = useState(false);
 
   // Edit dialog
   const [editando, setEditando] = useState<Cliente | null>(null);
@@ -109,29 +100,6 @@ export function ClientesPage() {
 
   useEffect(() => { carregar(); }, []);
 
-  async function consultarSerpro() {
-    if (!cnpj.trim()) return;
-    setBusySerpro(true);
-    setSerpro(null);
-    try {
-      const r = await consultarCnpjSerpro(cnpj);
-      setSerpro(r);
-      toast.success(`SERPRO: ${r.documento_mascarado}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Consulta SERPRO falhou");
-    } finally {
-      setBusySerpro(false);
-    }
-  }
-
-  function usarDadosSerpro() {
-    if (!serpro) return;
-    const d = serpro.dados;
-    if (typeof d.razao_social === "string" && !nome) setNome(d.razao_social);
-    if (typeof d.email === "string" && !email) setEmail(d.email);
-    toast.success("Dados preenchidos a partir do SERPRO");
-  }
-
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (cnpj.trim() && !validarCnpj(cnpj)) {
@@ -147,7 +115,7 @@ export function ClientesPage() {
         plano,
       });
       toast.success("Cliente cadastrado");
-      setNome(""); setCnpj(""); setEmail(""); setTelefone(""); setPlano("basico"); setSerpro(null);
+      setNome(""); setCnpj(""); setEmail(""); setTelefone(""); setPlano("basico");
       await carregar();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao cadastrar");
@@ -213,7 +181,7 @@ export function ClientesPage() {
         eyebrow="02 · CLIENTES"
         title="Cadastro"
         titleAccent="fiscal."
-        subtitle="Carteira de empresas e consulta CNPJ via SERPRO (quando configurado no servidor)."
+        subtitle="Carteira de empresas com validação de CNPJ."
       />
 
       {/* Create form */}
@@ -231,24 +199,11 @@ export function ClientesPage() {
           </div>
           <div className="space-y-2">
             <Label>CNPJ</Label>
-            <div className="flex gap-2">
-              <Input
-                value={cnpj}
-                onChange={(e) => setCnpj(e.target.value)}
-                placeholder="00.000.000/0001-00"
-                className="flex-1"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={consultarSerpro}
-                disabled={busySerpro || !cnpj.trim()}
-                size="sm"
-                className="shrink-0"
-              >
-                {busySerpro ? "…" : "SERPRO"}
-              </Button>
-            </div>
+            <Input
+              value={cnpj}
+              onChange={(e) => setCnpj(e.target.value)}
+              placeholder="00.000.000/0001-00"
+            />
           </div>
           <div className="space-y-2">
             <Label>Plano</Label>
@@ -272,8 +227,6 @@ export function ClientesPage() {
             <Input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(11) 99999-9999" />
           </div>
         </div>
-
-        {serpro && <SerproCard data={serpro} onUse={usarDadosSerpro} />}
 
         <Button type="submit" disabled={!nome.trim()}>Cadastrar cliente</Button>
       </form>
@@ -541,58 +494,3 @@ export function ClientesPage() {
   );
 }
 
-function SerproCard({ data, onUse }: { data: SerproResult; onUse: () => void }) {
-  const d = data.dados;
-  const fields: Array<[string, string]> = [];
-
-  const tryField = (key: string, label: string) => {
-    const v = d[key];
-    if (typeof v === "string" && v) fields.push([label, v]);
-    else if (typeof v === "number") fields.push([label, String(v)]);
-  };
-
-  tryField("razao_social", "Razão Social");
-  tryField("nome_fantasia", "Nome Fantasia");
-  tryField("situacao_cadastral", "Situação");
-  tryField("cnae_fiscal_descricao", "Atividade Principal");
-  tryField("municipio", "Município");
-  tryField("uf", "UF");
-  tryField("data_inicio_atividade", "Abertura");
-
-  if (fields.length === 0) {
-    Object.entries(d)
-      .slice(0, 6)
-      .forEach(([k, v]) => {
-        if (typeof v === "string" || typeof v === "number") {
-          fields.push([k.replace(/_/g, " "), String(v)]);
-        }
-      });
-  }
-
-  return (
-    <div className="rounded-2xl border bg-muted/30 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold tracking-wider uppercase text-muted-foreground font-mono">
-          SERPRO · {data.documento_mascarado}
-        </span>
-        <Button type="button" variant="outline" size="sm" onClick={onUse}>
-          Usar dados
-        </Button>
-      </div>
-      {fields.length > 0 ? (
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          {fields.map(([label, value]) => (
-            <div key={label} className="overflow-hidden">
-              <dt className="text-[11px] font-mono uppercase text-muted-foreground">{label}</dt>
-              <dd className="font-medium truncate" title={value}>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <pre className="text-xs bg-background p-3 rounded-lg overflow-auto max-h-40 border">
-          {JSON.stringify(d, null, 2)}
-        </pre>
-      )}
-    </div>
-  );
-}

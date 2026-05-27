@@ -33,7 +33,6 @@ from api.routers import (
     exports,
     health,
     metrics as metrics_router,
-    serpro,
     transacoes as transacoes_router,
 )
 from api.services.logging_estruturado import configurar_logging
@@ -64,7 +63,6 @@ app = criar_app()
 app.include_router(health.router)
 app.include_router(auth_routes.router)
 app.include_router(clientes.router)
-app.include_router(serpro.router)
 app.include_router(conciliacao.router)
 app.include_router(exports.router)
 app.include_router(conciliacoes_list.router)
