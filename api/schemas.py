@@ -55,25 +55,3 @@ class ClienteUpdate(BaseModel):
 class LoginPayload(BaseModel):
     email: str = Field(max_length=254)
     senha: str = Field(min_length=8, max_length=128)
-
-
-class ConsultaCPFRequest(BaseModel):
-    cpf: str
-
-    def model_post_init(self, __context) -> None:
-        digitos = re.sub(r"\D", "", self.cpf or "")
-        if len(digitos) != 11:
-            raise ValueError("CPF deve conter 11 digitos.")
-        self.cpf = digitos
-
-
-class ConsultaCNPJRequest(BaseModel):
-    cnpj: str
-
-    def model_post_init(self, __context) -> None:
-        digitos = re.sub(r"\D", "", self.cnpj or "")
-        if len(digitos) != 14:
-            raise ValueError("CNPJ deve conter 14 digitos.")
-        if not validar_cnpj(digitos):
-            raise ValueError("CNPJ invalido (digitos verificadores).")
-        self.cnpj = digitos

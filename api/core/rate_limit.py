@@ -24,7 +24,8 @@ def _get_rate_key(request: Request) -> str:
                 sub = claims.get("sub", "")
                 if sub:
                     return f"sub:{sub}"
-            except Exception:
+            except (_jwt.InvalidTokenError, AttributeError, KeyError):
+                # Token malformado ou sub ausente — cai pro IP
                 pass
     return get_remote_address(request)
 

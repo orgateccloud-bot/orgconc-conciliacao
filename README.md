@@ -8,7 +8,6 @@ API e UI para conciliação bancária inteligente. Cruza extratos OFX/PDF/XML, d
 - **Frontend principal**: `orgconc-react/` (Vite + React 19 + Tailwind + shadcn)
 - **UI legada** (transição): `static/` em `/ui/`
 - **Banco**: PostgreSQL/Supabase opcional
-- **SERPRO**: consulta CPF/CNPJ via cliente externo (`ORGCONC_SERPRO_CLIENT_PATH`)
 
 ## Desenvolvimento
 
@@ -46,14 +45,6 @@ App React: http://127.0.0.1:8765/app/
 
 Em produção, endpoints protegidos exigem `Authorization: Bearer <jwt|legacy>`.
 
-## SERPRO
-
-Configure no `.env`:
-
-- `ORGCONC_SERPRO_DEMO_TOKEN` ou `ORGCONC_SERPRO_CONSUMER_KEY` + `SECRET`
-- `ORGCONC_SERPRO_CLIENT_PATH` — pasta com `serpro_client.py`
-- `ORGCONC_SERPRO_AUDIT_SALT` — **obrigatório em produção**
-
 ## Endpoints principais
 
 | Método | Rota | Descrição |
@@ -61,7 +52,6 @@ Configure no `.env`:
 | POST | `/conciliar/ofx` | Upload 1–50 arquivos; `?simular=true` sem LLM |
 | POST | `/conciliar/csv` | Extrato + razão CSV |
 | GET | `/conciliacoes` | Histórico (requer DB) |
-| POST | `/serpro/cnpj` | Consulta CNPJ |
 | GET | `/export/html\|xlsx\|pdf/{rid}` | Exportações |
 
 ## Testes
@@ -79,8 +69,8 @@ Para forçar mesmo com URL inválida (debug): `ORGCONC_RUN_DB_TESTS=1 pytest tes
 ```
 api/
   main.py              # App factory + mounts
-  routers/             # health, auth, clientes, conciliacao, exports, serpro
-  services/            # persistencia, conciliacao_llm, serpro_consulta, excel
+  routers/             # health, auth, clientes, conciliacao, exports
+  services/            # persistencia, conciliacao_llm, excel
   parsers/             # ofx, xml, pdf, classifier, anomalies, stats
 orgconc-react/         # UI principal
 static/                # UI legada (deprecated)

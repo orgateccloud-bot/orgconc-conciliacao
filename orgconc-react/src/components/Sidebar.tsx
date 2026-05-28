@@ -1,93 +1,78 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { Logo } from "@/components/Logo";
 import {
-  Users,
-  FileText,
-  Code2,
-  HeartPulse,
-  LayoutDashboard,
-  LineChart,
-  Settings,
-  AlertTriangle,
-  ArrowLeftRight,
-  ShieldCheck,
-  Activity,
-  Lock,
+  Users, FileText, LayoutDashboard, LineChart, Settings,
+  Upload, AlertTriangle, ShieldCheck, Lock, Activity,
+  Network, Receipt, FileSignature,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Secao =
-  | "dashboard"
-  | "conciliacao"
-  | "clientes"
-  | "relatorios"
-  | "anomalias"
-  | "transacoes"
-  | "auditoria"
-  | "seguranca"
-  | "configuracoes";
-
-interface NavItemDef {
-  id: Secao;
+type SidebarItem = {
+  id: string;
   label: string;
   icon: typeof LineChart;
-  badge?: string;
-}
+  badge?: number;
+  href?: string;
+};
 
-const OPERACAO_ITEMS: NavItemDef[] = [
-  { id: "dashboard",   label: "Dashboard",    icon: LayoutDashboard },
-  { id: "conciliacao", label: "Conciliação",  icon: LineChart },
+const OPERACAO_ITEMS: SidebarItem[] = [
+  { id: "dashboard",   label: "Visão Geral",  icon: LayoutDashboard },
+  { id: "upload",      label: "Upload",       icon: Upload },
+  { id: "conciliacao", label: "Análises",     icon: LineChart },
+  { id: "matchers",    label: "Matchers",     icon: Network },
+  { id: "guias",       label: "Guias",        icon: Receipt },
+  { id: "contratos",   label: "Contratos",    icon: FileSignature },
+  { id: "relatorios",  label: "Transações",   icon: Activity },
   { id: "clientes",    label: "Clientes",     icon: Users },
-  { id: "relatorios",  label: "Relatórios",   icon: FileText },
-  { id: "transacoes",  label: "Transações",   icon: ArrowLeftRight },
   { id: "anomalias",   label: "Anomalias",    icon: AlertTriangle },
 ];
 
-const COMPLIANCE_ITEMS: NavItemDef[] = [
-  { id: "auditoria",     label: "Auditoria",     icon: Activity },
-  { id: "seguranca",     label: "Segurança",     icon: ShieldCheck },
+const COMPLIANCE_ITEMS: SidebarItem[] = [
+  { id: "auditoria",   label: "Auditoria",    icon: ShieldCheck },
+  { id: "seguranca",   label: "Segurança",    icon: Lock },
   { id: "configuracoes", label: "Configurações", icon: Settings },
 ];
 
-interface SidebarCounts {
-  anomalias?: number;
-  clientes?: number;
-}
-
 export function SidebarNavContent({
   onNavigate,
-  counts,
+  anomalias = 0,
+  clientes = 0,
 }: {
   onNavigate?: () => void;
-  counts?: SidebarCounts;
+  anomalias?: number;
+  clientes?: number;
 }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
+  const operacaoWithBadges = OPERACAO_ITEMS.map((item) => ({
+    ...item,
+    badge:
+      item.label === "Clientes" && clientes > 0
+        ? clientes
+        : item.label === "Anomalias" && anomalias > 0
+        ? anomalias
+        : undefined,
+  }));
+
   function go(id: string) {
-    navigate(`/${id}`);
+    const routableIds = ["dashboard","conciliacao","upload","matchers","guias","contratos","clientes","relatorios","configuracoes"];
+    if (routableIds.includes(id)) navigate(`/${id}`);
     onNavigate?.();
   }
 
-  function isActive(id: string) {
-    return pathname === `/${id}` || (id === "dashboard" && pathname === "/");
-  }
-
-  function getBadge(id: Secao): string | undefined {
-    if (id === "anomalias" && counts?.anomalias) return String(counts.anomalias);
-    if (id === "clientes" && counts?.clientes) return String(counts.clientes);
-    return undefined;
+  function isActive(id: string, label: string) {
+    if (label === "Transações") return pathname === "/relatorios";
+    return pathname === `/${id}` || (id === "dashboard" && (pathname === "/" || pathname === "/dashboard"));
   }
 
   return (
     <>
+      {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b">
-        <Logo size={56} />
+        <Logo size={52} />
         <div className="flex flex-col">
-          <h1
-            className="font-bold text-lg tracking-tight text-foreground leading-tight"
-            style={{ letterSpacing: "-0.025em" }}
-          >
+          <h1 className="font-bold text-lg tracking-tight leading-tight" style={{ letterSpacing: "-0.025em" }}>
             ORGATEC
           </h1>
           <span className="text-[10px] font-semibold tracking-[0.18em] uppercase text-muted-foreground mt-0.5 font-mono">
@@ -96,68 +81,69 @@ export function SidebarNavContent({
         </div>
       </div>
 
-      <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto" aria-label="Navegação principal">
+      <nav className="flex-1 px-2 py-4 overflow-y-auto" aria-label="Navegação principal">
+        {/* OPERAÇÃO */}
         <NavGroup label="Operação">
-          {OPERACAO_ITEMS.map(({ id, label, icon: Icon }) => (
+          {operacaoWithBadges.map((item) => (
             <NavItem
-              key={id}
-              active={isActive(id)}
-              onClick={() => go(id)}
-              icon={<Icon className="h-4 w-4" />}
-              label={label}
-              badge={getBadge(id)}
-              badgeVariant={id === "anomalias" ? "warning" : "info"}
+              key={item.label}
+              active={isActive(item.id, item.label)}
+              onClick={() => go(item.id)}
+              icon={<item.icon className="h-4 w-4" />}
+              label={item.label}
+              badge={item.badge}
             />
           ))}
         </NavGroup>
 
+        {/* COMPLIANCE */}
         <NavGroup label="Compliance">
-          {COMPLIANCE_ITEMS.map(({ id, label, icon: Icon }) => (
+          {COMPLIANCE_ITEMS.map((item) => (
             <NavItem
-              key={id}
-              active={isActive(id)}
-              onClick={() => go(id)}
-              icon={<Icon className="h-4 w-4" />}
-              label={label}
+              key={item.id}
+              active={isActive(item.id, item.label)}
+              onClick={() => go(item.id)}
+              icon={<item.icon className="h-4 w-4" />}
+              label={item.label}
             />
           ))}
-          <a
-            href="/docs"
-            target="_blank"
-            rel="noopener"
-            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-          >
-            <Code2 className="h-4 w-4" />
-            API Docs
-          </a>
-          <a
-            href="/health"
-            target="_blank"
-            rel="noopener"
-            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-          >
-            <HeartPulse className="h-4 w-4" />
-            Health Check
-          </a>
         </NavGroup>
       </nav>
 
-      <SecurityCard />
-
-      <div className="border-t px-4 py-3">
-        <div className="inline-flex items-center rounded-md border bg-secondary px-2 py-1 text-[11px] font-mono font-semibold text-muted-foreground">
-          v0.5.0
+      {/* Criptografia Ativa card */}
+      <div className="px-3 py-3 border-t">
+        <div className="rounded-xl bg-primary/10 border border-primary/20 px-3 py-2.5 flex items-start gap-2.5">
+          <div className="mt-0.5 shrink-0 rounded-lg bg-primary/20 p-1">
+            <Lock className="h-3 w-3 text-primary" />
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold text-primary">Criptografia Ativa</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+              Todos os dados protegidos com AES-256 e TLS 1.3
+            </p>
+          </div>
+        </div>
+        <div className="mt-2 px-1">
+          <span className="inline-flex items-center rounded-md border bg-secondary px-2 py-0.5 text-[10px] font-mono font-semibold text-muted-foreground">
+            v0.5.0
+          </span>
         </div>
       </div>
     </>
   );
 }
 
-export function Sidebar({ counts }: { counts?: SidebarCounts }) {
+export function Sidebar({
+  anomalias,
+  clientes,
+}: {
+  anomalias?: number;
+  clientes?: number;
+}) {
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-card/95 backdrop-blur-sm relative">
       <span aria-hidden className="absolute top-0 bottom-0 right-0 w-px coastline-r opacity-60" />
-      <SidebarNavContent counts={counts} />
+      <SidebarNavContent anomalias={anomalias} clientes={clientes} />
     </aside>
   );
 }
@@ -174,26 +160,14 @@ function NavGroup({ label, children }: { label: string; children: React.ReactNod
 }
 
 function NavItem({
-  active,
-  onClick,
-  icon,
-  label,
-  badge,
-  badgeVariant = "info",
+  active, onClick, icon, label, badge,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
-  badge?: string;
-  badgeVariant?: "info" | "warning";
+  badge?: number;
 }) {
-  const badgeCls = active
-    ? "bg-primary/20 text-primary"
-    : badgeVariant === "warning"
-    ? "bg-orange-100 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400"
-    : "bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400";
-
   return (
     <button
       onClick={onClick}
@@ -207,27 +181,18 @@ function NavItem({
     >
       {icon}
       <span className="flex-1 text-left">{label}</span>
-      {badge && (
-        <span className={cn("ml-auto inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold font-mono min-w-[18px]", badgeCls)}>
+      {badge !== undefined && (
+        <span className={cn(
+          "inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold min-w-[18px]",
+          active
+            ? "bg-primary/20 text-primary"
+            : label === "Anomalias"
+            ? "bg-orange-100 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400"
+            : "bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400"
+        )}>
           {badge}
         </span>
       )}
     </button>
-  );
-}
-
-function SecurityCard() {
-  return (
-    <div className="mx-3 mb-3 rounded-xl border bg-gradient-to-br from-primary/5 to-accent/5 p-3">
-      <div className="flex items-center gap-2 mb-1.5">
-        <div className="rounded-md bg-primary/10 p-1.5 text-primary">
-          <Lock className="h-3.5 w-3.5" />
-        </div>
-        <span className="text-xs font-semibold text-foreground">Criptografia Ativa</span>
-      </div>
-      <p className="text-[11px] leading-snug text-muted-foreground">
-        Dados protegidos com AES-256 e TLS 1.3 ponta a ponta.
-      </p>
-    </div>
   );
 }

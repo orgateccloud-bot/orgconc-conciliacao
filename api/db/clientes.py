@@ -1,13 +1,19 @@
 """CRUD de clientes."""
+
 import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from .models import Cliente
 
 
-async def criar_cliente(db: AsyncSession, nome: str, cnpj: str | None = None,
-                        email: str | None = None, telefone: str | None = None,
-                        plano: str = "basico") -> Cliente:
+async def criar_cliente(
+    db: AsyncSession,
+    nome: str,
+    cnpj: str | None = None,
+    email: str | None = None,
+    telefone: str | None = None,
+    plano: str = "basico",
+) -> Cliente:
     cliente = Cliente(nome=nome, cnpj=cnpj, email=email, telefone=telefone, plano=plano)
     db.add(cliente)
     await db.commit()
@@ -27,7 +33,7 @@ async def buscar_por_cnpj(db: AsyncSession, cnpj: str) -> Cliente | None:
 async def listar_clientes(db: AsyncSession, apenas_ativos: bool = True) -> list[Cliente]:
     query = select(Cliente)
     if apenas_ativos:
-        query = query.where(Cliente.ativo == True)
+        query = query.where(Cliente.ativo.is_(True))
     resultado = await db.execute(query.order_by(Cliente.nome))
     return list(resultado.scalars().all())
 
@@ -35,8 +41,7 @@ async def listar_clientes(db: AsyncSession, apenas_ativos: bool = True) -> list[
 _CAMPOS_EDITAVEIS = {"nome", "email", "telefone", "plano", "ativo"}
 
 
-async def atualizar_cliente(db: AsyncSession, cliente_id: uuid.UUID,
-                            **campos) -> Cliente | None:
+async def atualizar_cliente(db: AsyncSession, cliente_id: uuid.UUID, **campos) -> Cliente | None:
     campos_validos = {k: v for k, v in campos.items() if k in _CAMPOS_EDITAVEIS}
     if not campos_validos:
         return await buscar_cliente(db, cliente_id)

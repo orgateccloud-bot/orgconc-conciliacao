@@ -9,56 +9,40 @@ import {
 } from "react-router-dom";
 import { ThemeProvider } from "@/lib/theme";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { listarConciliacoes, listarClientes } from "@/lib/api";
+import { listarClientes, listarConciliacoes } from "@/lib/api";
 import { LoginPage } from "@/pages/LoginPage";
-import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { Sidebar, SidebarNavContent } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import { Toaster } from "@/components/ui/sonner";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import {
-  AlertTriangle,
-  ArrowLeftRight,
-  ShieldCheck,
-  Activity,
-} from "lucide-react";
+import { PageSkeleton, AppBootSkeleton } from "@/components/skeletons";
 
 const DashboardPage    = lazy(() => import("@/pages/DashboardPage").then(m => ({ default: m.DashboardPage })));
 const ConciliacaoPage  = lazy(() => import("@/pages/ConciliacaoPage").then(m => ({ default: m.ConciliacaoPage })));
 const ClientesPage     = lazy(() => import("@/pages/ClientesPage").then(m => ({ default: m.ClientesPage })));
 const RelatoriosPage   = lazy(() => import("@/pages/RelatoriosPage").then(m => ({ default: m.RelatoriosPage })));
 const ConfiguracoesPage = lazy(() => import("@/pages/ConfiguracoesPage").then(m => ({ default: m.ConfiguracoesPage })));
-
-function PageLoader() {
-  return (
-    <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-      Carregando…
-    </div>
-  );
-}
+const UploadPage        = lazy(() => import("@/pages/UploadPage").then(m => ({ default: m.UploadPage })));
+const MatchersPage      = lazy(() => import("@/pages/MatchersPage").then(m => ({ default: m.MatchersPage })));
+const GuiasPage         = lazy(() => import("@/pages/GuiasPage").then(m => ({ default: m.GuiasPage })));
+const ContratosPage     = lazy(() => import("@/pages/ContratosPage").then(m => ({ default: m.ContratosPage })));
 
 const TITULOS: Record<string, string> = {
   dashboard:     "Dashboard",
-  conciliacao:   "Conciliação Bancária",
+  conciliacao:   "Análises",
+  upload:        "Upload de Extratos",
+  matchers:      "Matchers — Conciliação Automática",
+  guias:         "Guias Tributárias",
+  contratos:     "Contratos Recorrentes",
   clientes:      "Clientes",
   relatorios:    "Histórico de Relatórios",
   configuracoes: "Configurações",
-  anomalias:     "Anomalias",
-  transacoes:    "Transações",
-  auditoria:     "Trilha de Auditoria",
-  seguranca:     "Segurança",
 };
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-        Carregando…
-      </div>
-    );
-  }
+  if (loading) return <AppBootSkeleton />;
   if (!user) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
@@ -81,7 +65,7 @@ function DashboardLayout() {
       listarClientes().catch(() => []),
     ]).then(([concs, clts]) => {
       const anomalias = Array.isArray(concs)
-        ? concs.reduce((s, c) => s + (c.total_anomalias ?? 0), 0)
+        ? concs.reduce((s: number, c) => s + (c.total_anomalias ?? 0), 0)
         : 0;
       const clientes = Array.isArray(clts) ? clts.length : 0;
       setSidebarCounts({ anomalias, clientes });
@@ -94,12 +78,16 @@ function DashboardLayout() {
   return (
     <div className="flex min-h-screen" style={{ background: "var(--d-bg)" }}>
       {/* Desktop sidebar */}
-      <Sidebar counts={sidebarCounts} />
+      <Sidebar anomalias={sidebarCounts.anomalias} clientes={sidebarCounts.clientes} />
 
       {/* Mobile sidebar Sheet */}
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetContent side="left" className="p-0 w-60 bg-card/95 flex flex-col">
-          <SidebarNavContent onNavigate={() => setMobileSidebarOpen(false)} counts={sidebarCounts} />
+          <SidebarNavContent
+            onNavigate={() => setMobileSidebarOpen(false)}
+            anomalias={sidebarCounts.anomalias}
+            clientes={sidebarCounts.clientes}
+          />
         </SheetContent>
       </Sheet>
 
@@ -111,9 +99,9 @@ function DashboardLayout() {
           onLogout={logout}
           onToggleSidebar={() => setMobileSidebarOpen(true)}
         />
-        <div className="flex-1 p-4 lg:p-8 xl:p-10 max-w-[1600px] w-full mx-auto pb-24">
+        <div className="flex-1 p-4 lg:p-6 xl:p-8 max-w-[1600px] w-full mx-auto pb-16">
           <ErrorBoundary>
-            <Suspense fallback={<PageLoader />}>
+            <Suspense fallback={<PageSkeleton />}>
               <Outlet />
             </Suspense>
           </ErrorBoundary>
@@ -135,49 +123,13 @@ export default function App() {
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/conciliacao" element={<ConciliacaoPage />} />
+                <Route path="/upload" element={<UploadPage />} />
+                <Route path="/matchers" element={<MatchersPage />} />
+                <Route path="/guias" element={<GuiasPage />} />
+                <Route path="/contratos" element={<ContratosPage />} />
                 <Route path="/clientes" element={<ClientesPage />} />
                 <Route path="/relatorios" element={<RelatoriosPage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />
-                <Route
-                  path="/transacoes"
-                  element={
-                    <PlaceholderPage
-                      titulo="Transações"
-                      descricao="Visão consolidada de todas as transações cruzando conciliações. Filtros por banco, conta, categoria e período em desenvolvimento."
-                      icone={ArrowLeftRight}
-                    />
-                  }
-                />
-                <Route
-                  path="/anomalias"
-                  element={
-                    <PlaceholderPage
-                      titulo="Anomalias"
-                      descricao="Catálogo centralizado de anomalias detectadas pela IA — duplicidades, valores atípicos, padrões suspeitos. Triagem e investigação em desenvolvimento."
-                      icone={AlertTriangle}
-                    />
-                  }
-                />
-                <Route
-                  path="/auditoria"
-                  element={
-                    <PlaceholderPage
-                      titulo="Trilha de Auditoria"
-                      descricao="Histórico imutável de eventos com hash chain (sha256 + prev_hash). Verificação de integridade e exportação para compliance em desenvolvimento."
-                      icone={Activity}
-                    />
-                  }
-                />
-                <Route
-                  path="/seguranca"
-                  element={
-                    <PlaceholderPage
-                      titulo="Segurança"
-                      descricao="Score de compliance, controles ativos, certificações e logs de acesso. Painel completo em desenvolvimento."
-                      icone={ShieldCheck}
-                    />
-                  }
-                />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

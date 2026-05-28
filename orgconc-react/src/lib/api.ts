@@ -144,13 +144,6 @@ export async function criarCliente(data: Partial<Cliente>) {
   return apiFetch<Cliente>("/clientes", { method: "POST", body: JSON.stringify(data) });
 }
 
-export async function consultarCnpjSerpro(cnpj: string) {
-  return apiFetch<{ tipo: string; documento_mascarado: string; dados: Record<string, unknown> }>(
-    "/serpro/cnpj",
-    { method: "POST", body: JSON.stringify({ cnpj }) },
-  );
-}
-
 export interface ConciliacaoMeta {
   report_id: string;
   modo: string;
@@ -217,11 +210,103 @@ export async function listarConciliacoesDoCliente(clienteId: string) {
   return apiFetch<ConciliacaoMeta[]>(`/conciliacoes/por-cliente/${clienteId}`);
 }
 
-export async function consultarCpfSerpro(cpf: string) {
-  return apiFetch<{ tipo: string; documento_mascarado: string; dados: Record<string, unknown> }>(
-    "/serpro/cpf",
-    { method: "POST", body: JSON.stringify({ cpf }) },
-  );
+// ── Matchers (OrgNeural2) ─────────────────────────────────────────────────
+
+export interface DisposicaoItem {
+  data: string;
+  tipo: string;
+  valor: number;
+  fitid: string;
+  memo: string;
+  nome: string;
+  estagio: number;
+  disposicao: string;
+  contraparte: string | null;
+  conta_contabil: string | null;
+  origem: string | null;
+  flag: string | null;
+  nfe_chave: string | null;
+}
+
+export interface MatchersResponse {
+  cliente_id: string;
+  total_transacoes: number;
+  automatizadas: number;
+  taxa_automatizacao_pct: number;
+  disposicoes: DisposicaoItem[];
+  xmls_indexados: number;
+}
+
+export async function conciliarMatchers(
+  clienteId: string,
+  arquivos: File[],
+): Promise<MatchersResponse> {
+  const fd = new FormData();
+  fd.append("cliente_id", clienteId);
+  arquivos.forEach((f) => fd.append("arquivos", f));
+  return apiFetch<MatchersResponse>("/matchers/conciliar", { method: "POST", body: fd });
+}
+
+// ── Guias tributárias ─────────────────────────────────────────────────────
+
+export interface Guia {
+  id: string;
+  cliente_id: string;
+  tipo: string;
+  codigo_receita: string | null;
+  valor: number;
+  competencia: string | null;
+  data_vencimento: string | null;
+  conta_contabil: string | null;
+  ativo: boolean;
+  criado_em: string;
+}
+
+export async function listarGuias(clienteId?: string): Promise<Guia[]> {
+  const q = clienteId ? `?cliente_id=${clienteId}` : "";
+  return apiFetch<Guia[]>(`/guias${q}`);
+}
+
+export async function criarGuia(data: {
+  cliente_id: string;
+  tipo: string;
+  valor: number;
+  codigo_receita?: string | null;
+  competencia?: string | null;
+  data_vencimento?: string | null;
+  conta_contabil?: string | null;
+}): Promise<Guia> {
+  return apiFetch<Guia>("/guias", { method: "POST", body: JSON.stringify(data) });
+}
+
+// ── Contratos recorrentes ─────────────────────────────────────────────────
+
+export interface Contrato {
+  id: string;
+  cliente_id: string;
+  descricao: string;
+  valor: number;
+  periodicidade: string | null;
+  padrao_memo: string | null;
+  conta_contabil: string | null;
+  ativo: boolean;
+  criado_em: string;
+}
+
+export async function listarContratos(clienteId?: string): Promise<Contrato[]> {
+  const q = clienteId ? `?cliente_id=${clienteId}` : "";
+  return apiFetch<Contrato[]>(`/contratos${q}`);
+}
+
+export async function criarContrato(data: {
+  cliente_id: string;
+  descricao: string;
+  valor: number;
+  periodicidade?: string;
+  padrao_memo?: string | null;
+  conta_contabil?: string | null;
+}): Promise<Contrato> {
+  return apiFetch<Contrato>("/contratos", { method: "POST", body: JSON.stringify(data) });
 }
 
 // ── Dashboard metrics (PR 1 backend) ──────────────────────────────────────

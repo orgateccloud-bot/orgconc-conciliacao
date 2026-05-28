@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import logging
 import re
 import uuid
@@ -25,7 +27,6 @@ from api.services.conciliacao_llm import (
     get_api_key,
     sintetizar_consenso,
 )
-from api.services.audit import gravar_audit_independente
 from api.services.db_persistence import salvar_no_banco
 from api.services.render import render_html
 from api.services.storage import read_limited, salvar_dataset
@@ -35,6 +36,154 @@ router = APIRouter(tags=["conciliacao"])
 log = logging.getLogger("orgconc.conciliacao")
 
 _SAFE_FILENAME_RE = re.compile(r"[^\w.\-]")
+
+# Sinonimos de cabecalho aceitos no parser de CSV estruturado
+_CSV_DATA_KEYS = ("data", "date", "dt", "data_lancamento", "datalancamento")
+_CSV_MEMO_KEYS = (
+    "descricao", "descrição", "memo", "historico", "histórico",
+    "detalhe", "descricao_operacao", "obs",
+)
+_CSV_VALOR_KEYS = ("valor", "value", "amount", "montante", "vlr", "valor_brl")
+_CSV_TIPO_KEYS = ("tipo", "type", "operacao", "operação", "natureza")
+_CSV_NOME_KEYS = ("nome", "name", "contraparte", "favorecido", "beneficiario")
+
+# Regex auxiliares para parser por linha (CSV sem cabecalho ou formato livre)
+_RX_DATA_BR = re.compile(r"\b(\d{2})/(\d{2})/(\d{2,4})\b")
+_RX_DATA_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+_RX_VALOR = re.compile(r"(-?\(?\s*R?\$?\s*[\d.]+,\d{2}\)?|-?\d+\.\d{2})")
+
+
+def _parse_valor_csv(s: str) -> Optional[float]:
+    """Converte valor monetario BR/EN para float (negativo se entre parenteses)."""
+    if s is None:
+        return None
+    s = str(s).strip()
+    if not s:
+        return None
+    neg = (s.startswith("(") and s.endswith(")")) or s.startswith("-")
+    s = s.strip("()").replace("R$", "").replace("$", "").replace(" ", "")
+    s = s.lstrip("+-")
+    if "," in s and "." in s:
+        # formato BR: 1.234,56 — remove . de milhar
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        v = float(s)
+        return -v if neg else v
+    except ValueError:
+        return None
+
+
+def _parse_data_csv(s: str) -> Optional[str]:
+    """Converte data BR (dd/mm/aaaa) ou ISO (aaaa-mm-dd) para ISO."""
+    if not s:
+        return None
+    s = str(s).strip()
+    m = _RX_DATA_ISO.search(s)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    m = _RX_DATA_BR.search(s)
+    if m:
+        dia, mes, ano = m.groups()
+        if len(ano) == 2:
+            ano = "20" + ano
+        return f"{ano}-{mes}-{dia}"
+    return None
+
+
+def _pick(row: dict, keys: tuple[str, ...]) -> str:
+    """Retorna primeiro valor nao-vazio entre `keys` (case-insensitive)."""
+    norm = {(k or "").strip().lower(): v for k, v in row.items()}
+    for k in keys:
+        if k in norm and norm[k] not in (None, ""):
+            return str(norm[k]).strip()
+    return ""
+
+
+def _parse_csv_text(text: str, conta_label: str) -> list[dict]:
+    """Parser CSV estruturado — detecta cabecalho e mapeia colunas.
+
+    Aceita variacoes de separador (`,` / `;` / `\t`), cabecalhos pt/en
+    e valores em formato BR (1.234,56) ou EN (1234.56).
+    """
+    if not text or not text.strip():
+        return []
+    sample = text[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        class _D(csv.excel):
+            delimiter = ","
+        dialect = _D()
+
+    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+    transacoes: list[dict] = []
+
+    # Se DictReader nao detectou cabecalhos validos (todos None/vazios),
+    # caimos para parser por regex de linha.
+    if not reader.fieldnames or all(not (f or "").strip() for f in reader.fieldnames):
+        return _parse_csv_freeform(text, conta_label)
+
+    headers_norm = {(f or "").strip().lower() for f in reader.fieldnames}
+    tem_data = any(h in headers_norm for h in _CSV_DATA_KEYS)
+    tem_valor = any(h in headers_norm for h in _CSV_VALOR_KEYS)
+
+    # Se cabecalho nao tem campos esperados, usa parser livre
+    if not (tem_data and tem_valor):
+        return _parse_csv_freeform(text, conta_label)
+
+    for row in reader:
+        data_iso = _parse_data_csv(_pick(row, _CSV_DATA_KEYS))
+        valor = _parse_valor_csv(_pick(row, _CSV_VALOR_KEYS))
+        if not data_iso or valor is None:
+            continue
+        memo = _pick(row, _CSV_MEMO_KEYS)
+        nome = _pick(row, _CSV_NOME_KEYS)
+        tipo_raw = _pick(row, _CSV_TIPO_KEYS).upper()
+        if tipo_raw in ("D", "DEBIT", "DEBITO", "DÉBITO"):
+            valor = -abs(valor)
+        elif tipo_raw in ("C", "CREDIT", "CREDITO", "CRÉDITO"):
+            valor = abs(valor)
+        transacoes.append({
+            "conta": conta_label,
+            "data": data_iso,
+            "tipo": "CREDIT" if valor > 0 else "DEBIT",
+            "valor": valor,
+            "memo": memo,
+            "nome": nome,
+            "checknum": "",
+        })
+    return transacoes
+
+
+def _parse_csv_freeform(text: str, conta_label: str) -> list[dict]:
+    """Fallback: extrai data+valor de cada linha (sem cabecalho confiavel)."""
+    transacoes: list[dict] = []
+    for linha in text.splitlines():
+        linha = linha.strip()
+        if not linha:
+            continue
+        data_iso = _parse_data_csv(linha)
+        m_val = _RX_VALOR.search(linha)
+        if not data_iso or not m_val:
+            continue
+        valor = _parse_valor_csv(m_val.group(1))
+        if valor is None:
+            continue
+        # memo = linha sem data e sem valor
+        memo = _RX_DATA_BR.sub("", _RX_DATA_ISO.sub("", linha))
+        memo = _RX_VALOR.sub("", memo).strip(" ,;|\t")
+        transacoes.append({
+            "conta": conta_label,
+            "data": data_iso,
+            "tipo": "CREDIT" if valor > 0 else "DEBIT",
+            "valor": valor,
+            "memo": memo[:120],
+            "nome": "",
+            "checknum": "",
+        })
+    return transacoes
 
 
 @router.post("/conciliar/ofx")
@@ -73,9 +222,11 @@ async def conciliar_ofx(
             txs = _parse_arquivo(content, up.filename)
         except HTTPException:
             raise
-        except Exception:
-            log.exception("Falha parseando %s", safe_name)
-            raise HTTPException(400, detail=f"Falha ao parsear arquivo")
+        except (ValueError, KeyError, UnicodeDecodeError) as exc:
+            # parsers OFX/XML/PDF lancam diversos tipos; HTTPException ja
+            # foi tratada acima. Demais erros viram 400 generico sem leak.
+            log.exception("Falha parseando %s (%s)", safe_name, type(exc).__name__)
+            raise HTTPException(400, detail="Falha ao parsear arquivo")
         if not txs:
             raise HTTPException(400, detail=f"Nao foi possivel extrair transacoes de {safe_name}")
         extratos_parsed.append({
@@ -90,18 +241,6 @@ async def conciliar_ofx(
         relatorio = _conciliacao_local(extratos_parsed, anomalias)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao_local", cliente_id)
-        await gravar_audit_independente(
-            action="conciliacao.criar",
-            resource_type="conciliacao",
-            resource_id=rid,
-            payload={
-                "modo": "simulacao_local",
-                "total_extratos": len(extratos_parsed),
-                "total_anomalias": len(anomalias),
-                "cliente_id": cliente_id,
-            },
-            actor=user,
-        )
         return JSONResponse({
             "modo": "simulacao_local",
             "report_id": rid,
@@ -146,29 +285,19 @@ async def conciliar_ofx(
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
-        await gravar_audit_independente(
-            action="conciliacao.criar",
-            resource_type="conciliacao",
-            resource_id=rid,
-            payload={
-                "modo": "multi_modelo",
-                "total_extratos": len(extratos_parsed),
-                "total_anomalias": len(anomalias),
-                "score_consenso": score_consenso,
-                "cliente_id": cliente_id,
-            },
-            actor=user,
-        )
+        custo_total_usd = round(sum(r.get("cost_usd", 0.0) for r in resultados), 6)
         return JSONResponse({
             "modo": "multi_modelo",
             "report_id": rid,
             "score_consenso": score_consenso,
+            "custo_total_usd": custo_total_usd,
             "modelos": [
                 {
                     "modelo": r["modelo"],
                     "label": r["label"],
                     "input_tokens": r.get("input_tokens", 0),
                     "output_tokens": r.get("output_tokens", 0),
+                    "cost_usd": r.get("cost_usd", 0.0),
                     "erro": r.get("erro"),
                 }
                 for r in resultados
@@ -189,19 +318,6 @@ async def conciliar_ofx(
     anomalias = _detectar_anomalias(extratos_parsed)
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
     db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "llm", cliente_id)
-    await gravar_audit_independente(
-        action="conciliacao.criar",
-        resource_type="conciliacao",
-        resource_id=rid,
-        payload={
-            "modo": "claude_llm",
-            "modelo": modelo,
-            "total_extratos": len(extratos_parsed),
-            "total_anomalias": len(anomalias),
-            "cliente_id": cliente_id,
-        },
-        actor=user,
-    )
     return JSONResponse({
         "modo": "claude_llm",
         "modelo": modelo,
@@ -210,7 +326,11 @@ async def conciliar_ofx(
         "report_id": rid,
         "extratos": [{"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]} for e in extratos_parsed],
         "anomalias": anomalias,
-        "usage": {"input_tokens": res.get("input_tokens", 0), "output_tokens": res.get("output_tokens", 0)},
+        "usage": {
+            "input_tokens": res.get("input_tokens", 0),
+            "output_tokens": res.get("output_tokens", 0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        },
         "relatorio_md": relatorio,
         "relatorio_html": render_html(relatorio),
         "persistencia": db_status,
@@ -245,32 +365,48 @@ async def conciliar_csv(
     safe_extrato = _SAFE_FILENAME_RE.sub("_", extrato.filename or "extrato.csv")[:64]
     safe_razao = _SAFE_FILENAME_RE.sub("_", razao.filename or "razao.csv")[:64]
 
+    conta_label = f"CSV ({safe_extrato})"
+    transacoes_csv = _parse_csv_text(extrato_text, conta_label)
     extratos_parsed = [{
         "arquivo": safe_extrato,
-        "conta": f"CSV ({safe_extrato})",
-        "qtd": max(1, extrato_text.count("\n") - 1),
-        "transacoes": [],
+        "conta": conta_label,
+        "qtd": len(transacoes_csv) or max(1, extrato_text.count("\n") - 1),
+        "transacoes": transacoes_csv,
     }]
 
     if simular:
-        anomalias: list = []
-        relatorio = (
-            "# Relatório de Conciliação CSV\n\n"
-            f"**Extrato:** {safe_extrato}\n**Razão:** {safe_razao}\n\n"
-            "Modo simulação: envie arquivos OFX/PDF/XML para análise heurística completa.\n"
-        )
+        # Parser estruturado: detecta anomalias mesmo no modo simulacao CSV
+        anomalias = _detectar_anomalias(extratos_parsed) if transacoes_csv else []
+        if transacoes_csv:
+            cred = sum(t["valor"] for t in transacoes_csv if t["valor"] > 0)
+            deb = sum(t["valor"] for t in transacoes_csv if t["valor"] < 0)
+            relatorio = (
+                "# Relatório de Conciliação CSV\n\n"
+                f"**Extrato:** {safe_extrato}\n**Razão:** {safe_razao}\n\n"
+                f"## Resumo\n\n"
+                f"- Transações extraídas: **{len(transacoes_csv)}**\n"
+                f"- Créditos: **R$ {cred:,.2f}**\n"
+                f"- Débitos: **R$ {deb:,.2f}**\n"
+                f"- Saldo do período: **R$ {cred + deb:,.2f}**\n"
+                f"- Anomalias detectadas: **{len(anomalias)}**\n\n"
+                "Modo simulação local: heurística aplicada ao CSV estruturado. "
+                "Para análise com LLM, repita sem `simular=true`.\n"
+            )
+        else:
+            relatorio = (
+                "# Relatório de Conciliação CSV\n\n"
+                f"**Extrato:** {safe_extrato}\n**Razão:** {safe_razao}\n\n"
+                "Nenhuma transação reconhecida no CSV (cabeçalhos esperados: "
+                "`data`, `descricao`/`memo`, `valor`). "
+                "Envie arquivos OFX/PDF/XML para análise heurística completa.\n"
+            )
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "simulacao_local", cliente_id)
-        await gravar_audit_independente(
-            action="conciliacao.criar",
-            resource_type="conciliacao",
-            resource_id=rid,
-            payload={"modo": "simulacao_local_csv", "cliente_id": cliente_id},
-            actor=user,
-        )
         return JSONResponse({
             "modo": "simulacao_local_csv",
             "report_id": rid,
+            "extratos": [{"arquivo": e["arquivo"], "conta": e["conta"], "qtd": e["qtd"]} for e in extratos_parsed],
+            "anomalias": anomalias,
             "relatorio_md": relatorio,
             "relatorio_html": render_html(relatorio),
             "persistencia": db_status,
@@ -290,19 +426,16 @@ async def conciliar_csv(
     anomalias = []
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
     db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "llm_csv", cliente_id)
-    await gravar_audit_independente(
-        action="conciliacao.criar",
-        resource_type="conciliacao",
-        resource_id=rid,
-        payload={"modo": "claude_llm_csv", "modelo": modelo, "cliente_id": cliente_id},
-        actor=user,
-    )
     return JSONResponse({
         "modo": "claude_llm_csv",
         "report_id": rid,
         "extrato": extrato.filename,
         "razao": razao.filename,
-        "usage": {"input_tokens": res.get("input_tokens", 0), "output_tokens": res.get("output_tokens", 0)},
+        "usage": {
+            "input_tokens": res.get("input_tokens", 0),
+            "output_tokens": res.get("output_tokens", 0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        },
         "relatorio_md": relatorio,
         "relatorio_html": render_html(relatorio),
         "persistencia": db_status,

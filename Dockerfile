@@ -10,11 +10,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements
-COPY requirements.txt ./requirements.txt
+# Copiar requirements (apenas producao — sem pytest/bandit/semgrep)
+COPY requirements-prod.txt ./requirements-prod.txt
 
 # Instalar dependencias Python
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-prod.txt
 
 # Copiar codigo da API
 COPY api/ ./api/

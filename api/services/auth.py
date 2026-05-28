@@ -63,7 +63,8 @@ def verificar_senha(senha: str, hash_armazenado: str) -> bool:
     """Constant-time comparison via bcrypt."""
     try:
         return _bcrypt.checkpw(senha.encode(), hash_armazenado.encode())
-    except Exception:
+    except (ValueError, TypeError):
+        # hash com formato invalido ou nao bcrypt
         return False
 
 

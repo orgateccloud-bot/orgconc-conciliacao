@@ -19,7 +19,6 @@ export default defineConfig({
       "/export":      "http://127.0.0.1:8765",
       "/clientes":    "http://127.0.0.1:8765",
       "/auth":        "http://127.0.0.1:8765",
-      "/serpro":      "http://127.0.0.1:8765",
       "/conciliacoes":"http://127.0.0.1:8765",
       "/metrics":     "http://127.0.0.1:8765",
       "/transacoes":  "http://127.0.0.1:8765",

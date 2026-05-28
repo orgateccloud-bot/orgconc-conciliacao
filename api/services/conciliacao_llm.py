@@ -5,13 +5,34 @@ import asyncio
 import logging
 import os
 import re
+import time
 
-from anthropic import Anthropic, APIStatusError
+from anthropic import Anthropic, APIStatusError, RateLimitError
 from fastapi import HTTPException
 
 from api.core.config import SYSTEM_PROMPT, _MODELOS_MULTI
+from api.core.llm_metrics import registrar_uso
 
 log = logging.getLogger("orgconc.llm")
+
+# Retry config — exponential backoff em rate limit / 5xx
+_MAX_RETRIES = 3
+# Base do backoff em segundos: delay = _RETRY_BASE_DELAY ** tentativa (2s, 4s, 8s).
+# Override via env (testes setam para 0 e evitam sleeps reais).
+try:
+    _RETRY_BASE_DELAY = float(os.environ.get("ORGCONC_LLM_RETRY_BASE_DELAY", "2"))
+except ValueError:
+    _RETRY_BASE_DELAY = 2.0
+
+
+def _is_retriable(exc: Exception) -> bool:
+    """Retry só em RateLimitError ou APIStatusError com status 5xx."""
+    if isinstance(exc, RateLimitError):
+        return True
+    if isinstance(exc, APIStatusError):
+        status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
+        return isinstance(status, int) and 500 <= status < 600
+    return False
 
 
 async def chamar_modelo_async(
@@ -28,7 +49,8 @@ async def chamar_modelo_async(
         resp = c.messages.create(
             model=model_id,
             max_tokens=max_tokens,
-            system=SYSTEM_PROMPT,
+            # cache_control ephemeral economiza tokens em chamadas repetidas (system prompt fixo)
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": prompt}],
         )
         return {
@@ -37,18 +59,55 @@ async def chamar_modelo_async(
             "output_tokens": resp.usage.output_tokens,
         }
 
-    try:
-        res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90.0)
-    except asyncio.TimeoutError:
-        log.warning("Timeout (90s) chamando modelo %s", model_id)
-        res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": "Timeout na API Claude (90s)"}
-    except APIStatusError as e:
-        body = getattr(e, "body", None) or {}
-        msg = (body.get("error") or {}).get("message") or str(e)
-        log.warning("Erro no modelo %s: %s", model_id, msg)
+    inicio = time.perf_counter()
+    res: dict | None = None
+    ultimo_erro: Exception | None = None
+
+    for tentativa in range(1, _MAX_RETRIES + 1):
+        try:
+            res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90.0)
+            res["erro"] = None
+            break
+        except asyncio.TimeoutError:
+            log.warning("Timeout (90s) chamando modelo %s", model_id)
+            res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": "Timeout na API Claude (90s)"}
+            break
+        except (RateLimitError, APIStatusError) as e:
+            ultimo_erro = e
+            if _is_retriable(e) and tentativa < _MAX_RETRIES:
+                delay = _RETRY_BASE_DELAY ** tentativa  # 2s, 4s, 8s
+                log.warning(
+                    "Retry %d/%d em %s após %s (delay=%.1fs)",
+                    tentativa, _MAX_RETRIES, model_id, type(e).__name__, delay,
+                )
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                continue
+            body = getattr(e, "body", None) or {}
+            msg = (body.get("error") or {}).get("message") or str(e)
+            log.warning("Erro no modelo %s: %s", model_id, msg)
+            res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": msg}
+            break
+
+    if res is None:  # defensivo — não deve ocorrer
+        msg = str(ultimo_erro) if ultimo_erro else "Falha desconhecida"
         res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": msg}
-    else:
-        res["erro"] = None
+
+    dur_ms = (time.perf_counter() - inicio) * 1000
+
+    if not res.get("erro") and (res.get("input_tokens") or res.get("output_tokens")):
+        try:
+            metrics = registrar_uso(
+                model_id=model_id,
+                label=label,
+                input_tokens=res.get("input_tokens", 0),
+                output_tokens=res.get("output_tokens", 0),
+                duracao_ms=dur_ms,
+            )
+            res["cost_usd"] = metrics["cost_total_usd"]
+            res["cost_dia_usd"] = metrics["cost_dia_usd"]
+        except Exception:  # noqa: BLE001 — fallback de telemetria nao deve quebrar response
+            log.exception("Falha registrando metrica LLM para %s", model_id)
 
     res.update({"modelo": model_id, "label": label})
     return res

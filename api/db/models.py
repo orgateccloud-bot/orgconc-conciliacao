@@ -1,11 +1,17 @@
 """Modelos SQLAlchemy — espelham o schema do Supabase."""
+
 import uuid
 from datetime import datetime, date, timezone
+from decimal import Decimal
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
 from sqlalchemy import String, Boolean, Integer, Date, Numeric, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS, JSONB
+
 TIMESTAMPTZ = _TS(timezone=True)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .client import Base
@@ -30,15 +36,15 @@ class Org(Base):
 class Cliente(Base):
     __tablename__ = "clientes"
 
-    id:           Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    nome:         Mapped[str]        = mapped_column(Text, nullable=False)
-    cnpj:         Mapped[str | None] = mapped_column(String(18), unique=True)
-    email:        Mapped[str | None] = mapped_column(Text)
-    telefone:     Mapped[str | None] = mapped_column(Text)
-    plano:        Mapped[str]        = mapped_column(String(20), default="basico")
-    ativo:        Mapped[bool]       = mapped_column(Boolean, default=True)
-    criado_em:    Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
-    atualizado_em: Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    cnpj: Mapped[str | None] = mapped_column(String(18), unique=True)
+    email: Mapped[str | None] = mapped_column(Text)
+    telefone: Mapped[str | None] = mapped_column(Text)
+    plano: Mapped[str] = mapped_column(String(20), default="basico")
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    criado_em: Mapped[datetime] = mapped_column(TIMESTAMPTZ, default=_now)
+    atualizado_em: Mapped[datetime] = mapped_column(TIMESTAMPTZ, default=_now)
 
     conciliacoes: Mapped[list["Conciliacao"]] = relationship(back_populates="cliente")
 
@@ -60,8 +66,8 @@ class Conciliacao(Base):
     criado_em:            Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
     usage_latency_ms:     Mapped[int | None]   = mapped_column(Integer)
 
-    cliente:     Mapped["Cliente | None"]   = relationship(back_populates="conciliacoes")
-    transacoes:  Mapped[list["Transacao"]]  = relationship(back_populates="conciliacao")
+    cliente: Mapped["Cliente | None"] = relationship(back_populates="conciliacoes")
+    transacoes: Mapped[list["Transacao"]] = relationship(back_populates="conciliacao")
 
 
 class Transacao(Base):
@@ -108,3 +114,73 @@ class AiInsightsCache(Base):
     gerado_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
     expira_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, nullable=False)
     payload:      Mapped[dict]      = mapped_column(JSONB, nullable=False)
+
+
+class LlmCostDaily(Base):
+    """Custo Claude API acumulado por dia (UTC) — sobrevive a restart do processo."""
+    __tablename__ = "llm_cost_daily"
+
+    id:            Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    dia:           Mapped[date]       = mapped_column(Date, nullable=False, unique=True)
+    custo_usd:     Mapped[Decimal]    = mapped_column(Numeric(10, 4), nullable=False, default=Decimal("0"))
+    chamadas:      Mapped[int]        = mapped_column(Integer, nullable=False, default=0)
+    atualizado_em: Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
+
+
+class GuiaTributo(Base):
+    """Guias tributárias cadastradas pela firma (DARF, DAS, GPS, GNRE, etc.).
+
+    Usado pelo matcher do estágio 4 (api/matchers/guia.py) para casar
+    pagamentos no extrato com tributos previamente gerados.
+    """
+    __tablename__ = "guia_tributo"
+
+    id:              Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    cliente_id:      Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    tipo:            Mapped[str]          = mapped_column(Text, nullable=False)  # DARF/DAS/GPS/GNRE
+    codigo_receita:  Mapped[str | None]   = mapped_column(Text)
+    valor:           Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False)
+    competencia:     Mapped[str | None]   = mapped_column(Text)  # AAAA-MM
+    data_vencimento: Mapped[date | None]  = mapped_column(Date)
+    conta_contabil:  Mapped[str | None]   = mapped_column(Text)
+    ativo:           Mapped[bool]         = mapped_column(Boolean, default=True)
+    criado_em:       Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
+
+
+class Contrato(Base):
+    """Contratos recorrentes (aluguel, seguro, leasing, consórcio) — valor fixo.
+
+    Usado pelo matcher do estágio 5 (api/matchers/contrato.py).
+    """
+    __tablename__ = "contrato"
+
+    id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    cliente_id:     Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    descricao:      Mapped[str]          = mapped_column(Text, nullable=False)
+    valor:          Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False)
+    periodicidade:  Mapped[str | None]   = mapped_column(String(20))  # mensal/anual/etc.
+    padrao_memo:    Mapped[str | None]   = mapped_column(Text)        # trecho esperado para desempate
+    conta_contabil: Mapped[str | None]   = mapped_column(Text)
+    ativo:          Mapped[bool]         = mapped_column(Boolean, default=True)
+    criado_em:      Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
+
+
+class TransacaoDisposicao(Base):
+    """Disposição contábil de cada transação após a cascata de matchers (OrgNeural2).
+
+    Cada conciliação produz N disposições, uma por transação. Disposição = decisão
+    final do orquestrador (RESOLVIDO_NFE, RESOLVIDO_GUIA, PENDENTE_REVISAO, etc.).
+    """
+    __tablename__ = "transacao_disposicao"
+
+    id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    conciliacao_id: Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("conciliacoes.id", ondelete="CASCADE"), nullable=False)
+    transacao_idx:  Mapped[int]          = mapped_column(Integer, nullable=False)
+    estagio:        Mapped[int]          = mapped_column(Integer, nullable=False)
+    disposicao:     Mapped[str]          = mapped_column(Text, nullable=False)
+    contraparte:    Mapped[str | None]   = mapped_column(Text)
+    conta_contabil: Mapped[str | None]   = mapped_column(Text)
+    origem:         Mapped[str | None]   = mapped_column(Text)
+    flag:           Mapped[str | None]   = mapped_column(Text)
+    nfe_chave:      Mapped[str | None]   = mapped_column(String(44))
+    criado_em:      Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
