@@ -17,6 +17,11 @@ import zipfile
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
+# F-Sec: defusedxml.ElementTree.fromstring contra XXE/billion-laughs em
+# documentos fiscais que vêm de upload de usuário (não confiáveis).
+# Reusa ET.* (elementos, etc.) para a API estável e legível.
+from defusedxml.ElementTree import fromstring as _safe_fromstring
+
 
 @dataclass
 class DocumentoFiscalLido:
@@ -84,7 +89,7 @@ def _achar_inf(root, *nomes: str):
 def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     """Parser NF-e (modelo 55) ou NFC-e (modelo 65)."""
     try:
-        root = ET.fromstring(conteudo)
+        root = _safe_fromstring(conteudo)
     except ET.ParseError as e:
         return DocumentoFiscalLido(
             tipo="NF-e", modelo="", chave="", numero="", serie="",
@@ -135,7 +140,7 @@ def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
 def parse_cte(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     """Parser CT-e (modelo 57) ou CT-e OS (modelo 67)."""
     try:
-        root = ET.fromstring(conteudo)
+        root = _safe_fromstring(conteudo)
     except ET.ParseError as e:
         return DocumentoFiscalLido(
             tipo="CT-e", modelo="", chave="", numero="", serie="",
@@ -185,7 +190,7 @@ def parse_nfse(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     Schema genérico ABRASF; municípios podem ter variações.
     """
     try:
-        root = ET.fromstring(conteudo)
+        root = _safe_fromstring(conteudo)
     except ET.ParseError:
         return None
 
@@ -232,7 +237,7 @@ def parse_nfse(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
 def detectar_e_parsear(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     """Detecta automaticamente o tipo do documento e chama o parser apropriado."""
     try:
-        root = ET.fromstring(conteudo)
+        root = _safe_fromstring(conteudo)
     except ET.ParseError:
         return None
     for elem in root.iter():
