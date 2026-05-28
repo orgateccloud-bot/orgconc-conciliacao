@@ -156,3 +156,22 @@ def current_user(
         "Configure auth antes de promover para producao.", _ENV
     )
     return TokenPayload(sub="anonymous", role="anonymous")
+
+
+def autorizar_cliente(user: TokenPayload, cliente_id: str) -> None:
+    """Verifica se o usuario tem acesso ao cliente solicitado (multi-tenancy).
+
+    Regras:
+    - role "admin" ou "auditor": acesso a qualquer cliente
+    - token com `cliente_id` especifico: so pode acessar esse cliente
+    - role "anonymous" (dev/staging sem auth): permitido
+
+    Levanta HTTPException 403 se nao autorizado.
+    """
+    if user.role in ("admin", "auditor", "anonymous"):
+        return
+    if user.cliente_id and str(user.cliente_id) != str(cliente_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso negado: token nao autorizado para este cliente",
+        )
