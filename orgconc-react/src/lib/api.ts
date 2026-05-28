@@ -309,6 +309,184 @@ export async function criarContrato(data: {
   return apiFetch<Contrato>("/contratos", { method: "POST", body: JSON.stringify(data) });
 }
 
+// ── Fiscal (Auditoria Cruzada NF-e/CT-e × OFX) ────────────────────────────
+
+export interface FiscalProcessarResponse {
+  cliente_id: string;
+  documentos_processados: number;
+  documentos_por_tipo: Record<string, number>;
+  ofx_transacoes: number;
+  cruzamentos: {
+    total: number;
+    por_status: Record<string, number>;
+    volume_por_status: Record<string, number>;
+  } | null;
+  fornecedores_classificados: number;
+}
+
+export interface FiscalFornecedor {
+  cnpj: string;
+  razao_social: string;
+  volume_pago: number;
+  volume_nf: number;
+  conformidade_pct: number;
+  n_pagamentos: number;
+  n_nfes: number;
+  risco_classe: "BAIXO" | "MEDIO" | "ALTO" | "CRITICO";
+  risco_tributario_anual: number;
+  flags: string[];
+  periodo_inicio: string | null;
+  periodo_fim: string | null;
+}
+
+export interface FiscalConformidadeResponse {
+  cliente_id: string;
+  total: number;
+  fornecedores: FiscalFornecedor[];
+}
+
+export interface FiscalGapItem {
+  id: string;
+  status: string;
+  diferenca_valor: number;
+  diferenca_dias: number | null;
+  criado_em: string | null;
+}
+
+export interface FiscalGapResponse {
+  cliente_id: string;
+  total: number;
+  gaps: FiscalGapItem[];
+}
+
+export interface FiscalRiscoResponse {
+  cliente_id: string;
+  risco_total_anual: number;
+  risco_despesa_indedutivel_anual: number;
+  risco_retencoes_anual: number;
+  por_classe_risco: Record<string, number>;
+  por_flag: Record<string, number>;
+  contagem_fornecedores: Record<string, number>;
+  total_fornecedores: number;
+  top_10_fornecedores: Array<{
+    cnpj: string;
+    razao_social: string;
+    risco_anual: number;
+    classe: string;
+    flags: string[];
+  }>;
+  retencoes: {
+    base_pj_anual: number;
+    retencao_pj_anual: number;
+    total_anual: number;
+    aliquotas: Record<string, number>;
+  };
+  regime_pressuposto: string;
+  aliquota_aplicada_pct: number;
+}
+
+export interface FiscalDocumentoItem {
+  id: string;
+  tipo: string;
+  modelo: string;
+  chave: string;
+  numero: string | null;
+  data_emissao: string | null;
+  emit_cnpj: string | null;
+  emit_nome: string | null;
+  valor_total: number;
+}
+
+export interface FiscalDocumentosResponse {
+  cliente_id: string;
+  total: number;
+  documentos: FiscalDocumentoItem[];
+}
+
+export async function fiscalProcessar(
+  clienteId: string,
+  arquivos: File[],
+): Promise<FiscalProcessarResponse> {
+  const fd = new FormData();
+  fd.append("cliente_id", clienteId);
+  arquivos.forEach((f) => fd.append("arquivos", f));
+  return apiFetch<FiscalProcessarResponse>("/fiscal/processar", {
+    method: "POST",
+    body: fd,
+  });
+}
+
+export async function fiscalConformidade(
+  clienteId: string,
+  classeMinima?: string,
+): Promise<FiscalConformidadeResponse> {
+  const q = classeMinima ? `?classe_minima=${classeMinima}` : "";
+  return apiFetch<FiscalConformidadeResponse>(
+    `/fiscal/conformidade/${clienteId}${q}`,
+  );
+}
+
+export async function fiscalGap(
+  clienteId: string,
+): Promise<FiscalGapResponse> {
+  return apiFetch<FiscalGapResponse>(`/fiscal/gap/${clienteId}`);
+}
+
+export async function fiscalRiscoTributario(
+  clienteId: string,
+): Promise<FiscalRiscoResponse> {
+  return apiFetch<FiscalRiscoResponse>(`/fiscal/risco-tributario/${clienteId}`);
+}
+
+export async function fiscalDocumentos(
+  clienteId: string,
+  limit = 100,
+): Promise<FiscalDocumentosResponse> {
+  return apiFetch<FiscalDocumentosResponse>(
+    `/fiscal/documentos/${clienteId}?limit=${limit}`,
+  );
+}
+
+export interface FiscalCartaResponse {
+  cliente_id: string;
+  cliente_nome: string;
+  versao: string;
+  risco_total: number;
+  total_fornecedores: number;
+  payload_hash: string;
+  markdown: string;
+  pdf_base64: string | null;
+}
+
+export interface FiscalCartaItem {
+  id: string;
+  versao: string;
+  risco_total: number;
+  total_fornecedores: number;
+  payload_hash: string;
+  gerado_em: string | null;
+}
+
+export interface FiscalCartasResponse {
+  cliente_id: string;
+  total: number;
+  cartas: FiscalCartaItem[];
+}
+
+export async function fiscalGerarCarta(
+  clienteId: string,
+): Promise<FiscalCartaResponse> {
+  return apiFetch<FiscalCartaResponse>(`/fiscal/gerar-carta/${clienteId}`, {
+    method: "POST",
+  });
+}
+
+export async function fiscalListarCartas(
+  clienteId: string,
+): Promise<FiscalCartasResponse> {
+  return apiFetch<FiscalCartasResponse>(`/fiscal/cartas/${clienteId}`);
+}
+
 // ── Dashboard metrics (PR 1 backend) ──────────────────────────────────────
 
 export interface KpisDelta {

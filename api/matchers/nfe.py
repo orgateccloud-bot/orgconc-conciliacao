@@ -12,6 +12,9 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Optional
 
+# defusedxml contra XXE/billion-laughs em uploads de XML não confiáveis (B314)
+from defusedxml.ElementTree import fromstring as _safe_fromstring
+
 from api.matchers.cascata import Resultado
 
 TOLERANCIA_VALOR = 0.01   # diferença aceita como "mesmo valor" (R$)
@@ -75,7 +78,7 @@ def _achar_infnfe(root):
 def ler_nfe_bytes(conteudo: bytes) -> Optional[NotaFiscal]:
     """Lê um XML de NF-e (bytes) e devolve a NotaFiscal, ou None se não for NF-e."""
     try:
-        root = ET.fromstring(conteudo)
+        root = _safe_fromstring(conteudo)
     except ET.ParseError:
         return None
     inf = _achar_infnfe(root)
