@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import smtplib
 from email.message import EmailMessage
 from typing import Optional
@@ -26,6 +27,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.services.audit import registrar_audit
 
 log = logging.getLogger("orgconc.fiscal.notifications")
+
+# F-06: sanitiza CR/LF para prevenir SMTP header injection
+_HEADER_INJECTION_RX = re.compile(r"[\r\n\t]")
+
+
+def _sanitize_header(s: str) -> str:
+    """Remove CR/LF/TAB para evitar SMTP header injection (RFC 5322)."""
+    if not s:
+        return ""
+    return _HEADER_INJECTION_RX.sub(" ", s)[:200]
 
 
 def _smtp_config() -> dict[str, str]:
@@ -40,16 +51,19 @@ def _smtp_config() -> dict[str, str]:
 
 
 def enviar_email_alerta(assunto: str, corpo: str) -> bool:
-    """Envia email simples via SMTP. Retorna True se enviado."""
+    """Envia email simples via SMTP. Retorna True se enviado.
+
+    F-06: sanitiza headers para prevenir injection.
+    """
     cfg = _smtp_config()
     if not cfg["host"] or not cfg["to"]:
         log.info("SMTP não configurado; pulando envio de email fiscal")
         return False
     try:
         msg = EmailMessage()
-        msg["Subject"] = assunto
-        msg["From"] = cfg["from"]
-        msg["To"] = cfg["to"]
+        msg["Subject"] = _sanitize_header(assunto)
+        msg["From"] = _sanitize_header(cfg["from"])
+        msg["To"] = _sanitize_header(cfg["to"])
         msg.set_content(corpo)
         port = int(cfg["port"])
         if port == 465:
@@ -100,8 +114,8 @@ async def notificar_classe_critica(
         payload=payload,
     )
 
-    # Email assíncrono (não bloqueia a transação principal)
-    assunto = f"[OrgConc Fiscal] Fornecedor CRITICO — {razao_social or cnpj_fornecedor}"
+    # F-15: assunto genérico, sem CNPJ/razão social em metadados SMTP
+    assunto = "[OrgConc Fiscal] Alerta de fornecedor CRITICO"
     corpo = (
         f"Alerta de auditoria fiscal:\n\n"
         f"Cliente: {cliente_id}\n"

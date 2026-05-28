@@ -197,8 +197,12 @@ def parse_nfse(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     chave = numero  # NFS-e não tem chave de 44 dígitos universal
     data = _texto(inf, "DataEmissao")[:10] or _texto(inf, "Competencia")[:10]
 
-    prest = _filho(inf, "PrestadorServico") or _filho(inf, "Prestador")
-    tom = _filho(inf, "TomadorServico") or _filho(inf, "Tomador")
+    prest = _filho(inf, "PrestadorServico")
+    if prest is None:
+        prest = _filho(inf, "Prestador")
+    tom = _filho(inf, "TomadorServico")
+    if tom is None:
+        tom = _filho(inf, "Tomador")
     serv = _filho(inf, "Servico")
     valores = _filho(serv, "Valores") if serv is not None else None
     ident_prest = _filho(prest, "IdentificacaoPrestador") if prest is not None else None

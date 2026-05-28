@@ -9,7 +9,7 @@ import uuid
 from datetime import date, datetime
 from typing import Iterable, Optional
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
@@ -37,7 +37,11 @@ async def salvar_documentos_fiscais(
     cliente_id: uuid.UUID,
     documentos: Iterable[DocumentoFiscalLido],
 ) -> dict[str, uuid.UUID]:
-    """Persiste documentos fiscais (deduplica por chave). Retorna map chave->id."""
+    """Persiste documentos fiscais (deduplica por chave). Retorna map chave->id.
+
+    F-03: usa bulk insert via `insert().values([...]).returning(...)` para reduzir
+    de N roundtrips a 1 quando ha muitos documentos novos.
+    """
     docs = list(documentos)
     if not docs:
         return {}
@@ -53,38 +57,48 @@ async def salvar_documentos_fiscais(
         for chave, row_id in (await db.execute(stmt)).all():
             existentes_map[chave] = row_id
 
-    novos = 0
+    # Monta lista de novos (deduplica chaves repetidas no proprio lote)
+    chaves_no_lote: set[str] = set()
+    novos_dicts: list[dict] = []
     for d in docs:
-        if not d.chave or d.chave in existentes_map:
+        if not d.chave or d.chave in existentes_map or d.chave in chaves_no_lote:
             continue
-        novo = DocumentoFiscal(
-            cliente_id=cliente_id,
-            tipo=d.tipo,
-            modelo=d.modelo or "55",
-            chave=d.chave,
-            numero=d.numero,
-            serie=d.serie,
-            data_emissao=_parse_data(d.data_emissao),
-            emit_cnpj=d.emit_cnpj or None,
-            emit_nome=d.emit_nome,
-            emit_uf=d.emit_uf or None,
-            dest_cnpj=d.dest_cnpj or None,
-            dest_nome=d.dest_nome,
-            valor_total=d.valor_total,
-            valor_icms=d.valor_icms,
-            valor_pis=d.valor_pis,
-            valor_cofins=d.valor_cofins,
-            valor_iss=d.valor_iss,
-            natureza_operacao=d.natureza_operacao,
-        )
-        db.add(novo)
-        existentes_map[d.chave] = novo.id
-        novos += 1
+        chaves_no_lote.add(d.chave)
+        novos_dicts.append({
+            "id": uuid.uuid4(),
+            "cliente_id": cliente_id,
+            "tipo": d.tipo,
+            "modelo": d.modelo or "55",
+            "chave": d.chave,
+            "numero": d.numero,
+            "serie": d.serie,
+            "data_emissao": _parse_data(d.data_emissao),
+            "emit_cnpj": d.emit_cnpj or None,
+            "emit_nome": d.emit_nome,
+            "emit_uf": d.emit_uf or None,
+            "dest_cnpj": d.dest_cnpj or None,
+            "dest_nome": d.dest_nome,
+            "valor_total": d.valor_total,
+            "valor_icms": d.valor_icms,
+            "valor_pis": d.valor_pis,
+            "valor_cofins": d.valor_cofins,
+            "valor_iss": d.valor_iss,
+            "natureza_operacao": d.natureza_operacao,
+        })
 
-    await db.flush()
+    if novos_dicts:
+        # Bulk insert em lotes de 500 (Postgres tem limite de parametros)
+        BATCH = 500
+        for i in range(0, len(novos_dicts), BATCH):
+            chunk = novos_dicts[i:i + BATCH]
+            await db.execute(insert(DocumentoFiscal), chunk)
+        for d in novos_dicts:
+            existentes_map[d["chave"]] = d["id"]
+        await db.flush()
+
     log.info(
         "fiscal.persistence: cliente=%s docs_recebidos=%d novos=%d existentes=%d",
-        cliente_id, len(docs), novos, len(docs) - novos,
+        cliente_id, len(docs), len(novos_dicts), len(docs) - len(novos_dicts),
     )
     return existentes_map
 
@@ -97,26 +111,34 @@ async def salvar_cruzamentos(
 ) -> int:
     """Persiste cruzamentos. Retorna quantidade inserida.
 
+    F-03: bulk insert em lotes de 500 (Postgres parameter limit).
     Observação: transacao_id permanece nulo nesta versão (o OFX é processado
     sem persistência das transações na conciliação fiscal stand-alone).
     """
-    n = 0
+    payload: list[dict] = []
     for r in resultados:
         doc_id = None
         if r.documento is not None:
             doc_id = chave_para_id.get(r.documento.chave)
-        cruz = CruzamentoFiscal(
-            cliente_id=cliente_id,
-            documento_id=doc_id,
-            transacao_id=None,
-            status=r.status,
-            diferenca_valor=r.diferenca_valor,
-            diferenca_dias=r.diferenca_dias,
-        )
-        db.add(cruz)
-        n += 1
+        payload.append({
+            "id": uuid.uuid4(),
+            "cliente_id": cliente_id,
+            "documento_id": doc_id,
+            "transacao_id": None,
+            "status": r.status,
+            "diferenca_valor": r.diferenca_valor,
+            "diferenca_dias": r.diferenca_dias,
+        })
+
+    if not payload:
+        return 0
+
+    BATCH = 500
+    for i in range(0, len(payload), BATCH):
+        chunk = payload[i:i + BATCH]
+        await db.execute(insert(CruzamentoFiscal), chunk)
     await db.flush()
-    return n
+    return len(payload)
 
 
 async def listar_documentos_por_cliente(

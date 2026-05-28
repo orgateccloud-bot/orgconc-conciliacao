@@ -9,6 +9,7 @@ Sprint 1 do Plano de Integração Fiscal. Expõe 4 endpoints:
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import re
@@ -39,7 +40,8 @@ from api.matchers.xml_fiscal import (
     extrair_xmls_zip,
     parse_lote_xmls,
 )
-from api.services.auth import TokenPayload, current_user
+from api.services.auth import TokenPayload, autorizar_cliente, current_user
+from api.services.audit import registrar_audit
 from api.services.carta_constatacao import (
     gerar_carta_automatica,
     renderizar_pdf_async,
@@ -123,6 +125,7 @@ async def processar_fiscal(
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "cliente_id deve ser UUID válido")
+    autorizar_cliente(user, cliente_id)
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
 
@@ -137,8 +140,9 @@ async def processar_fiscal(
 
     ofx_bytes, xmls = _separar_arquivos_fiscal(coletados)
 
-    # Parse documentos fiscais
-    documentos = parse_lote_xmls(xmls)
+    # F-02: parse_lote_xmls é CPU-bound puro (ET.fromstring em N XMLs).
+    # Roda em thread separada para nao bloquear o event loop do FastAPI.
+    documentos = await asyncio.to_thread(parse_lote_xmls, xmls)
     log.info("fiscal.processar: cliente=%s xmls=%d docs_validos=%d", cid, len(xmls), len(documentos))
 
     # Persistência docs
@@ -151,15 +155,19 @@ async def processar_fiscal(
         scores_conformidade = []
         if ofx_bytes:
             try:
-                transacoes = ler_ofx(ofx_bytes)
+                # F-02: ler_ofx tambem CPU-bound
+                transacoes = await asyncio.to_thread(ler_ofx, ofx_bytes)
             except Exception as exc:
                 log.warning("fiscal: falha ao ler OFX: %s", type(exc).__name__)
                 raise HTTPException(400, "Falha ao ler OFX")
-            cruzamentos = cruzar(documentos, transacoes)
+            # F-02: cruzar() faz O(n*m) e e CPU-bound
+            cruzamentos = await asyncio.to_thread(cruzar, documentos, transacoes)
             await salvar_cruzamentos(db, cid, cruzamentos, chave_para_id)
 
-            # Conformidade + risco tributário (Sprint 2)
-            scores_conformidade = calcular_conformidade_fornecedor(documentos, transacoes)
+            # Conformidade + risco tributário (Sprint 2) — agregacao em dict, CPU-bound
+            scores_conformidade = await asyncio.to_thread(
+                calcular_conformidade_fornecedor, documentos, transacoes
+            )
             riscos = {r.cnpj_fornecedor: r for r in estimar_risco_tributario_anual(scores_conformidade)}
             for sc in scores_conformidade:
                 risco_tributario_anual = riscos.get(sc.cnpj_fornecedor)
@@ -183,6 +191,23 @@ async def processar_fiscal(
     tipos = {"NF-e": 0, "CT-e": 0, "NFS-e": 0}
     for d in documentos:
         tipos[d.tipo] = tipos.get(d.tipo, 0) + 1
+
+    # F-04: audit_event para escrita fiscal
+    async with SessionLocal() as db_audit:
+        await registrar_audit(
+            db_audit,
+            action="fiscal.processar",
+            resource_type="cliente",
+            resource_id=cliente_id,
+            payload={
+                "documentos_processados": len(documentos),
+                "documentos_por_tipo": tipos,
+                "ofx_transacoes": len(transacoes),
+                "fornecedores_classificados": len(scores_conformidade),
+            },
+            actor=user,
+        )
+        await db_audit.commit()
 
     return JSONResponse({
         "cliente_id": cliente_id,
@@ -209,6 +234,7 @@ async def conformidade_cliente(
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "cliente_id deve ser UUID válido")
+    autorizar_cliente(user, cliente_id)
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
 
@@ -247,6 +273,7 @@ async def gaps_fiscais(
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "cliente_id deve ser UUID válido")
+    autorizar_cliente(user, cliente_id)
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
 
@@ -285,6 +312,7 @@ async def risco_tributario(
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "cliente_id deve ser UUID válido")
+    autorizar_cliente(user, cliente_id)
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
 
@@ -356,6 +384,7 @@ async def gerar_carta(
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "cliente_id deve ser UUID válido")
+    autorizar_cliente(user, cliente_id)
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
 
@@ -386,6 +415,21 @@ async def gerar_carta(
             markdown=md_text,
         )
         db.add(nova_versao)
+        # F-04: audit trail da geracao
+        await registrar_audit(
+            db,
+            action="fiscal.carta_gerada",
+            resource_type="carta_versao",
+            resource_id=str(nova_versao.id),
+            payload={
+                "cliente_id": cliente_id,
+                "versao": versao,
+                "risco_total": float(resultado["risco_total"] or 0),
+                "total_fornecedores": resultado["total_fornecedores"],
+                "payload_hash": payload_hash,
+            },
+            actor=user,
+        )
         await db.commit()
 
     # PDF (best effort)
@@ -414,6 +458,7 @@ async def listar_cartas(
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "cliente_id deve ser UUID válido")
+    autorizar_cliente(user, cliente_id)
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
 
@@ -454,6 +499,7 @@ async def listar_documentos(
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "cliente_id deve ser UUID válido")
+    autorizar_cliente(user, cliente_id)
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
 
