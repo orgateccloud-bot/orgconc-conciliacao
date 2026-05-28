@@ -3,7 +3,7 @@ import { Logo } from "@/components/Logo";
 import {
   Users, FileText, LayoutDashboard, LineChart, Settings,
   Upload, AlertTriangle, ShieldCheck, Lock, Activity,
-  Network, Receipt, FileSignature,
+  Network, Receipt, FileSignature, ScrollText, FileWarning, Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +25,13 @@ const OPERACAO_ITEMS: SidebarItem[] = [
   { id: "relatorios",  label: "Transações",   icon: Activity },
   { id: "clientes",    label: "Clientes",     icon: Users },
   { id: "anomalias",   label: "Anomalias",    icon: AlertTriangle },
+];
+
+const FISCAL_ITEMS: SidebarItem[] = [
+  { id: "conformidade-fiscal", label: "Conformidade",     icon: ScrollText },
+  { id: "gaps-fiscais",        label: "Gaps Fiscais",     icon: FileWarning },
+  { id: "risco-tributario",    label: "Risco Tributário", icon: Calculator },
+  { id: "cartas-fiscais",      label: "Cartas",           icon: FileText },
 ];
 
 const COMPLIANCE_ITEMS: SidebarItem[] = [
@@ -56,7 +63,11 @@ export function SidebarNavContent({
   }));
 
   function go(id: string) {
-    const routableIds = ["dashboard","conciliacao","upload","matchers","guias","contratos","clientes","relatorios","configuracoes"];
+    const routableIds = [
+      "dashboard","conciliacao","upload","matchers","guias","contratos",
+      "clientes","relatorios","configuracoes",
+      "conformidade-fiscal","gaps-fiscais","risco-tributario","cartas-fiscais",
+    ];
     if (routableIds.includes(id)) navigate(`/${id}`);
     onNavigate?.();
   }
@@ -92,6 +103,19 @@ export function SidebarNavContent({
               icon={<item.icon className="h-4 w-4" />}
               label={item.label}
               badge={item.badge}
+            />
+          ))}
+        </NavGroup>
+
+        {/* FISCAL */}
+        <NavGroup label="Fiscal">
+          {FISCAL_ITEMS.map((item) => (
+            <NavItem
+              key={item.id}
+              active={isActive(item.id, item.label)}
+              onClick={() => go(item.id)}
+              icon={<item.icon className="h-4 w-4" />}
+              label={item.label}
             />
           ))}
         </NavGroup>

@@ -27,6 +27,10 @@ const UploadPage        = lazy(() => import("@/pages/UploadPage").then(m => ({ d
 const MatchersPage      = lazy(() => import("@/pages/MatchersPage").then(m => ({ default: m.MatchersPage })));
 const GuiasPage         = lazy(() => import("@/pages/GuiasPage").then(m => ({ default: m.GuiasPage })));
 const ContratosPage     = lazy(() => import("@/pages/ContratosPage").then(m => ({ default: m.ContratosPage })));
+const ConformidadeFiscalPage = lazy(() => import("@/pages/ConformidadeFiscalPage").then(m => ({ default: m.ConformidadeFiscalPage })));
+const GapsFiscaisPage   = lazy(() => import("@/pages/GapsFiscaisPage").then(m => ({ default: m.GapsFiscaisPage })));
+const RiscoTributarioPage = lazy(() => import("@/pages/RiscoTributarioPage").then(m => ({ default: m.RiscoTributarioPage })));
+const CartasFiscaisPage = lazy(() => import("@/pages/CartasFiscaisPage").then(m => ({ default: m.CartasFiscaisPage })));
 
 const TITULOS: Record<string, string> = {
   dashboard:     "Dashboard",
@@ -38,6 +42,10 @@ const TITULOS: Record<string, string> = {
   clientes:      "Clientes",
   relatorios:    "Histórico de Relatórios",
   configuracoes: "Configurações",
+  "conformidade-fiscal": "Conformidade Fiscal",
+  "gaps-fiscais":         "Gaps Fiscais",
+  "risco-tributario":     "Risco Tributário",
+  "cartas-fiscais":       "Cartas de Constatação",
 };
 
 function ProtectedRoute() {
@@ -127,6 +135,10 @@ export default function App() {
                 <Route path="/matchers" element={<MatchersPage />} />
                 <Route path="/guias" element={<GuiasPage />} />
                 <Route path="/contratos" element={<ContratosPage />} />
+                <Route path="/conformidade-fiscal" element={<ConformidadeFiscalPage />} />
+                <Route path="/gaps-fiscais" element={<GapsFiscaisPage />} />
+                <Route path="/risco-tributario" element={<RiscoTributarioPage />} />
+                <Route path="/cartas-fiscais" element={<CartasFiscaisPage />} />
                 <Route path="/clientes" element={<ClientesPage />} />
                 <Route path="/relatorios" element={<RelatoriosPage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />
