@@ -302,7 +302,7 @@ def test_frontend_tem_card_haiku():
 
 def test_conciliar_csv_exige_auth_quando_token_definido():
     """/conciliar/csv NAO pode ser publico quando AUTH_TOKEN existe."""
-    with patch("api.main.AUTH_TOKEN", "segredo-de-teste"):
+    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", "segredo-de-teste"):
         r = client.post(
             "/conciliar/csv",
             files=[
@@ -337,8 +337,8 @@ def test_persistencia_retorna_error_quando_bd_falha():
     from api.main import _salvar_no_banco
 
     with (
-        patch("api.main.DB_DISPONIVEL", True),
-        patch("api.main.SessionLocal", side_effect=RuntimeError("conexao recusada")),
+        patch("api.services.db_persistence.DB_DISPONIVEL", True),
+        patch("api.services.db_persistence.SessionLocal", side_effect=RuntimeError("conexao recusada")),
     ):
         resultado = asyncio.run(_salvar_no_banco("teste-rid", [], [], "simulacao"))
     assert resultado["status"] == "error"
@@ -529,7 +529,7 @@ def test_frontend_tem_focus_visible():
 def test_limite_agregado_de_upload_retorna_413():
     """Soma dos uploads deve exceder MAX_UPLOAD_TOTAL_BYTES -> 413."""
     # Baixa o limite agregado para 1KB para o teste e envia 3 OFX validos de >400B
-    with patch("api.main.MAX_UPLOAD_TOTAL_BYTES", 1024), patch("api.main.MAX_UPLOAD_TOTAL_MB", 0):
+    with patch("api.routers.conciliacao.MAX_UPLOAD_TOTAL_BYTES", 1024), patch("api.routers.conciliacao.MAX_UPLOAD_TOTAL_MB", 0):
         files = [
             ("arquivos", (f"e{i}.ofx", OFX_SAMPLE.encode("latin-1"), "application/x-ofx"))
             for i in range(3)  # 3x ~700B = ~2KB > 1KB
@@ -904,7 +904,7 @@ def test_render_html_sanitiza_xss_em_relatorio_md():
 
 def test_cors_sem_wildcard():
     """CORS: allow_origins nunca deve ser ['*'] — wildcard fallback removido."""
-    from api.main import CORS_ORIGINS
+    from api.core.config import CORS_ORIGINS
 
     assert "*" not in CORS_ORIGINS, "CORS_ORIGINS contém '*' — todas as origens estariam autorizadas"
 
@@ -919,7 +919,7 @@ def test_auth_hash_bloqueado_em_prod():
     """POST /auth/hash deve retornar 404 quando _IS_PROD=True."""
     from unittest.mock import patch
 
-    with patch("api.main._IS_PROD", True):
+    with patch("api.core.config._IS_PROD", True):
         r = client.post("/auth/hash", json={"senha": "senha123"})
     assert r.status_code == 404, f"/auth/hash acessivel em producao — retornou {r.status_code}"
 
@@ -985,7 +985,7 @@ def test_login_payload_muito_grande_retorna_422():
 
 def test_export_pdf_sem_auth_retorna_401():
     """GET /export/pdf sem token deve retornar 401 quando AUTH_TOKEN está definido."""
-    with patch("api.main.AUTH_TOKEN", "segredo-de-teste"):
+    with patch("api.services.auth._LEGACY_SERVICE_TOKEN", "segredo-de-teste"):
         r = client.get("/export/pdf/report-inexistente")
     assert r.status_code == 401, f"/export/pdf sem token deveria retornar 401, retornou {r.status_code}"
 
@@ -1012,7 +1012,7 @@ def test_carregar_dataset_rid_invalido_retorna_400():
 
 def test_health_em_prod_nao_expoe_config():
     """Em produção, /health não deve expor api_key_configured nem banco_dados."""
-    with patch("api.main._IS_PROD", True):
+    with patch("api.core.config._IS_PROD", True):
         r = client.get("/health")
     assert r.status_code == 200
     body = r.json()
@@ -1044,7 +1044,7 @@ def test_jwt_contem_jti():
 
 def test_root_em_prod_nao_expoe_versao():
     """GET / em produção não deve retornar campo version (fingerprinting)."""
-    with patch("api.main._IS_PROD", True):
+    with patch("api.core.config._IS_PROD", True):
         r = client.get("/")
     assert r.status_code == 200
     body = r.json()
@@ -1112,7 +1112,7 @@ def test_legacy_token_rejeitado_em_prod():
 
 def test_body_gigante_retorna_413():
     """POST com Content-Length > _MAX_BODY_BYTES deve retornar 413."""
-    import api.main as _m
+    import api.core.config as _m
 
     original = _m._MAX_BODY_BYTES
     try:
@@ -1171,9 +1171,9 @@ def test_db_error_em_prod_omite_mensagem():
 
     async def _run():
         with (
-            patch("api.main._IS_PROD", True),
-            patch("api.main.DB_DISPONIVEL", True),
-            patch("api.main.SessionLocal") as mock_session,
+            patch("api.core.config._IS_PROD", True),
+            patch("api.services.db_persistence.DB_DISPONIVEL", True),
+            patch("api.services.db_persistence.SessionLocal") as mock_session,
         ):
             mock_session.return_value.__aenter__ = AsyncMock(side_effect=Exception("table users does not exist"))
             mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -1232,11 +1232,15 @@ def test_sanitize_link_https_mantido():
 
 
 def test_plano_muito_longo_retorna_422():
-    """POST /clientes com plano > 20 chars deve retornar 422."""
+    """POST /clientes com plano > 20 chars deve retornar 422.
+
+    Sem header de auth: em dev o usuario e anonimo, entao a validacao Pydantic
+    do corpo (422) e exercitada. Um token Bearer invalido daria 401 antes da
+    validacao do corpo (auth e dependency, roda antes do parse do body).
+    """
     r = client.post(
         "/clientes",
         json={"nome": "Empresa X", "plano": "a" * 21},
-        headers={"Authorization": "Bearer dummy"},
     )
     assert r.status_code == 422, f"plano de 21 chars deveria retornar 422, got {r.status_code}"
 
@@ -1334,9 +1338,9 @@ def test_criar_cliente_response_inclui_ativo():
     session_mock.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("api.main.DB_DISPONIVEL", True),
-        patch("api.main.SessionLocal", return_value=session_mock),
-        patch("api.main.crud_clientes.criar_cliente", side_effect=fake_criar),
+        patch("api.routers.clientes.DB_DISPONIVEL", True),
+        patch("api.routers.clientes.SessionLocal", return_value=session_mock),
+        patch("api.routers.clientes.crud_clientes.criar_cliente", side_effect=fake_criar),
     ):
         r = client.post(
             "/clientes",
@@ -1412,7 +1416,7 @@ def _patch_db_session():
     session_mock.__aexit__ = AsyncMock(return_value=False)
     return (
         _p.multiple(
-            "api.main",
+            "api.routers.clientes",
             DB_DISPONIVEL=True,
             SessionLocal=MagicMock(return_value=session_mock),
         ),
@@ -1562,7 +1566,7 @@ def test_salvar_no_banco_persiste_conciliacao_e_retorna_ok():
     anomalias = [{"conta": "AG 1234 / CC 5678", "valor": 250.5, "severidade": "atencao", "tipo": "ok"}]
 
     async def _run():
-        with patch("api.main.DB_DISPONIVEL", True), patch("api.main.SessionLocal", return_value=session_mock):
+        with patch("api.services.db_persistence.DB_DISPONIVEL", True), patch("api.services.db_persistence.SessionLocal", return_value=session_mock):
             from api.main import _salvar_no_banco
 
             return await _salvar_no_banco("abc123456789", extratos, anomalias, "test")
@@ -1717,7 +1721,7 @@ def test_conciliar_ofx_modo_llm_single_mockado():
     )
 
     with (
-        patch("api.main._get_client", return_value=fake_client),
+        patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
     ):
         r = client.post(
@@ -1749,7 +1753,7 @@ def test_conciliar_ofx_llm_credito_esgotado_retorna_msg_amigavel():
     fake_client.messages.create.side_effect = err
 
     with (
-        patch("api.main._get_client", return_value=fake_client),
+        patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
     ):
         r = client.post(
@@ -1778,7 +1782,7 @@ def test_conciliar_ofx_llm_rate_limit_retorna_msg_amigavel():
     fake_client.messages.create.side_effect = err
 
     with (
-        patch("api.main._get_client", return_value=fake_client),
+        patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
     ):
         r = client.post(
@@ -1814,8 +1818,8 @@ def test_conciliar_ofx_multi_modelo_mockado():
         return "## Índice de Consenso: 85/100\n\nRelatório consolidado", 0.85
 
     with (
-        patch("api.main._chamar_modelo_async", side_effect=fake_chamar_modelo),
-        patch("api.main._sintetizar_consenso", side_effect=fake_sintetizar),
+        patch("api.routers.conciliacao.chamar_modelo_async", side_effect=fake_chamar_modelo),
+        patch("api.routers.conciliacao.sintetizar_consenso", side_effect=fake_sintetizar),
         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
     ):
         r = client.post(
@@ -1853,7 +1857,7 @@ def test_conciliar_csv_modo_llm_mockado():
     razao_csv = b"data,valor,conta\n2026-01-01,-100.00,Despesa Geral\n"
 
     with (
-        patch("api.main._get_client", return_value=fake_client),
+        patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
     ):
         r = client.post(
@@ -1917,7 +1921,7 @@ def test_chamar_modelo_async_apistatus_retorna_texto_vazio():
     fake_anthropic_class.return_value = fake_instance
 
     async def _run():
-        with patch("api.main.Anthropic", fake_anthropic_class):
+        with patch("api.services.conciliacao_llm.Anthropic", fake_anthropic_class):
             return await _chamar_modelo_async("k", "prompt", "model-x", "Label-X", 1000)
 
     res = asyncio.run(_run())

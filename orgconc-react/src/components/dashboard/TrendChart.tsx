@@ -9,6 +9,7 @@ import {
   YAxis,
 } from "recharts";
 import type { TrendPoint } from "@/lib/api";
+import { RECHARTS_TOOLTIP_STYLE } from "@/lib/recharts";
 import { TrendingUp } from "lucide-react";
 
 interface Props {
@@ -39,14 +40,7 @@ export function TrendChart({ data }: Props) {
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
             <YAxis allowDecimals={false} tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-            <Tooltip
-              contentStyle={{
-                background: "hsl(var(--card))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-            />
+            <Tooltip contentStyle={RECHARTS_TOOLTIP_STYLE} />
             <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
             <Line
               type="monotone"

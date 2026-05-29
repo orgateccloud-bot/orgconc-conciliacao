@@ -58,6 +58,23 @@ if _db_url_configurada() and not _forcar_db_tests() and not _db_acessivel():
     os.environ.pop("DATABASE_URL", None)
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Zera o estado do rate limiter entre testes.
+
+    O limiter usa storage em memoria com chave (cliente, endpoint). Como todos
+    os testes compartilham o cliente 'testclient', sem reset o contador acumula
+    pela sessao inteira e dispara 429 espurio em endpoints como /conciliar/ofx.
+    """
+    from api.core.rate_limit import limiter
+
+    limiter.reset()
+    yield
+
+
 def pytest_configure(config):
     """Troca o engine SQLAlchemy por NullPool assim que o módulo db é importado."""
     _patch_engine_nullpool()

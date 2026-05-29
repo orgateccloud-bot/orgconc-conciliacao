@@ -17,6 +17,7 @@ requests==2.33.0
 
 # observabilidade (opcional — ativado apenas se SENTRY_DSN definido)
 sentry-sdk[fastapi]==2.20.0
+prometheus-client==0.21.1
 
 # banco de dados
 asyncpg==0.31.0

@@ -9,29 +9,8 @@ import { HeroCard } from "@/components/HeroCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Download, CheckCircle2, ChevronDown, ChevronUp, Hash, AlertTriangle, Activity, Upload as UploadIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-const MODO_CX: Record<string, string> = {
-  simulacao_local: "bg-gray-100 text-gray-700 border-gray-200",
-  simulacao:       "bg-gray-100 text-gray-700 border-gray-200",
-  claude_llm:      "bg-blue-100 text-blue-700 border-blue-200",
-  haiku:           "bg-sky-100 text-sky-700 border-sky-200",
-  sonnet:          "bg-blue-100 text-blue-700 border-blue-200",
-  opus:            "bg-purple-100 text-purple-700 border-purple-200",
-  multi_modelo:    "bg-purple-100 text-purple-700 border-purple-200",
-  multi:           "bg-purple-100 text-purple-700 border-purple-200",
-};
-
-const MODO_LABEL_DISPLAY: Record<string, string> = {
-  simulacao_local: "Simulação",
-  simulacao:       "Simulação",
-  claude_llm:      "Claude LLM",
-  haiku:           "Haiku",
-  sonnet:          "Sonnet",
-  opus:            "Opus",
-  multi_modelo:    "Multi-modelo",
-  multi:           "Multi-modelo",
-};
+import { cn, formatBytes } from "@/lib/utils";
+import { MODO_CX, MODO_LABEL } from "@/lib/constants";
 
 const SEVERIDADE_CX: Record<string, string> = {
   crítico:  "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400",
@@ -49,12 +28,6 @@ const EXT_CX: Record<string, string> = {
   xml: "bg-orange-100 text-orange-700",
   csv: "bg-green-100 text-green-700",
 };
-
-function formatBytes(b: number) {
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / 1024 / 1024).toFixed(1)} MB`;
-}
 
 export function ConciliacaoPage() {
   const location = useLocation();
@@ -124,7 +97,7 @@ export function ConciliacaoPage() {
           </div>
 
           {/* MELHORIA 2: KPI cards pós-conciliação */}
-          <KpiCards resultado={resultado} modoLabel={MODO_LABEL_DISPLAY} modoCx={MODO_CX} />
+          <KpiCards resultado={resultado} modoLabel={MODO_LABEL} modoCx={MODO_CX} />
 
           <AnomaliasTable anomalias={resultado.anomalias} />
 

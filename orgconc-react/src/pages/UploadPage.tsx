@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { HeroCard } from "@/components/HeroCard";
 import { toast } from "sonner";
 import { Upload, FileText, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 
 type Modo = "simulacao" | "haiku" | "sonnet" | "opus" | "multi";
 type Formato = "ofx" | "csv";
@@ -29,12 +29,6 @@ const EXT_CX: Record<string, string> = {
   xml: "bg-orange-100 text-orange-700",
   csv: "bg-green-100 text-green-700",
 };
-
-function formatBytes(b: number) {
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / 1024 / 1024).toFixed(1)} MB`;
-}
 
 export function UploadPage() {
   const navigate = useNavigate();

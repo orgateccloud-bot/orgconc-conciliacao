@@ -1,5 +1,6 @@
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { DistribuicaoItem } from "@/lib/api";
+import { RECHARTS_TOOLTIP_STYLE } from "@/lib/recharts";
 import { Sparkles } from "lucide-react";
 
 interface Props {
@@ -63,14 +64,7 @@ export function DistribuicaoChart({ data }: Props) {
                 <Cell key={idx} fill={CORES[idx % CORES.length]} />
               ))}
             </Pie>
-            <Tooltip
-              contentStyle={{
-                background: "hsl(var(--card))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-            />
+            <Tooltip contentStyle={RECHARTS_TOOLTIP_STYLE} />
             <Legend
               verticalAlign="bottom"
               height={32}

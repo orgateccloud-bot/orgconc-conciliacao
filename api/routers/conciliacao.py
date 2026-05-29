@@ -5,10 +5,9 @@ import csv
 import io
 import logging
 import re
-import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from api.core.config import (
@@ -36,6 +35,9 @@ router = APIRouter(tags=["conciliacao"])
 log = logging.getLogger("orgconc.conciliacao")
 
 _SAFE_FILENAME_RE = re.compile(r"[^\w.\-]")
+
+# UUID v1-v5 canonico: cliente_id invalido -> 422 (validacao FastAPI/Query)
+_UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
 # Sinonimos de cabecalho aceitos no parser de CSV estruturado
 _CSV_DATA_KEYS = ("data", "date", "dt", "data_lancamento", "datalancamento")
@@ -191,24 +193,17 @@ def _parse_csv_freeform(text: str, conta_label: str) -> list[dict]:
 async def conciliar_ofx(
     request: Request,
     arquivos: List[UploadFile] = File(...),
-    max_tokens: int = 16000,
+    max_tokens: int = Query(default=16000, ge=100, le=64000),
     simular: bool = False,
     multi_modelo: bool = False,
     modelo: str = "sonnet",
-    cliente_id: Optional[str] = None,
+    cliente_id: Optional[str] = Query(default=None, pattern=_UUID_PATTERN),
     user: TokenPayload = Depends(current_user),
 ):
     if modelo not in _MODELOS_VALIDOS:
         raise HTTPException(400, detail=f"modelo invalido: {modelo}")
-    if not (100 <= max_tokens <= 64_000):
-        raise HTTPException(400, detail="max_tokens deve estar entre 100 e 64000")
     if not (1 <= len(arquivos) <= 50):
         raise HTTPException(400, detail="Envie entre 1 e 50 arquivos")
-    if cliente_id:
-        try:
-            uuid.UUID(cliente_id)
-        except ValueError:
-            raise HTTPException(400, detail="cliente_id invalido")
 
     extratos_parsed = []
     total_lido = 0
@@ -313,7 +308,8 @@ async def conciliar_ofx(
     model_id, model_label = _MODELOS_VALIDOS[modelo]
     res = await chamar_modelo_async(api_key, prompt, model_id, model_label, max_tokens)
     if res.get("erro"):
-        raise HTTPException(502, detail={"anthropic_error": friendly_anthropic_error(res["erro"])})
+        status = res.get("status_code") or 502
+        raise HTTPException(status, detail={"anthropic_error": friendly_anthropic_error(res["erro"])})
     relatorio = res["texto"]
     anomalias = _detectar_anomalias(extratos_parsed)
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
@@ -343,19 +339,14 @@ async def conciliar_csv(
     request: Request,
     extrato: UploadFile = File(...),
     razao: UploadFile = File(...),
-    max_tokens: int = 16000,
+    max_tokens: int = Query(default=16000, ge=1, le=32768),
     simular: bool = False,
     modelo: str = "sonnet",
-    cliente_id: Optional[str] = None,
+    cliente_id: Optional[str] = Query(default=None, pattern=_UUID_PATTERN),
     user: TokenPayload = Depends(current_user),
 ):
     if modelo not in _MODELOS_VALIDOS:
         raise HTTPException(400, detail=f"modelo invalido: {modelo}")
-    if cliente_id:
-        try:
-            uuid.UUID(cliente_id)
-        except ValueError:
-            raise HTTPException(400, detail="cliente_id invalido")
 
     extrato_bytes = await read_limited(extrato, MAX_UPLOAD_BYTES)
     razao_bytes = await read_limited(razao, MAX_UPLOAD_BYTES)
@@ -421,7 +412,8 @@ async def conciliar_csv(
     api_key = get_api_key()
     res = await chamar_modelo_async(api_key, prompt, model_id, model_label, max_tokens)
     if res.get("erro"):
-        raise HTTPException(502, detail={"anthropic_error": friendly_anthropic_error(res["erro"])})
+        status = res.get("status_code") or 502
+        raise HTTPException(status, detail={"anthropic_error": friendly_anthropic_error(res["erro"])})
     relatorio = res["texto"]
     anomalias = []
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)

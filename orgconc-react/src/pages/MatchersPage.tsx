@@ -19,7 +19,7 @@ import {
 import { HeroCard } from "@/components/HeroCard";
 import { toast } from "sonner";
 import { Upload, FileText, X, Network, CheckCircle2, AlertTriangle, Hash } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 
 const DISP_COLOR: Record<string, string> = {
   RESOLVIDO_CADASTRO:    "bg-blue-100 text-blue-700 border-blue-200",
@@ -41,12 +41,6 @@ const EXT_CX: Record<string, string> = {
   xml: "bg-orange-100 text-orange-700",
   zip: "bg-purple-100 text-purple-700",
 };
-
-function formatBytes(b: number) {
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / 1024 / 1024).toFixed(1)} MB`;
-}
 
 function formatBRL(v: number): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

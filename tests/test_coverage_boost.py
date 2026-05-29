@@ -231,27 +231,27 @@ def test_health_com_db_erro():
     assert r.json()["banco_dados"] == "erro"
 
 
-def test_max_tokens_fora_do_limite_retorna_400():
-    """max_tokens=0 deve retornar 400."""
+def test_max_tokens_fora_do_limite_retorna_422():
+    """max_tokens=0 viola Query(ge=...) → 422 do FastAPI."""
     from fastapi.testclient import TestClient
     from api.main import app
     client = TestClient(app)
     OFX = b"OFXHEADER:100\n<OFX></OFX>"
     r = client.post("/conciliar/ofx?max_tokens=0",
                     files=[("arquivos", ("t.ofx", OFX, "application/x-ofx"))])
-    assert r.status_code == 400
-    assert "max_tokens" in r.json()["detail"]
+    assert r.status_code == 422
+    assert "max_tokens" in str(r.json()["detail"])
 
 
-def test_max_tokens_acima_do_limite_retorna_400():
+def test_max_tokens_acima_do_limite_retorna_422():
     from fastapi.testclient import TestClient
     from api.main import app
     client = TestClient(app)
     OFX = b"OFXHEADER:100\n<OFX></OFX>"
     r = client.post("/conciliar/ofx?max_tokens=99999",
                     files=[("arquivos", ("t.ofx", OFX, "application/x-ofx"))])
-    assert r.status_code == 400
-    assert "max_tokens" in r.json()["detail"]
+    assert r.status_code == 422
+    assert "max_tokens" in str(r.json()["detail"])
 
 
 # ── conciliacao.py — validacoes extras ────────────────────────────────────
@@ -272,12 +272,12 @@ DATA:OFXSGML
 </BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"""
 
 
-def test_conciliar_ofx_cliente_id_invalido_retorna_400():
+def test_conciliar_ofx_cliente_id_invalido_retorna_422():
     c = _client()
     r = c.post("/conciliar/ofx?simular=true&cliente_id=nao-e-uuid",
                files=[("arquivos", ("t.ofx", _OFX_MIN, "application/x-ofx"))])
-    assert r.status_code == 400
-    assert "cliente_id" in r.json()["detail"].lower()
+    assert r.status_code == 422
+    assert "cliente_id" in str(r.json()["detail"]).lower()
 
 
 def test_conciliar_ofx_muitos_arquivos_retorna_400():
@@ -316,7 +316,7 @@ def test_conciliar_csv_modelo_invalido_retorna_400():
     assert r.status_code == 400
 
 
-def test_conciliar_csv_cliente_id_invalido_retorna_400():
+def test_conciliar_csv_cliente_id_invalido_retorna_422():
     c = _client()
     csv_data = "data,descricao,valor\n2026-01-01,Receita,100.00"
     r = c.post(
@@ -326,8 +326,8 @@ def test_conciliar_csv_cliente_id_invalido_retorna_400():
             ("razao", ("razao.csv", csv_data, "text/csv")),
         ],
     )
-    assert r.status_code == 400
-    assert "cliente_id" in r.json()["detail"].lower()
+    assert r.status_code == 422
+    assert "cliente_id" in str(r.json()["detail"]).lower()
 
 
 # ── conciliacoes_list.py ─────────────────────────────────────────────────
@@ -388,7 +388,7 @@ def test_auth_hash_em_producao_retorna_404():
     c = _client()
     from api.services.auth import emitir_token
     token = emitir_token(sub="admin@x.com", email="admin@x.com", role="admin")
-    with patch.dict(os.environ, {"ORGCONC_ENV": "production"}):
+    with patch("api.core.config._IS_PROD", True):
         r = c.post("/auth/hash",
                    headers={"Authorization": f"Bearer {token}"},
                    json={"senha": "minha-senha-segura"})

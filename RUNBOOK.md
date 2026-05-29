@@ -30,6 +30,9 @@ Diagnóstico rápido:
 2. Se `init_sentry` falhou no startup: erro de DSN ou rede — remova `SENTRY_DSN` e suba sem.
 3. Se DB unreachable: confira `DATABASE_URL` no painel + status Supabase.
 4. Se Anthropic API key inválida: o app sobe mas requests `/conciliar/*` falham com 502.
+5. Se o app responde mas está lento: `curl https://api.orgconc.com/metrics` e
+   verifique `orgconc_http_requests_in_progress` (concorrência travada) e a
+   distribuição de `orgconc_http_request_duration_seconds`. Ver [MONITORING.md](MONITORING.md) §3.
 
 Rollback (último recurso):
 ```bash
