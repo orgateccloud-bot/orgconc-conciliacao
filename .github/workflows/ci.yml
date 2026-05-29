@@ -191,7 +191,9 @@ jobs:
       - name: Subir backend (uvicorn :8765) e aguardar health
         env:
           ANTHROPIC_API_KEY: sk-ant-test
-          ORGCONC_AUTH_TOKEN: ""
+          # Token nao-vazio: ativa exigencia de auth (acesso anonimo -> 401),
+          # para os specs E2E validarem o redirect de rotas protegidas -> /login.
+          ORGCONC_AUTH_TOKEN: e2e-ci-token
           ORGCONC_CORS_ORIGINS: http://localhost:4173
         run: |
           nohup uvicorn api.main:app --host 127.0.0.1 --port 8765 > /tmp/uvicorn.log 2>&1 &
