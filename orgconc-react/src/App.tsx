@@ -9,7 +9,7 @@ import {
 } from "react-router-dom";
 import { ThemeProvider } from "@/lib/theme";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { listarClientes, listarConciliacoes } from "@/lib/api";
+import { fetchHealth, listarClientes, listarConciliacoes } from "@/lib/api";
 import { LoginPage } from "@/pages/LoginPage";
 import { Sidebar, SidebarNavContent } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
@@ -63,8 +63,7 @@ function DashboardLayout() {
   const [sidebarCounts, setSidebarCounts] = useState({ anomalias: 0, clientes: 0 });
 
   useEffect(() => {
-    fetch("/health")
-      .then((r) => r.json())
+    fetchHealth()
       .then((d) => setDbStatus(d.banco_dados === "ok" ? "online" : "offline"))
       .catch(() => setDbStatus("offline"));
 

@@ -25,6 +25,18 @@ except ValueError:
     _RETRY_BASE_DELAY = 2.0
 
 
+def _get_client(api_key: str) -> Anthropic:
+    """Fabrica do client Anthropic. Indirecao para facilitar mock em testes."""
+    return Anthropic(api_key=api_key)
+
+
+def _status_de_erro(exc: Exception) -> int | None:
+    """Extrai o HTTP status code de um erro da API Anthropic, se houver."""
+    return getattr(exc, "status_code", None) or getattr(
+        getattr(exc, "response", None), "status_code", None
+    )
+
+
 def _is_retriable(exc: Exception) -> bool:
     """Retry só em RateLimitError ou APIStatusError com status 5xx."""
     if isinstance(exc, RateLimitError):
@@ -45,7 +57,7 @@ async def chamar_modelo_async(
     loop = asyncio.get_running_loop()
 
     def _call():
-        c = Anthropic(api_key=api_key)
+        c = _get_client(api_key)
         resp = c.messages.create(
             model=model_id,
             max_tokens=max_tokens,
@@ -86,7 +98,10 @@ async def chamar_modelo_async(
             body = getattr(e, "body", None) or {}
             msg = (body.get("error") or {}).get("message") or str(e)
             log.warning("Erro no modelo %s: %s", model_id, msg)
-            res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": msg}
+            res = {
+                "texto": "", "input_tokens": 0, "output_tokens": 0,
+                "erro": msg, "status_code": _status_de_erro(e),
+            }
             break
 
     if res is None:  # defensivo — não deve ocorrer

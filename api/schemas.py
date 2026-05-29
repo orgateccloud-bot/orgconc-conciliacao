@@ -29,7 +29,7 @@ class ClienteCreate(BaseModel):
     cnpj: Optional[str] = None
     email: Optional[str] = Field(default=None, max_length=254)
     telefone: Optional[str] = Field(default=None, max_length=30)
-    plano: str = "basico"
+    plano: str = Field(default="basico", max_length=20)
 
     def model_post_init(self, __context) -> None:
         if self.cnpj:
@@ -44,7 +44,7 @@ class ClienteUpdate(BaseModel):
     nome: Optional[str] = Field(default=None, max_length=255)
     email: Optional[str] = Field(default=None, max_length=254)
     telefone: Optional[str] = Field(default=None, max_length=30)
-    plano: Optional[str] = None
+    plano: Optional[str] = Field(default=None, max_length=20)
     ativo: Optional[bool] = None
 
     def model_post_init(self, __context) -> None:
@@ -54,4 +54,7 @@ class ClienteUpdate(BaseModel):
 
 class LoginPayload(BaseModel):
     email: str = Field(max_length=254)
-    senha: str = Field(min_length=8, max_length=128)
+    # Sem min_length: validar tamanho no login vazaria info (senha curta -> 422
+    # distinguivel de 401), quebrando a propriedade anti-enumeracao. Complexidade
+    # de senha e' exigida na criacao do hash, nao no login.
+    senha: str = Field(max_length=128)

@@ -7,24 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Moon, Sun, User, Server, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface HealthData {
-  status: string;
-  versao: string;
-  api_key_configured: boolean;
-  banco_dados: string;
-}
+import { fetchHealth, type HealthResponse } from "@/lib/api";
 
 export function ConfiguracoesPage() {
   const { user } = useAuth();
   const { tema, toggle } = useTheme();
-  const [health, setHealth] = useState<HealthData | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmSenha, setConfirmSenha] = useState("");
 
   useEffect(() => {
-    fetch("/health")
-      .then((r) => r.json())
+    fetchHealth()
       .then(setHealth)
       .catch(() => {});
   }, []);

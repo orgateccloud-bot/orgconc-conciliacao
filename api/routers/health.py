@@ -6,6 +6,7 @@ import os
 from fastapi import APIRouter
 from sqlalchemy import text as sql_text
 
+from api.core import config as _config
 from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.templates import LOGO_DATA_URI
 
@@ -15,6 +16,9 @@ log = logging.getLogger("orgconc.health")
 
 @router.get("/")
 def root():
+    # Em producao omite 'version' (fingerprinting) e a lista de endpoints.
+    if _config._IS_PROD:
+        return {"service": "Conciliacao Bancaria API"}
     return {
         "service": "Conciliacao Bancaria API",
         "version": "0.5.0",
@@ -39,6 +43,10 @@ async def health():
         except Exception as exc:  # noqa: BLE001 — healthcheck nao deve crashar
             log.warning("healthcheck DB falhou: %s", type(exc).__name__)
             db_status = "erro"
+    # Em producao retorna apenas o liveness minimo (sem detalhes de infra que
+    # facilitam reconhecimento: presenca de API key, estado do banco).
+    if _config._IS_PROD:
+        return {"status": "ok"}
     return {
         "status": "ok",
         "versao": "0.5.0",

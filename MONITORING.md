@@ -36,7 +36,43 @@ Configure em Alerts → Create Rule:
 | Issue ocorre >10x em 5min | qualquer | Page on-call |
 | Issue ocorre 1x em release nova | `release:v*` | Notify deploy channel |
 
-### 3. Monitoramento de custo LLM (Trilha 3)
+### 3. Métricas Prometheus (`/metrics`)
+
+A API expõe métricas no formato Prometheus em `GET /metrics` (text/plain). O
+endpoint depende de `prometheus-client` (já em `requirements-prod.txt`); se a
+lib estiver ausente, o endpoint responde `503` e a aplicação segue normal.
+
+Séries expostas (prefixo `orgconc_`):
+
+| Métrica | Tipo | Labels | Uso |
+|---|---|---|---|
+| `orgconc_http_requests_total` | Counter | `method`, `path`, `status` | Throughput e taxa de erro por rota |
+| `orgconc_http_request_duration_seconds` | Histogram | `method`, `path` | Latência p50/p95/p99 |
+| `orgconc_http_requests_in_progress` | Gauge | (sem labels) | Concorrência em tempo real (global) |
+
+O label `path` usa o *template* da rota (ex.: `/clientes/{cliente_id}`), não o
+valor concreto, para evitar explosão de cardinalidade por IDs. O próprio
+`/metrics` não é contabilizado.
+
+Scrape config (Prometheus):
+```yaml
+scrape_configs:
+  - job_name: orgconc
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api.orgconc.com:443"]
+    scheme: https
+```
+
+Queries úteis (PromQL):
+```promql
+# Taxa de erro 5xx por rota (5min)
+sum(rate(orgconc_http_requests_total{status=~"5.."}[5m])) by (path)
+# Latência p95 global
+histogram_quantile(0.95, sum(rate(orgconc_http_request_duration_seconds_bucket[5m])) by (le))
+```
+
+### 4. Monitoramento de custo LLM (Trilha 3)
 
 Threshold diário via env:
 ```

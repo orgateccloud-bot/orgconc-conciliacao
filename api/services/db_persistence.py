@@ -5,6 +5,7 @@ import uuid
 from datetime import date
 from typing import Optional
 
+from api.core import config as _config
 from api.core.config import DB_DISPONIVEL, SessionLocal, log, models
 from api.core.llm_metrics import persistir_custo_diario_async
 from api.parsers import _chave_transacao, _classificar, _coletar_chaves_anomalas
@@ -72,4 +73,8 @@ async def salvar_no_banco(
         return {"status": "ok", "transacoes_persistidas": len(txs)}
     except Exception as exc:  # noqa: BLE001 — boundary com DB externo; nao deve crashar a request
         log.exception("Falha ao salvar no banco (conciliacao %s)", report_id)
-        return {"status": "error", "erro": type(exc).__name__, "mensagem": str(exc)[:200]}
+        resultado = {"status": "error", "erro": type(exc).__name__}
+        # Em producao omite a mensagem crua do erro (pode vazar schema/infra).
+        if not _config._IS_PROD:
+            resultado["mensagem"] = str(exc)[:200]
+        return resultado

@@ -32,6 +32,9 @@ except ImportError:
     pass
 
 _IS_PROD_ENV = os.environ.get("ORGCONC_ENV", "").strip().lower() in ("production", "prod")
+# Alias canonico: codigo deve ler config._IS_PROD (live) para que patches em
+# testes (patch("api.core.config._IS_PROD", True)) afetem o comportamento.
+_IS_PROD = _IS_PROD_ENV
 
 _cors_raw = os.environ.get("ORGCONC_CORS_ORIGINS", "").strip()
 if not _cors_raw:
@@ -46,6 +49,9 @@ MAX_UPLOAD_MB = int(os.environ.get("ORGCONC_MAX_UPLOAD_MB", "10"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 MAX_UPLOAD_TOTAL_MB = int(os.environ.get("ORGCONC_MAX_UPLOAD_TOTAL_MB", "50"))
 MAX_UPLOAD_TOTAL_BYTES = MAX_UPLOAD_TOTAL_MB * 1024 * 1024
+# Limite de corpo bruto da request (multipart, JSON). Protege contra payloads
+# gigantes antes do parsing. Lido live pelo middleware de body-limit.
+_MAX_BODY_BYTES = int(os.environ.get("ORGCONC_MAX_BODY_BYTES", str(60 * 1024 * 1024)))
 DATA_DIR = Path(os.environ.get("ORGCONC_DATA_DIR", "./data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 

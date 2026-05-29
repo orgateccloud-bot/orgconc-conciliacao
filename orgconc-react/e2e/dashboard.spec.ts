@@ -46,6 +46,7 @@ test.describe("Dashboard trust — rotas protegidas", () => {
 test.describe("Login — ORGATEC branding visivel", () => {
   test("tela de login mostra branding e badges", async ({ page }) => {
     await page.goto("/app/login");
-    await expect(page.getByRole("heading", { name: /ORGATEC/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Entrar/i })).toBeVisible();
+    await expect(page.getByText(/ORGATEC/i).first()).toBeVisible();
   });
 });

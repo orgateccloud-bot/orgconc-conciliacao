@@ -52,3 +52,6 @@ Thumbs.db
 relatorio_simulacao.md
 sim_anomalias.json
 sim_resposta.json
+
+# Vite — cache de dependências
+.vite/

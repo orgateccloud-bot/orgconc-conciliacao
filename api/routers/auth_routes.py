@@ -4,6 +4,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
+from api.core import config as _config
 from api.core.rate_limit import limiter
 from api.schemas import LoginPayload
 from api.services.audit import gravar_audit_independente
@@ -71,7 +72,7 @@ async def auth_me(user: TokenPayload = Depends(current_user)):
 
 @router.post("/hash", include_in_schema=False)
 async def auth_hash_helper(payload: dict, _user: TokenPayload = Depends(current_user)):
-    if os.environ.get("ORGCONC_ENV", "development").strip().lower() in ("production", "prod"):
+    if _config._IS_PROD:
         raise HTTPException(status_code=404, detail="Indisponivel")
     if _user.role == "anonymous":
         raise HTTPException(status_code=401, detail="Token Bearer obrigatorio para /hash")

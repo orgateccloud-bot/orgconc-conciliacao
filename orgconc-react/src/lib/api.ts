@@ -24,6 +24,19 @@ export async function apiLogout(): Promise<void> {
   }
 }
 
+export interface HealthResponse {
+  status: string;
+  versao?: string;
+  api_key_configured?: boolean;
+  banco_dados: string;
+}
+
+// Endpoint publico: usa fetch simples (sem auth/sem efeito de logout do apiFetch).
+export async function fetchHealth(): Promise<HealthResponse> {
+  const res = await fetch("/health", { credentials: "include" });
+  return res.json();
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -385,24 +398,6 @@ export interface FiscalRiscoResponse {
   aliquota_aplicada_pct: number;
 }
 
-export interface FiscalDocumentoItem {
-  id: string;
-  tipo: string;
-  modelo: string;
-  chave: string;
-  numero: string | null;
-  data_emissao: string | null;
-  emit_cnpj: string | null;
-  emit_nome: string | null;
-  valor_total: number;
-}
-
-export interface FiscalDocumentosResponse {
-  cliente_id: string;
-  total: number;
-  documentos: FiscalDocumentoItem[];
-}
-
 export async function fiscalProcessar(
   clienteId: string,
   arquivos: File[],
@@ -436,15 +431,6 @@ export async function fiscalRiscoTributario(
   clienteId: string,
 ): Promise<FiscalRiscoResponse> {
   return apiFetch<FiscalRiscoResponse>(`/fiscal/risco-tributario/${clienteId}`);
-}
-
-export async function fiscalDocumentos(
-  clienteId: string,
-  limit = 100,
-): Promise<FiscalDocumentosResponse> {
-  return apiFetch<FiscalDocumentosResponse>(
-    `/fiscal/documentos/${clienteId}?limit=${limit}`,
-  );
 }
 
 export interface FiscalCartaResponse {
@@ -531,25 +517,8 @@ export interface DashboardBundle {
   cache_ttl_s: number;
 }
 
-export interface TransacaoRecente {
-  id: string;
-  conciliacao_id: string | null;
-  data_lancamento: string | null;
-  valor: number | null;
-  memo: string | null;
-  categoria: string | null;
-  banco: string | null;
-  tipo: string | null;
-  eh_anomalia: boolean;
-  criado_em: string | null;
-}
-
 export async function fetchDashboardBundle(periodo = 30) {
   return apiFetch<DashboardBundle>(`/metrics/dashboard-bundle?periodo=${periodo}`);
-}
-
-export async function fetchTransacoesRecentes(limit = 10) {
-  return apiFetch<TransacaoRecente[]>(`/transacoes/recentes?limit=${limit}`);
 }
 
 // ── Trust score + audit (PR 4 backend) ────────────────────────────────────
@@ -614,14 +583,6 @@ export async function fetchAuditEvento(eventoId: string) {
 
 // ── PR 5: AI insights, performance modelos, activity feed ────────────────
 
-export interface ModeloPerf {
-  modo: string;
-  qtd: number;
-  latency_ms_avg: number | null;
-  transacoes: number;
-  anomalias: number;
-}
-
 export interface ActivityFeedItem {
   id: string;
   ts: string | null;
@@ -643,10 +604,6 @@ export interface AiInsightsResponse {
   from_cache: boolean;
   gerado_em: string;
   expira_em: string;
-}
-
-export async function fetchPerformanceModelos(periodo = 30) {
-  return apiFetch<ModeloPerf[]>(`/metrics/modelos?periodo=${periodo}`);
 }
 
 export async function fetchActivityFeed(limit = 10) {

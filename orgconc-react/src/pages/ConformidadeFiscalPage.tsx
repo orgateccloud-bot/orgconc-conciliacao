@@ -21,7 +21,7 @@ import {
 import { HeroCard } from "@/components/HeroCard";
 import { toast } from "sonner";
 import { FileText, Upload, ShieldCheck, AlertOctagon, TrendingDown, FileWarning } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 
 const CLASSE_COLOR: Record<string, string> = {
   BAIXO: "bg-green-100 text-green-700 border-green-200",
@@ -36,12 +36,6 @@ function formatBRL(v: number): string {
     currency: "BRL",
     maximumFractionDigits: 2,
   });
-}
-
-function formatBytes(b: number) {
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export function ConformidadeFiscalPage() {

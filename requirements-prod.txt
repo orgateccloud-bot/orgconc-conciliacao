@@ -10,6 +10,7 @@ slowapi==0.1.9
 weasyprint==68.0
 jinja2==3.1.6
 pyjwt[crypto]==2.12.0
+passlib==1.7.4
 bcrypt==4.2.1
 bleach==6.1.0
 defusedxml==0.7.1
@@ -17,6 +18,7 @@ requests==2.33.0
 
 # observabilidade (opcional — ativado apenas se SENTRY_DSN definido)
 sentry-sdk[fastapi]==2.20.0
+prometheus-client==0.21.1
 
 # banco de dados
 asyncpg==0.31.0

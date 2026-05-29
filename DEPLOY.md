@@ -28,6 +28,25 @@ O frontend é publicado automaticamente via GitHub Actions a cada push na branch
 
 ### Deploy no Railway (recomendado)
 
+#### Automático (CI/CD — preferido)
+
+O job `deploy-backend` em `.github/workflows/deploy.yml` faz deploy a cada push
+na `main`, **após** os testes de backend passarem (Python 3.12). Em seguida roda
+um smoke test que aguarda até 5 min pelo `/health` retornar 200 antes de marcar
+o deploy como bem-sucedido.
+
+Configure no GitHub (Settings → Secrets and variables → Actions):
+
+| Tipo | Nome | Valor |
+|---|---|---|
+| Secret | `RAILWAY_TOKEN` | Token do projeto Railway (`railway login` → account token) |
+| Variable | `RAILWAY_SERVICE` | Nome do serviço backend no Railway |
+| Variable | `PROD_HEALTH_URL` | URL pública do `/health` (ex.: `https://api.orgconc.com/health`) |
+
+Sem esses valores o job é pulado; o deploy manual abaixo continua válido.
+
+#### Manual
+
 ```bash
 # 1. Instalar Railway CLI
 npm install -g @railway/cli
