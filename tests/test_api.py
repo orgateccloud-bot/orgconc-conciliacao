@@ -1316,36 +1316,41 @@ def test_criar_cliente_response_inclui_ativo():
     quebrando o endpoint com ResponseValidationError quando DATABASE_URL real
     estava configurado.
     """
-    from unittest.mock import AsyncMock, patch, MagicMock
     from datetime import datetime, timezone
+    from unittest.mock import patch
     import uuid as _uuid
 
-    fake_cliente = MagicMock()
-    fake_cliente.id = _uuid.uuid4()
-    fake_cliente.nome = "Empresa Teste"
-    fake_cliente.cnpj = "11444777000161"
-    fake_cliente.email = "teste@example.com"
-    fake_cliente.telefone = None
-    fake_cliente.plano = "basico"
-    fake_cliente.ativo = True
-    fake_cliente.criado_em = datetime.now(timezone.utc)
+    # Arquitetura limpa: o router instancia CriarClienteUseCase (router -> usecase
+    # -> repo). Mockamos a CLASSE do use case no modulo do router, preservando a
+    # intencao do teste: a resposta deve conter 'ativo'.
+    from api.usecases.criar_cliente import CriarClienteOutput
+    from api.domain.entities import Cliente as _ClienteEntity
 
-    async def fake_criar(*args, **kwargs):
-        return fake_cliente
+    entidade = _ClienteEntity(
+        id=_uuid.uuid4(),
+        nome="Empresa Teste",
+        cnpj="11444777000161",
+        email="teste@example.com",
+        telefone=None,
+        plano="basico",
+        ativo=True,
+        criado_em=datetime.now(timezone.utc),
+    )
 
-    session_mock = MagicMock()
-    session_mock.__aenter__ = AsyncMock(return_value=session_mock)
-    session_mock.__aexit__ = AsyncMock(return_value=False)
+    class _FakeCriarUC:
+        def __init__(self, *args, **kwargs):
+            pass
 
-    with (
-        patch("api.routers.clientes.DB_DISPONIVEL", True),
-        patch("api.routers.clientes.SessionLocal", return_value=session_mock),
-        patch("api.routers.clientes.crud_clientes.criar_cliente", side_effect=fake_criar),
-    ):
+        async def execute(self, _input):
+            return CriarClienteOutput(cliente=entidade)
+
+    ctx, _ = _patch_db_session()
+    with ctx, patch("api.routers.clientes.CriarClienteUseCase", _FakeCriarUC):
         r = client.post(
             "/clientes",
             json={"nome": "Empresa Teste", "cnpj": "11.444.777/0001-61", "plano": "basico"},
         )
+
     assert r.status_code == 201, f"POST /clientes falhou: {r.status_code} — {r.text}"
     body = r.json()
     # Todos os campos required de ClienteResponse devem estar presentes
@@ -1428,14 +1433,18 @@ def test_listar_clientes_com_db_mockado():
     """GET /clientes com DB mockado: retorna lista válida + response_model OK."""
     from unittest.mock import patch
 
-    async def fake_listar(*args, **kwargs):
-        return [
-            _fake_cliente_mock(nome="Cliente A"),
-            _fake_cliente_mock(nome="Cliente B"),
-        ]
+    class _FakeListarUC:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def execute(self, _input):
+            return [
+                _fake_cliente_mock(nome="Cliente A"),
+                _fake_cliente_mock(nome="Cliente B"),
+            ]
 
     ctx, _ = _patch_db_session()
-    with ctx, patch("api.main.crud_clientes.listar_clientes", side_effect=fake_listar):
+    with ctx, patch("api.routers.clientes.ListarClientesUseCase", _FakeListarUC):
         r = client.get("/clientes")
 
     assert r.status_code == 200, r.text
@@ -1525,11 +1534,15 @@ def test_criar_cliente_cnpj_duplicado_retorna_409():
     from unittest.mock import patch
     from sqlalchemy.exc import IntegrityError
 
-    async def fake_criar_dup(*args, **kwargs):
-        raise IntegrityError("INSERT INTO clientes", {}, Exception("UNIQUE violation"))
+    class _FakeCriarUCDup:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def execute(self, _input):
+            raise IntegrityError("INSERT INTO clientes", {}, Exception("UNIQUE violation"))
 
     ctx, _ = _patch_db_session()
-    with ctx, patch("api.main.crud_clientes.criar_cliente", side_effect=fake_criar_dup):
+    with ctx, patch("api.routers.clientes.CriarClienteUseCase", _FakeCriarUCDup):
         r = client.post(
             "/clientes",
             json={"nome": "Empresa Duplicada", "cnpj": "11444777000161", "plano": "basico"},

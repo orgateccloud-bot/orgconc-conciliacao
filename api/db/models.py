@@ -285,3 +285,26 @@ class ConformidadeFornecedor(Base):
     risco_tributario_anual:   Mapped[float]      = mapped_column(Numeric(15, 2), default=0)
     flags:                    Mapped[str | None] = mapped_column(Text)  # CSV: REDE_FROTA_TYPE,MEI_SEM_CTE,...
     atualizado_em:            Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Reconciliacao clean-arch — modelos da camada infra trazidos do branch
+# feat/clean-arch-wip. Aditivos (tabelas novas, sem colisao). Necessarios para
+# a camada api/infra/repositories importar. Migration correspondente fica
+# pendente ate o uso em runtime (refresh tokens ainda nao plugados no main).
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class RefreshToken(Base):
+    """Refresh tokens opacos (nunca JWT). Apenas hash sha256 e armazenado."""
+    __tablename__ = "refresh_tokens"
+
+    id:              Mapped[uuid.UUID]       = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    sub:             Mapped[str]             = mapped_column(Text, nullable=False, index=True)
+    token_hash:      Mapped[str]             = mapped_column(String(64), unique=True, nullable=False)
+    emitido_em:      Mapped[datetime]        = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
+    expira_em:       Mapped[datetime]        = mapped_column(TIMESTAMPTZ, nullable=False)
+    revogado_em:     Mapped[datetime | None] = mapped_column(TIMESTAMPTZ)
+    substituido_por: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("refresh_tokens.id"))
+    ip:              Mapped[str | None]      = mapped_column(Text)
+    user_agent:      Mapped[str | None]      = mapped_column(Text)
