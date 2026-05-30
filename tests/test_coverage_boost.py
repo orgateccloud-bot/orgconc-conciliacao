@@ -501,10 +501,16 @@ def test_conciliacoes_listar_com_mock_db():
     mock_db.__aenter__ = AsyncMock(return_value=mock_db)
     mock_db.__aexit__ = AsyncMock(return_value=False)
 
+    class _FakeListarConcUC:
+        def __init__(self, *a, **k):
+            pass
+
+        async def execute(self, _input):
+            return []
+
     with patch("api.routers.conciliacoes_list.DB_DISPONIVEL", True), \
          patch("api.routers.conciliacoes_list.SessionLocal", return_value=mock_db), \
-         patch("api.routers.conciliacoes_list.crud_conc.listar_conciliacoes",
-               return_value=[]):
+         patch("api.routers.conciliacoes_list.ListarConciliacoesUseCase", _FakeListarConcUC):
         r = c.get("/conciliacoes")
     assert r.status_code == 200
     assert r.json() == []
