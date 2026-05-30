@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+from api.parsers.markdown import _parse_md
 from api.parsers.ofx import _parse_ofx
 from api.parsers.pdf import _parse_pdf
 from api.parsers.xml_parser import _parse_xml
@@ -18,7 +19,9 @@ def _parse_arquivo(content: bytes, filename: str) -> list[dict]:
         return _parse_pdf(content, filename)
     if ext == ".xml":
         return _parse_xml(content.decode("utf-8", errors="ignore"), filename)
+    if ext in (".md", ".markdown", ".txt"):
+        return _parse_md(content.decode("utf-8", errors="ignore"), filename)
     raise HTTPException(
         status_code=400,
-        detail=f"Extensao nao suportada: {ext}. Use .ofx, .pdf ou .xml",
+        detail=f"Extensao nao suportada: {ext}. Use .ofx, .pdf, .xml, .md ou .txt",
     )

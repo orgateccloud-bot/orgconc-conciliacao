@@ -29,6 +29,7 @@ from api.services.db_persistence import salvar_no_banco
 from api.services.render import render_html
 from api.services.storage import read_limited, salvar_dataset
 from api.services.relatorio_local import _conciliacao_local
+from api.services.vision_pdf import extrair_via_vision
 
 router = APIRouter(tags=["conciliacao"])
 log = logging.getLogger("orgconc.conciliacao")
@@ -45,6 +46,7 @@ async def conciliar_ofx(
     simular: bool = False,
     multi_modelo: bool = False,
     modelo: str = "sonnet",
+    vision: bool = False,
     cliente_id: Optional[str] = None,
     user: TokenPayload = Depends(current_user),
 ):
@@ -74,9 +76,21 @@ async def conciliar_ofx(
             raise
         except Exception:
             log.exception("Falha parseando %s", safe_name)
-            raise HTTPException(400, detail=f"Falha ao parsear arquivo")
+            raise HTTPException(400, detail="Falha ao parsear arquivo")
+
+        # Fallback Vision para PDFs sem transacoes (e somente quando solicitado)
+        if not txs and vision and (up.filename or "").lower().endswith(".pdf"):
+            log.info("Vision solicitado para %s (parser regex/OCR nao extraiu)", safe_name)
+            try:
+                txs = await asyncio.get_event_loop().run_in_executor(
+                    None, extrair_via_vision, content, safe_name, None,
+                )
+            except Exception:
+                log.exception("Vision falhou para %s", safe_name)
+
         if not txs:
-            raise HTTPException(400, detail=f"Nao foi possivel extrair transacoes de {safe_name}")
+            extras = " Habilite ?vision=true para tentar via Claude Vision API." if (up.filename or "").lower().endswith(".pdf") else ""
+            raise HTTPException(400, detail=f"Nao foi possivel extrair transacoes de {safe_name}.{extras}")
         extratos_parsed.append({
             "arquivo": safe_name,
             "conta": txs[0]["conta"],

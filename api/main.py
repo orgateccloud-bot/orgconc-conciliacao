@@ -28,15 +28,20 @@ from api.core.config import (
     REACT_DIST,
     ROOT_DIR,
     STATIC_DIR,
+    VERSION,
     _LOG_JSON,
     _LOG_LEVEL,
     _MODELOS_VALIDOS,
     engine,
     log,
 )
+from api.core.exception_handlers import registrar_handlers
 from api.core.rate_limit import limiter
 from api.core.templates import LOGO_DATA_URI
-from api.routers import auth_routes, clientes, conciliacao, conciliacoes_list, exports, health, serpro
+from api.middleware import AuditMiddleware
+from api.observability import PrometheusMiddleware, metrics_response
+from api.observability.sentry import init_sentry
+from api.routers import auth_routes, clientes, conciliacao, conciliacoes_list, exports, health, jobs, serpro
 from api.services.logging_estruturado import RequestIdMiddleware, configurar_logging
 
 # Re-export para testes e retrocompat
@@ -58,6 +63,7 @@ from api.services.storage import (  # noqa: F401
 )
 
 configurar_logging(nivel=_LOG_LEVEL, json_mode=_LOG_JSON)
+init_sentry()
 
 _IS_HTTPS = os.environ.get("ORGCONC_ENV", "").strip().lower() in ("production", "prod") or \
             os.environ.get("ORGCONC_HTTPS_ENABLED", "").strip().lower() in ("1", "true", "yes")
@@ -93,6 +99,16 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "0"
         if _IS_HTTPS:
             response.headers["Strict-Transport-Security"] = _HSTS
+
+        # ── CDN-friendly cache headers (item 24) ─────────────────────────
+        # Vite emite assets com hash no nome (chunk-abc123.js) — sao imutaveis.
+        # /app/index.html NUNCA cacheado (precisa atualizar quando rebuildar).
+        path = request.url.path
+        if path.startswith("/app/assets/") or path.startswith("/ui/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path == "/app/" or path == "/app/index.html" or path == "/ui/" or path == "/ui/index.html":
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+
         return response
 
 
@@ -112,11 +128,13 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(
     title="ORGATEC · Conciliacao Bancaria API",
     description="Cruza extratos OFX/PDF/XML. Gera HTML/XLSX/PDF.",
-    version="0.5.0",
+    version=VERSION,
     lifespan=_lifespan,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Handlers RFC 7807 (Problem Details) — apos rate_limit (registro especifico vence default)
+registrar_handlers(app)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -126,14 +144,36 @@ app.add_middleware(
     expose_headers=["X-Request-ID"],
 )
 app.add_middleware(_SecurityHeadersMiddleware)
+app.add_middleware(AuditMiddleware)
+app.add_middleware(PrometheusMiddleware)
 
+
+@app.get("/metrics", include_in_schema=False)
+def metrics_endpoint():
+    """Endpoint Prometheus — formato exposition. Sem auth (dentro do cluster)."""
+    return metrics_response()
+
+# ── Routers de plataforma (sem versionamento) ───────────────────────────────
+# /health, /auth/* sao endpoints de plataforma — nao versionados.
 app.include_router(health.router)
 app.include_router(auth_routes.router)
-app.include_router(clientes.router)
-app.include_router(serpro.router)
-app.include_router(conciliacao.router)
-app.include_router(exports.router)
-app.include_router(conciliacoes_list.router)
+
+# ── Routers de negocio (versionados em /v1/) ────────────────────────────────
+app.include_router(clientes.router, prefix="/v1")
+app.include_router(serpro.router, prefix="/v1")
+app.include_router(conciliacao.router, prefix="/v1")
+app.include_router(exports.router, prefix="/v1")
+app.include_router(conciliacoes_list.router, prefix="/v1")
+app.include_router(jobs.router, prefix="/v1")
+
+# Compat: rotas antigas (sem /v1) seguem servindo por 1 release.
+# Inclusao DUPLICADA com mesmo objeto router — FastAPI aceita isso.
+# Sera removido depois de migrar todos os clientes (FE + scripts).
+app.include_router(clientes.router, include_in_schema=False)
+app.include_router(serpro.router, include_in_schema=False)
+app.include_router(conciliacao.router, include_in_schema=False)
+app.include_router(exports.router, include_in_schema=False)
+app.include_router(conciliacoes_list.router, include_in_schema=False)
 
 # UI legada (periodo de transicao)
 if STATIC_DIR.exists():

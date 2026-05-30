@@ -1,55 +1,26 @@
-"""Geracao de planilha XLSX com 3 abas (Resumo, Transacoes, Anomalias)."""
+"""Geracao de planilha XLSX com 3 abas (Resumo, Transacoes, Anomalias).
+
+NOTE (item 28 do roadmap, em andamento): Modularizacao incremental.
+- `_xlsx_estilos`  -> movido para `api/infra/excel/styles.py` (re-exportado abaixo).
+- (futuro) abas    -> a quebrar em `api/infra/excel/aba_*.py`.
+
+Por ora, este arquivo continua sendo o ponto de entrada via `_gerar_xlsx`.
+"""
 from __future__ import annotations
 
 import io
 from datetime import datetime
-from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+# Re-exporta para nao quebrar imports existentes (`from api.services.excel import _xlsx_estilos`)
+from api.infra.excel.styles import LOGO_PATH as _LOGO_PATH  # noqa: F401
+from api.infra.excel.styles import estilos_xlsx as _xlsx_estilos  # noqa: F401
+
 from api.parsers import _top_categorias_e_contrapartes
-
-_LOGO_PATH = Path(__file__).resolve().parent.parent.parent / "static" / "logo.png"
-
-
-def _xlsx_estilos() -> dict:
-    """Paleta de cores, fontes e bordas compartilhados entre as abas XLSX."""
-    BLUE_DARK = "0A3A7A"; BLUE = "1E6FD9"; WHITE = "FFFFFF"
-    GRAY_BORDER = "E2E8F0"; GRAY_LIGHT = "F7FAFC"; GRAY_HOVER = "EFF6FF"
-    RED = "DC2626"; RED_BG = "FEE2E2"
-    ORANGE = "EA580C"; ORANGE_BG = "FFEDD5"
-    YELLOW = "CA8A04"; YELLOW_BG = "FEF9C3"
-    GREEN = "16A34A"
-    side_thin = Side(border_style="thin", color=GRAY_BORDER)
-    return dict(
-        BLUE_DARK=BLUE_DARK, BLUE=BLUE, WHITE=WHITE,
-        RED=RED, ORANGE=ORANGE, YELLOW=YELLOW, GREEN=GREEN,
-        fill_blue_dark=PatternFill("solid", fgColor=BLUE_DARK),
-        fill_blue=PatternFill("solid", fgColor=BLUE),
-        fill_zebra=PatternFill("solid", fgColor=GRAY_LIGHT),
-        fill_kpi_blue=PatternFill("solid", fgColor=GRAY_HOVER),
-        fill_critico=PatternFill("solid", fgColor=RED_BG),
-        fill_alerta=PatternFill("solid", fgColor=ORANGE_BG),
-        fill_atencao=PatternFill("solid", fgColor=YELLOW_BG),
-        font_h_white=Font(bold=True, color=WHITE, size=11, name="Calibri"),
-        font_brand=Font(bold=True, size=24, color=BLUE_DARK, name="Calibri"),
-        font_brand_sub=Font(color=BLUE, size=10, italic=True, name="Calibri"),
-        font_section=Font(bold=True, size=13, color=BLUE_DARK, name="Calibri"),
-        font_kpi_lbl=Font(bold=True, size=9, color="64748B", name="Calibri"),
-        font_kpi_val_red=Font(bold=True, size=22, color=RED, name="Calibri"),
-        font_kpi_val_orange=Font(bold=True, size=22, color=ORANGE, name="Calibri"),
-        font_kpi_val_yellow=Font(bold=True, size=22, color=YELLOW, name="Calibri"),
-        font_kpi_val_blue=Font(bold=True, size=22, color=BLUE_DARK, name="Calibri"),
-        side_thin=side_thin,
-        border_all=Border(left=side_thin, right=side_thin, top=side_thin, bottom=side_thin),
-        border_kpi=Border(left=side_thin, right=side_thin,
-                          top=Side(border_style="medium", color=BLUE), bottom=side_thin),
-        FMT_BRL='R$ #,##0.00;[Red]-R$ #,##0.00',
-        FMT_BRL_POS='R$ #,##0.00',
-    )
 
 
 def _xlsx_aba_resumo(ws, extratos: list[dict], anomalias: list[dict], e: dict) -> None:

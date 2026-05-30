@@ -10,6 +10,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { APP_VERSION } from "@/lib/version";
 
 type Secao = "dashboard" | "conciliacao" | "clientes" | "relatorios" | "configuracoes";
 
@@ -100,7 +101,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <div className="border-t px-4 py-3">
         <div className="inline-flex items-center rounded-md border bg-secondary px-2 py-1 text-[11px] font-mono font-semibold text-muted-foreground">
-          v0.5.0
+          v{APP_VERSION}
         </div>
       </div>
     </>
@@ -143,9 +144,9 @@ function NavItem({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "w-full flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
+        "relative w-full flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
         active
-          ? "bg-primary/10 text-primary font-semibold shadow-[inset_2px_0_0_hsl(var(--primary))]"
+          ? "bg-trust-blue-10/40 text-trust-blue font-semibold trust-active-rail dark:bg-trust-blue/15"
           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
       )}
     >

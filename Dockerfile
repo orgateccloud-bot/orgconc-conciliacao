@@ -1,39 +1,58 @@
-# Orgconc — Backend FastAPI
-FROM python:3.11-slim
+# Orgconc — Backend FastAPI + React SPA servida em /app/
+# Build em duas etapas: 1) compila o React, 2) prepara o Python e copia os assets.
 
+# ── Stage 1: build do frontend ─────────────────────────────────────────────
+FROM node:22-alpine AS frontend-builder
+WORKDIR /build/orgconc-react
+COPY orgconc-react/package.json orgconc-react/package-lock.json ./
+RUN npm ci
+COPY orgconc-react/ ./
+# A versao e injetada no bundle via vite.config.ts (le package.json)
+RUN npm run build
+
+# ── Stage 2: runtime Python ────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
 WORKDIR /app
 
-# Instalar dependencias do sistema
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
-    curl \
+# Dependencias do sistema (incluindo weasyprint, que precisa de libs nativas)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        libcairo2 \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libgdk-pixbuf-2.0-0 \
+        shared-mime-info \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements
-COPY api/requirements.txt ./requirements.txt
-
-# Instalar dependencias Python
+# Requirements primeiro para aproveitar cache do Docker
+COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar codigo da API
+# Codigo + arquivos versionados
 COPY api/ ./api/
+COPY VERSION ./VERSION
 COPY .env.example ./.env.example
 
-# Variavel de ambiente padrao
-ENV PORT=8000
-ENV HOST=0.0.0.0
-ENV WORKERS=2
-ENV ORGCONC_LOG_LEVEL=INFO
-ENV ORGCONC_MAX_UPLOAD_MB=50
-ENV ORGCONC_MAX_UPLOAD_TOTAL_MB=500
+# Assets estaticos: UI legada + bundle React do stage 1
+COPY static/ ./static/
+COPY --from=frontend-builder /build/orgconc-react/dist ./orgconc-react/dist
 
-# Expor porta
+# Defaults; override via env do PaaS
+ENV PORT=8000 \
+    HOST=0.0.0.0 \
+    WORKERS=2 \
+    ORGCONC_LOG_LEVEL=INFO \
+    ORGCONC_LOG_JSON=true \
+    ORGCONC_MAX_UPLOAD_MB=10 \
+    ORGCONC_MAX_UPLOAD_TOTAL_MB=50
+
 EXPOSE 8000
 
-# Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
+  CMD curl -fsS http://localhost:${PORT}/health/live || exit 1
 
-# Comando de inicializacao
-CMD uvicorn api.main:app --host 0.0.0.0 --port ${PORT} --workers ${WORKERS}
+# Em prod o numero de workers ja vem da env do PaaS; uvicorn nao aceita ${VAR}
+# diretamente no exec-form, entao usamos shell-form.
+CMD uvicorn api.main:app --host ${HOST} --port ${PORT} --workers ${WORKERS}

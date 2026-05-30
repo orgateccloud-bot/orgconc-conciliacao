@@ -24,6 +24,45 @@ export async function apiLogout(): Promise<void> {
   }
 }
 
+/**
+ * Tenta renovar o access token via cookie refresh (httpOnly).
+ * Retorna o novo access token, ou null se falhou (precisa relogar).
+ */
+export async function apiRefresh(): Promise<string | null> {
+  try {
+    const res = await fetch("/auth/refresh", {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const data: LoginResponse = await res.json();
+    if (data.access_token) {
+      setToken(data.access_token);
+      return data.access_token;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decode rapido (sem validar assinatura) para ler o `exp` do JWT.
+ * Retorna timestamp em ms ou null.
+ */
+export function jwtExpMs(token: string | null): number | null {
+  if (!token) return null;
+  try {
+    const payload = token.split(".")[1];
+    const json = JSON.parse(
+      atob(payload.replace(/-/g, "+").replace(/_/g, "/")),
+    );
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -37,6 +76,7 @@ export class ApiError extends Error {
 export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
+  _opts: { retryOn401?: boolean } = { retryOn401: true },
 ): Promise<T> {
   const headers = new Headers(init.headers);
   const token = getToken();
@@ -45,7 +85,17 @@ export async function apiFetch<T>(
     headers.set("Content-Type", "application/json");
   }
   const res = await fetch(path, { ...init, headers, credentials: "include" });
+
   if (res.status === 401) {
+    // Tenta refresh uma unica vez antes de desistir e mandar para login.
+    // _opts.retryOn401 evita loop infinito quando o proprio /auth/refresh
+    // chama esse fetch indiretamente.
+    if (_opts.retryOn401 && path !== "/auth/refresh") {
+      const novo = await apiRefresh();
+      if (novo) {
+        return apiFetch<T>(path, init, { retryOn401: false });
+      }
+    }
     setToken(null);
     window.dispatchEvent(new Event("orgconc:logout"));
     throw new ApiError("Sessão expirada", 401);
@@ -114,7 +164,7 @@ export async function fetchMe() {
 
 export async function conciliarOfx(
   files: File[],
-  opts: { simular?: boolean; multi_modelo?: boolean; modelo?: string },
+  opts: { simular?: boolean; multi_modelo?: boolean; modelo?: string; vision?: boolean },
 ) {
   const fd = new FormData();
   files.forEach((f) => fd.append("arquivos", f));
@@ -122,8 +172,9 @@ export async function conciliarOfx(
   if (opts.simular) params.set("simular", "true");
   else if (opts.multi_modelo) params.set("multi_modelo", "true");
   else if (opts.modelo) params.set("modelo", opts.modelo);
+  if (opts.vision) params.set("vision", "true");
   const q = params.toString() ? `?${params}` : "";
-  return apiFetch<ConciliacaoResponse>(`/conciliar/ofx${q}`, { method: "POST", body: fd });
+  return apiFetch<ConciliacaoResponse>(`/v1/conciliar/ofx${q}`, { method: "POST", body: fd });
 }
 
 export interface Cliente {
@@ -137,16 +188,16 @@ export interface Cliente {
 }
 
 export async function listarClientes() {
-  return apiFetch<Cliente[]>("/clientes");
+  return apiFetch<Cliente[]>("/v1/clientes");
 }
 
 export async function criarCliente(data: Partial<Cliente>) {
-  return apiFetch<Cliente>("/clientes", { method: "POST", body: JSON.stringify(data) });
+  return apiFetch<Cliente>("/v1/clientes", { method: "POST", body: JSON.stringify(data) });
 }
 
 export async function consultarCnpjSerpro(cnpj: string) {
   return apiFetch<{ tipo: string; documento_mascarado: string; dados: Record<string, unknown> }>(
-    "/serpro/cnpj",
+    "/v1/serpro/cnpj",
     { method: "POST", body: JSON.stringify({ cnpj }) },
   );
 }
@@ -164,7 +215,7 @@ export async function listarConciliacoes(clienteId?: string) {
   const params = new URLSearchParams();
   if (clienteId) params.set("cliente_id", clienteId);
   const q = params.toString() ? `?${params}` : "";
-  return apiFetch<ConciliacaoMeta[]>(`/conciliacoes${q}`);
+  return apiFetch<ConciliacaoMeta[]>(`/v1/conciliacoes${q}`);
 }
 
 const HIST_KEY = "orgconc.historico.v1";
@@ -196,7 +247,7 @@ export function carregarHistoricoLocal() {
 }
 
 export async function atualizarCliente(id: string, data: Partial<Cliente>) {
-  return apiFetch<Cliente>(`/clientes/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+  return apiFetch<Cliente>(`/v1/clientes/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
 export async function conciliarCsv(
@@ -210,16 +261,16 @@ export async function conciliarCsv(
   else if (opts.multi_modelo) params.set("multi_modelo", "true");
   else if (opts.modelo) params.set("modelo", opts.modelo);
   const q = params.toString() ? `?${params}` : "";
-  return apiFetch<ConciliacaoResponse>(`/conciliar/csv${q}`, { method: "POST", body: fd });
+  return apiFetch<ConciliacaoResponse>(`/v1/conciliar/csv${q}`, { method: "POST", body: fd });
 }
 
 export async function listarConciliacoesDoCliente(clienteId: string) {
-  return apiFetch<ConciliacaoMeta[]>(`/conciliacoes/por-cliente/${clienteId}`);
+  return apiFetch<ConciliacaoMeta[]>(`/v1/conciliacoes/por-cliente/${clienteId}`);
 }
 
 export async function consultarCpfSerpro(cpf: string) {
   return apiFetch<{ tipo: string; documento_mascarado: string; dados: Record<string, unknown> }>(
-    "/serpro/cpf",
+    "/v1/serpro/cpf",
     { method: "POST", body: JSON.stringify({ cpf }) },
   );
 }

@@ -7,8 +7,11 @@ import {
   Outlet,
   useLocation,
 } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ThemeProvider } from "@/lib/theme";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { queryClient } from "@/lib/query-client";
 import { LoginPage } from "@/pages/LoginPage";
 import { Sidebar, SidebarNavContent } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
@@ -101,26 +104,29 @@ function DashboardLayout() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <BrowserRouter basename="/app">
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route element={<ProtectedRoute />}>
-              <Route element={<DashboardLayout />}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/conciliacao" element={<ConciliacaoPage />} />
-                <Route path="/clientes" element={<ClientesPage />} />
-                <Route path="/relatorios" element={<RelatoriosPage />} />
-                <Route path="/configuracoes" element={<ConfiguracoesPage />} />
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <BrowserRouter basename="/app">
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route element={<ProtectedRoute />}>
+                <Route element={<DashboardLayout />}>
+                  <Route index element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/conciliacao" element={<ConciliacaoPage />} />
+                  <Route path="/clientes" element={<ClientesPage />} />
+                  <Route path="/relatorios" element={<RelatoriosPage />} />
+                  <Route path="/configuracoes" element={<ConfiguracoesPage />} />
+                </Route>
               </Route>
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-          <Toaster richColors position="top-right" />
-        </BrowserRouter>
-      </AuthProvider>
-    </ThemeProvider>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+            <Toaster richColors position="top-right" />
+          </BrowserRouter>
+        </AuthProvider>
+      </ThemeProvider>
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+    </QueryClientProvider>
   );
 }

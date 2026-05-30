@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { APP_VERSION } from "@/lib/version";
 import { toast } from "sonner";
 import s from "./LoginPage.module.css";
 
@@ -136,7 +137,7 @@ export function LoginPage() {
       <header className={s.rail}>
         <div className={s.lhs}>
           <span className={s.mark}></span>
-          <span>ORGATEC / V0.5.0</span>
+          <span>ORGATEC / V{APP_VERSION}</span>
         </div>
         <div className={s.rhs}>
           <span className={s.clock}>{clock}</span>

@@ -1,10 +1,12 @@
 # ORGATEC · Conciliação Bancária (OrgConc)
 
+> Versão atual: ver [`VERSION`](./VERSION) (source of truth — consumido por `api/core/config.py::VERSION` e `orgconc-react/vite.config.ts`).
+
 API e UI para conciliação bancária inteligente. Cruza extratos OFX/PDF/XML, detecta anomalias, gera relatórios HTML/XLSX/PDF.
 
 ## Stack
 
-- **Backend**: FastAPI 0.5 · routers modulares · JWT + token legacy
+- **Backend**: FastAPI · routers modulares · JWT + token legacy
 - **Frontend principal**: `orgconc-react/` (Vite + React 19 + Tailwind + shadcn)
 - **UI legada** (transição): `static/` em `/ui/`
 - **Banco**: PostgreSQL/Supabase opcional

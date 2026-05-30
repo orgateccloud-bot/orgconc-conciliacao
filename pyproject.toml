@@ -1,0 +1,73 @@
+# Configuracao centralizada do tooling Python (lint, format, type-check, cov).
+# Outro arquivo de config relacionado: .bumpversion.toml (versionamento).
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+extend-exclude = [
+    "migrations/versions/",   # gerado pelo Alembic
+    "data/",                  # datasets em runtime
+    "orgconc-react/",         # frontend
+]
+
+[tool.ruff.lint]
+# Set conservador — apertar progressivamente em PRs futuros (Item 22 do roadmap).
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # import order
+    "B",    # bugbear (uppercase: B904 etc.)
+    "UP",   # pyupgrade
+    "SIM",  # simplifications
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",  # line too long — gerenciado pelo formatter
+    "B008",  # function call in default arg (FastAPI usa Depends() assim)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]   # asserts e senhas hardcoded em test fixtures
+"api/main.py" = ["F401"]                # re-exports intencionais para retrocompat
+
+[tool.ruff.lint.isort]
+known-first-party = ["api", "tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["api"]
+omit = [
+    "api/templates/*",
+    "*/__pycache__/*",
+    "*/migrations/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+show_missing = true
+skip_covered = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false                    # strict apenas nos modulos abaixo (gradual)
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Escopo strict: dominio + use cases (Items 7-8). Expandir conforme o projeto madura.
+module = ["api.domain.*", "api.usecases.*"]
+strict = true

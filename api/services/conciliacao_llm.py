@@ -5,11 +5,13 @@ import asyncio
 import logging
 import os
 import re
+import time
 
 from anthropic import Anthropic, APIStatusError
 from fastapi import HTTPException
 
 from api.core.config import SYSTEM_PROMPT, _MODELOS_MULTI
+from api.observability import llm_call_seconds
 
 log = logging.getLogger("orgconc.llm")
 
@@ -37,18 +39,24 @@ async def chamar_modelo_async(
             "output_tokens": resp.usage.output_tokens,
         }
 
+    t0 = time.perf_counter()
+    status = "ok"
     try:
         res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90.0)
     except asyncio.TimeoutError:
+        status = "timeout"
         log.warning("Timeout (90s) chamando modelo %s", model_id)
         res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": "Timeout na API Claude (90s)"}
     except APIStatusError as e:
+        status = "error"
         body = getattr(e, "body", None) or {}
         msg = (body.get("error") or {}).get("message") or str(e)
         log.warning("Erro no modelo %s: %s", model_id, msg)
         res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": msg}
     else:
         res["erro"] = None
+    finally:
+        llm_call_seconds.labels(modelo=model_id, status=status).observe(time.perf_counter() - t0)
 
     res.update({"modelo": model_id, "label": label})
     return res

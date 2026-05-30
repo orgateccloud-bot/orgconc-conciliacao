@@ -9,6 +9,7 @@ import {
   type ConciliacaoMeta,
 } from "@/lib/api";
 import { HeroCard } from "@/components/HeroCard";
+import { Panel } from "@/components/trust";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -216,8 +217,8 @@ export function ClientesPage() {
       />
 
       {/* Create form */}
-      <form onSubmit={salvar} className="rounded-3xl border glass p-6 space-y-4">
-        <h3 className="font-semibold text-base">Novo cliente</h3>
+      <Panel title="Novo cliente">
+      <form onSubmit={salvar} className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2 md:col-span-2">
             <Label>Nome *</Label>
@@ -276,9 +277,10 @@ export function ClientesPage() {
 
         <Button type="submit" disabled={!nome.trim()}>Cadastrar cliente</Button>
       </form>
+      </Panel>
 
       {/* Table */}
-      <div className="rounded-3xl border overflow-hidden">
+      <div className="trust-glass rounded-3xl overflow-hidden">
         <div className="flex items-center gap-2 p-4 border-b bg-muted/30">
           <Search className="h-4 w-4 text-muted-foreground shrink-0" />
           <Input

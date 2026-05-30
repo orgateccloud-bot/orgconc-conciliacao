@@ -1,13 +1,29 @@
-version: '3.8'
-
 # Orgconc — Conciliacao Bancaria
 # Uso interno com Supabase como banco de dados
 # Para iniciar: docker compose up -d
 # Para parar:   docker compose down
+#
+# Nota: o atributo `version:` foi removido (obsoleto no Compose v2).
 
 services:
 
-  # Backend FastAPI
+  # ── Redis (rate-limit distribuido + futura fila Arq) ─────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: orgconc-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"   # exposto so para localhost
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - orgconc_redis:/data
+
+  # ── Backend FastAPI + React SPA em /app/ ─────────────────────────────────
   api:
     build:
       context: .
@@ -16,27 +32,51 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
     environment:
-      # Supabase (banco de dados na nuvem)
-      SUPABASE_URL: https://cmnbmckwvkfexfkegxsf.supabase.co
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      # Autenticacao JWT
-      JWT_SECRET: ${JWT_SECRET:-orgconc-jwt-secret-interno-2026}
-      ORGCONC_AUTH_TOKEN: ${ORGCONC_AUTH_TOKEN:-orgconc-token-interno}
-      # API Anthropic (opcional - para analise com IA)
+      # ── Anthropic ───────────────────────────────────────────────────────
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      # Configuracoes do servidor
+
+      # ── Banco (Supabase pooler na :6543) ────────────────────────────────
+      DATABASE_URL: ${DATABASE_URL:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+
+      # ── Auth ────────────────────────────────────────────────────────────
+      ORGCONC_JWT_SECRET: ${ORGCONC_JWT_SECRET:-}
+      ORGCONC_JWT_TTL_MIN: ${ORGCONC_JWT_TTL_MIN:-120}
+      ORGCONC_ADMIN_EMAIL: ${ORGCONC_ADMIN_EMAIL:-}
+      ORGCONC_ADMIN_SENHA_HASH: ${ORGCONC_ADMIN_SENHA_HASH:-}
+
+      # ── Ambiente ────────────────────────────────────────────────────────
+      ORGCONC_ENV: ${ORGCONC_ENV:-development}
+
+      # ── Redis (rate-limit distribuido) ──────────────────────────────────
+      REDIS_URL: redis://redis:6379/0
+
+      # ── Servidor / Logging ──────────────────────────────────────────────
       HOST: 0.0.0.0
       PORT: 8000
-      WORKERS: 2
-      ORGCONC_LOG_LEVEL: INFO
-      ORGCONC_LOG_JSON: "false"
-      ORGCONC_MAX_UPLOAD_MB: 50
-      ORGCONC_MAX_UPLOAD_TOTAL_MB: 500
+      WORKERS: ${WORKERS:-2}
+      ORGCONC_LOG_LEVEL: ${ORGCONC_LOG_LEVEL:-INFO}
+      ORGCONC_LOG_JSON: ${ORGCONC_LOG_JSON:-true}
+      ORGCONC_MAX_UPLOAD_MB: ${ORGCONC_MAX_UPLOAD_MB:-10}
+      ORGCONC_MAX_UPLOAD_TOTAL_MB: ${ORGCONC_MAX_UPLOAD_TOTAL_MB:-50}
       ORGCONC_DATA_DIR: /app/data
-      # CORS - permitir acesso do frontend local e GitHub Pages
-      ORGCONC_CORS_ORIGINS: "http://localhost,http://localhost:3000,http://127.0.0.1,https://orgateccloud-bot.github.io"
+
+      # ── CORS ────────────────────────────────────────────────────────────
+      ORGCONC_CORS_ORIGINS: ${ORGCONC_CORS_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:8000}
+
+      # ── SERPRO ──────────────────────────────────────────────────────────
+      ORGCONC_SERPRO_CLIENT_PATH: ${ORGCONC_SERPRO_CLIENT_PATH:-}
+      ORGCONC_SERPRO_DEMO_TOKEN: ${ORGCONC_SERPRO_DEMO_TOKEN:-}
+      ORGCONC_SERPRO_CONSUMER_KEY: ${ORGCONC_SERPRO_CONSUMER_KEY:-}
+      ORGCONC_SERPRO_CONSUMER_SECRET: ${ORGCONC_SERPRO_CONSUMER_SECRET:-}
+      ORGCONC_SERPRO_AUDIT_SALT: ${ORGCONC_SERPRO_AUDIT_SALT:-}
+
     volumes:
       - orgconc_data:/app/data
     healthcheck:
@@ -46,19 +86,46 @@ services:
       retries: 3
       start_period: 10s
 
-  # Frontend estatico (opcional - serve os HTMLs localmente)
-  frontend:
-    image: nginx:alpine
-    container_name: orgconc-frontend
+  # ── Worker Arq (consome a fila Redis) ────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orgconc-worker
     restart: unless-stopped
-    ports:
-      - "80:80"
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DATABASE_URL: ${DATABASE_URL:-}
+      REDIS_URL: redis://redis:6379/0
+      ORGCONC_LOG_JSON: ${ORGCONC_LOG_JSON:-true}
+      ORGCONC_LOG_LEVEL: ${ORGCONC_LOG_LEVEL:-INFO}
+      ORGCONC_DATA_DIR: /app/data
     volumes:
-      - ./frontend:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - orgconc_data:/app/data
+    command: ["arq", "api.workers.WorkerSettings"]
+
+  # ── UI legada (opcional, deprecated) ─────────────────────────────────────
+  # Serve apenas os HTMLs em static/. Pode ser removido — o React e servido
+  # diretamente pela API em /app/.
+  legacy-ui:
+    image: nginx:alpine
+    container_name: orgconc-legacy-ui
+    restart: unless-stopped
+    profiles: ["legacy"]   # so sobe com: docker compose --profile legacy up
+    ports:
+      - "8080:80"
+    volumes:
+      - ./static:/usr/share/nginx/html:ro
     depends_on:
       - api
 
 volumes:
   orgconc_data:
+    driver: local
+  orgconc_redis:
     driver: local

@@ -82,6 +82,11 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 STATIC_DIR = ROOT_DIR / "static"
 REACT_DIST = ROOT_DIR / "orgconc-react" / "dist"
 
+# Versao unica do projeto — lida de VERSION na raiz.
+# Mantenha sincronizado com orgconc-react/package.json via `bump-my-version`.
+_VERSION_FILE = ROOT_DIR / "VERSION"
+VERSION = _VERSION_FILE.read_text(encoding="utf-8").strip() if _VERSION_FILE.exists() else "0.0.0"
+
 SYSTEM_PROMPT = (
     "Voce e um agente especializado em conciliacao bancaria para escritorios "
     "contabeis brasileiros. Recebe extratos (OFX/CSV) e/ou razao contabil, "

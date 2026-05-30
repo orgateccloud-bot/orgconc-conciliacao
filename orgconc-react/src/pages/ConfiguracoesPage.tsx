@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { HeroCard } from "@/components/HeroCard";
+import { Panel } from "@/components/trust";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,11 +42,15 @@ export function ConfiguracoesPage() {
       />
 
       {/* Conta */}
-      <section className="rounded-3xl border glass p-6 space-y-5">
-        <div className="flex items-center gap-2 pb-1">
-          <User className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold">Conta</h3>
-        </div>
+      <Panel
+        title={
+          <span className="flex items-center gap-2">
+            <User className="h-4 w-4 text-muted-foreground" />
+            Conta
+          </span>
+        }
+        className="space-y-5"
+      >
         <div className="grid gap-4 md:grid-cols-2 text-sm">
           <div>
             <p className="text-[11px] font-mono uppercase text-muted-foreground mb-1">
@@ -100,15 +105,18 @@ export function ConfiguracoesPage() {
             Atualizar senha <span className="text-muted-foreground ml-1">(em breve)</span>
           </Button>
         </div>
-      </section>
+      </Panel>
 
       {/* Interface */}
-      <section className="rounded-3xl border glass p-6 space-y-5">
-        <div className="flex items-center gap-2 pb-1">
-          <Palette className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold">Interface</h3>
-        </div>
-
+      <Panel
+        title={
+          <span className="flex items-center gap-2">
+            <Palette className="h-4 w-4 text-muted-foreground" />
+            Interface
+          </span>
+        }
+        className="space-y-5"
+      >
         <div className="flex items-center justify-between rounded-2xl border bg-muted/30 px-4 py-3">
           <div>
             <p className="text-sm font-medium">Tema</p>
@@ -130,21 +138,24 @@ export function ConfiguracoesPage() {
         <div className="flex items-center gap-3 rounded-2xl border bg-muted/30 px-4 py-3">
           <div className="h-8 w-8 rounded-xl bg-brand-gradient shrink-0" />
           <div>
-            <p className="text-sm font-medium">Design System: Direção Leve</p>
+            <p className="text-sm font-medium">Design System: Direção Leve + Trust</p>
             <p className="text-xs text-muted-foreground">
-              Manrope · Instrument Serif · JetBrains Mono · Paleta Navy / Azure
+              Manrope · Instrument Serif · JetBrains Mono · Paleta Navy + Aurora Blue
             </p>
           </div>
         </div>
-      </section>
+      </Panel>
 
       {/* Status do servidor */}
-      <section className="rounded-3xl border glass p-6 space-y-5">
-        <div className="flex items-center gap-2 pb-1">
-          <Server className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold">Status do servidor</h3>
-        </div>
-
+      <Panel
+        title={
+          <span className="flex items-center gap-2">
+            <Server className="h-4 w-4 text-muted-foreground" />
+            Status do servidor
+          </span>
+        }
+        className="space-y-5"
+      >
         {health ? (
           <div className="grid gap-3 md:grid-cols-2 text-sm">
             {[
@@ -157,15 +168,8 @@ export function ConfiguracoesPage() {
                 key={label}
                 className="flex items-center justify-between rounded-xl border bg-muted/30 px-4 py-3"
               >
-                <span className="text-muted-foreground font-mono text-[11px] uppercase">
-                  {label}
-                </span>
-                <span
-                  className={cn(
-                    "font-semibold text-xs",
-                    ok ? "text-green-600" : "text-orange-500"
-                  )}
-                >
+                <span className="trust-label">{label}</span>
+                <span className={cn("trust-pill", ok ? "trust-pill-up" : "trust-pill-down")}>
                   {value}
                 </span>
               </div>
@@ -178,7 +182,7 @@ export function ConfiguracoesPage() {
             ))}
           </div>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }

@@ -14,10 +14,10 @@ interface Props {
 export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }: Props) {
   const { tema, toggle } = useTheme();
 
-  const dbColor = {
-    online:   "bg-success/10 text-success border-success/20",
-    offline:  "bg-danger/10 text-danger border-danger/20",
-    checking: "bg-muted text-muted-foreground border-border",
+  const dbPill = {
+    online:   "trust-pill-up",
+    offline:  "trust-pill-crit",
+    checking: "bg-muted text-muted-foreground",
   }[dbStatus];
 
   return (
@@ -39,9 +39,7 @@ export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }
       </div>
 
       <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold font-mono ${dbColor}`}
-        >
+        <span className={`trust-pill ${dbPill}`}>
           <span
             className={`h-1.5 w-1.5 rounded-full ${
               dbStatus === "online" ? "bg-success" : dbStatus === "offline" ? "bg-danger" : "bg-muted-foreground"

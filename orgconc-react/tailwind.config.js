@@ -54,6 +54,20 @@ module.exports = {
           dark:     "#0E2A47",
           sky:      "#7BC8E0",
         },
+        // Paleta "Trust" — migrada do dashboard_trust.html legado.
+        // Use em pages financeiras/serias (Dashboard, Relatorios).
+        trust: {
+          navy:    "#0F172A",
+          blue:    "#0052FF",
+          "blue-soft": "#4D7CFF",
+          sky:     "#0EA5E9",
+          "aurora-1": "#93C5FD",
+          "aurora-2": "#60A5FA",
+          "aurora-3": "#3B82F6",
+          "blue-10":  "#DBEAFE",
+          "blue-20":  "#BFDBFE",
+          bg:        "#F0F7FF",
+        },
         success: "#16A34A",
         warning: "#D97706",
         danger:  "#DC2626",
@@ -67,6 +81,13 @@ module.exports = {
         "brand-gradient-soft": "linear-gradient(135deg, #EAF4FA 0%, #B8DDEE 100%)",
         "brand-vertical":      "linear-gradient(180deg, #0E2A47 0%, #1A3A6B 100%)",
         "featured-card":       "linear-gradient(160deg, #1A3A6B 0%, #0d4f7a 100%)",
+        // Trust palette gradients (legado)
+        "trust-mesh":
+          "radial-gradient(at 20% 10%, #DBEAFE 0%, transparent 50%), radial-gradient(at 80% 80%, #E0E7FF 0%, transparent 50%), radial-gradient(at 50% 50%, #F0F9FF 0%, transparent 60%)",
+        "trust-kpi-icon":
+          "linear-gradient(135deg, #DBEAFE 0%, #BFDBFE 100%)",
+        "trust-edge":
+          "linear-gradient(135deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.50) 100%)",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -92,6 +113,15 @@ module.exports = {
         "slide-up":       { from: { opacity: "0", transform: "translateY(8px)" }, to: { opacity: "1", transform: "translateY(0)" } },
         "wave-flow":      { from: { transform: "translateX(0)" }, to: { transform: "translateX(-120px)" } },
         "compass-spin":   { from: { transform: "rotate(0deg)" }, to: { transform: "rotate(360deg)" } },
+        // Trust aurora drifts (legado)
+        "aurora-drift-1": {
+          "0%, 100%": { transform: "translate(0,0) scale(1)" },
+          "50%":      { transform: "translate(80px,60px) scale(1.1)" },
+        },
+        "aurora-drift-2": {
+          "0%, 100%": { transform: "translate(0,0) scale(1)" },
+          "50%":      { transform: "translate(-60px,-40px) scale(1.08)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -100,6 +130,8 @@ module.exports = {
         "slide-up":       "slide-up 0.3s ease-out",
         "wave-flow":      "wave-flow 14s linear infinite",
         "compass-spin":   "compass-spin 90s linear infinite",
+        "aurora-drift-1": "aurora-drift-1 24s ease-in-out infinite",
+        "aurora-drift-2": "aurora-drift-2 30s ease-in-out infinite",
       },
     },
   },

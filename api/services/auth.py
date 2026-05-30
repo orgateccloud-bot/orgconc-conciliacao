@@ -1,17 +1,21 @@
-"""Autenticacao JWT para OrgConc.
+"""Autenticacao JWT + refresh tokens para OrgConc.
 
 Implementa:
-- Hashing de senhas com bcrypt (via passlib)
-- Geracao e validacao de JWT (HS256)
+- Hashing de senhas com bcrypt
+- Geracao e validacao de JWT access tokens (HS256)
+- Refresh tokens opacos (sha256), rotacao + revogacao
 - Dependency FastAPI `current_user` com acesso anonimo em dev/staging
 
 Variaveis de ambiente:
-- ORGCONC_JWT_SECRET     : chave de assinatura (>=32 chars). Se ausente, gera
-                           uma random no startup (tokens nao sobrevivem restart)
-- ORGCONC_JWT_TTL_MIN    : expiracao em minutos (default 120)
+- ORGCONC_JWT_SECRET           : chave de assinatura (>=32 chars). Se ausente
+                                 em dev, gera uma random no startup.
+- ORGCONC_JWT_TTL_MIN          : expiracao do access token em minutos.
+                                 Default 15 (com refresh) ou 120 (compat).
+- ORGCONC_REFRESH_TTL_DAYS     : expiracao do refresh token em dias (default 30).
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import secrets as _secrets
@@ -51,8 +55,19 @@ elif len(_JWT_SECRET) < 32:
         )
     log.warning("ORGCONC_JWT_SECRET tem menos de 32 chars — fraco. Aumente.")
 
-_JWT_TTL_MIN = int(os.environ.get("ORGCONC_JWT_TTL_MIN", "120"))
+_JWT_TTL_MIN = int(os.environ.get("ORGCONC_JWT_TTL_MIN", "15"))
 _JWT_ALG = "HS256"
+REFRESH_TTL_DAYS = int(os.environ.get("ORGCONC_REFRESH_TTL_DAYS", "30"))
+
+
+def gerar_refresh_token() -> str:
+    """Token opaco URL-safe. Nunca eh um JWT."""
+    return _secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    """sha256 hex (64 chars). Deterministico — usamos para lookup."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 def hash_senha(senha: str) -> str:
     """Hash bcrypt da senha (uso: criar usuario, atualizar senha)."""
@@ -71,18 +86,25 @@ def verificar_senha(senha: str, hash_armazenado: str) -> bool:
 
 class TokenPayload(BaseModel):
     """Claims tipados do JWT."""
-    sub: str          # subject (cliente_id ou identificador)
+    sub: str          # subject (email do usuario, hoje; user_id quando houver tabela `usuarios`)
     email: Optional[str] = None
     cliente_id: Optional[str] = None
+    org_id: Optional[str] = None    # multi-tenancy (item 16)
     role: str = "user"
     exp: Optional[int] = None
     iat: Optional[int] = None
+
+
+# Org default usada enquanto nao existir tabela `usuarios` com FK para orgs.
+# Sincronizado com migrations/005 + supabase/migrations/005.
+_DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001"
 
 
 def emitir_token(
     sub: str,
     email: Optional[str] = None,
     cliente_id: Optional[str] = None,
+    org_id: Optional[str] = None,
     role: str = "user",
     ttl_min: Optional[int] = None,
 ) -> str:
@@ -98,6 +120,7 @@ def emitir_token(
         payload["email"] = email
     if cliente_id:
         payload["cliente_id"] = cliente_id
+    payload["org_id"] = org_id or os.environ.get("ORGCONC_ADMIN_ORG_ID", _DEFAULT_ORG_ID)
     return jwt.encode(payload, _JWT_SECRET, algorithm=_JWT_ALG)
 
 

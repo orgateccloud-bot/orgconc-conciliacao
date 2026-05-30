@@ -52,3 +52,8 @@ Thumbs.db
 relatorio_simulacao.md
 sim_anomalias.json
 sim_resposta.json
+
+# Obsidian / notas pessoais (nao versionar no repo do projeto)
+.obsidian/
+60-TEMPLATES/
+CEREBRO_OBSIDIAN_GUIA_COMPLETO.md

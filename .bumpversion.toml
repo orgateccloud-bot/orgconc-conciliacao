@@ -1,0 +1,31 @@
+# Configuracao do bump-my-version
+# Uso:
+#   pip install bump-my-version
+#   bump-my-version bump minor   # 0.6.0 -> 0.7.0
+#   bump-my-version bump patch   # 0.6.0 -> 0.6.1
+#   bump-my-version bump major   # 0.6.0 -> 1.0.0
+#
+# O comando atualiza todos os arquivos listados abaixo simultaneamente.
+
+[tool.bumpversion]
+current_version = "0.6.0"
+allow_dirty = false
+commit = false                  # nao faz commit automatico; rode `git commit -am "bump 0.7.0"` depois
+tag = false                     # idem para tag
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+
+[[tool.bumpversion.files]]
+filename = "VERSION"
+search = "{current_version}"
+replace = "{new_version}"
+
+[[tool.bumpversion.files]]
+filename = "orgconc-react/package.json"
+search = "\"version\": \"{current_version}\""
+replace = "\"version\": \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "orgconc-react/package-lock.json"
+search = "\"version\": \"{current_version}\""
+replace = "\"version\": \"{new_version}\""

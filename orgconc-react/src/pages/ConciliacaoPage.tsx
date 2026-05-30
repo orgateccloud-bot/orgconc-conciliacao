@@ -8,6 +8,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { HeroCard } from "@/components/HeroCard";
+import { Panel } from "@/components/trust";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -36,10 +37,13 @@ const SEVERIDADE_CX: Record<string, string> = {
 };
 
 const EXT_CX: Record<string, string> = {
-  ofx: "bg-blue-100 text-blue-700",
-  pdf: "bg-red-100 text-red-700",
-  xml: "bg-orange-100 text-orange-700",
-  csv: "bg-green-100 text-green-700",
+  ofx:      "bg-blue-100 text-blue-700",
+  pdf:      "bg-red-100 text-red-700",
+  xml:      "bg-orange-100 text-orange-700",
+  csv:      "bg-green-100 text-green-700",
+  md:       "bg-purple-100 text-purple-700",
+  markdown: "bg-purple-100 text-purple-700",
+  txt:      "bg-slate-100 text-slate-700",
 };
 
 function formatBytes(b: number) {
@@ -52,12 +56,13 @@ export function ConciliacaoPage() {
   const [formato, setFormato] = useState<Formato>("ofx");
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [modo, setModo] = useState<Modo>("simulacao");
+  const [vision, setVision] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState<ConciliacaoResponse | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const accept = formato === "csv" ? ".csv" : ".ofx,.pdf,.xml";
+  const accept = formato === "csv" ? ".csv" : ".ofx,.pdf,.xml,.md,.markdown,.txt";
 
   const addFiles = useCallback((list: FileList | null) => {
     if (!list) return;
@@ -87,6 +92,7 @@ export function ConciliacaoPage() {
         simular: modo === "simulacao",
         multi_modelo: modo === "multi",
         modelo: modo === "simulacao" || modo === "multi" ? undefined : modo,
+        vision,
       };
       const data = formato === "csv"
         ? await conciliarCsv(arquivos, opts)
@@ -117,7 +123,7 @@ export function ConciliacaoPage() {
         subtitle="Carregue OFX, PDF ou XML. Modo simulação é gratuito; modelos Claude exigem API key no servidor."
       />
 
-      <section className="rounded-3xl border glass p-6 space-y-5">
+      <Panel className="space-y-5">
         {/* Formato tabs */}
         <div className="flex gap-1 p-1 rounded-xl bg-muted w-fit">
           {(["ofx", "csv"] as Formato[]).map((f) => (
@@ -131,7 +137,7 @@ export function ConciliacaoPage() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              {f === "ofx" ? "OFX · PDF · XML" : "CSV (extrato + razão)"}
+              {f === "ofx" ? "OFX · PDF · XML · MD · TXT" : "CSV (extrato + razão)"}
             </button>
           ))}
         </div>
@@ -150,6 +156,29 @@ export function ConciliacaoPage() {
           ))}
         </div>
 
+        {/* Vision toggle — só faz sentido para PDFs */}
+        {formato !== "csv" && (
+          <label className="flex items-start gap-3 cursor-pointer rounded-xl border border-trust-blue/30 bg-trust-blue-10/30 dark:bg-trust-blue/10 px-3 py-2.5 hover:bg-trust-blue-10/50 transition-colors">
+            <input
+              type="checkbox"
+              checked={vision}
+              onChange={(e) => setVision(e.target.checked)}
+              className="mt-1 h-4 w-4 accent-trust-blue cursor-pointer"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground flex items-center gap-2">
+                Claude Vision (PDFs sem texto)
+                <span className="trust-pill trust-pill-down text-[10px]">$$$</span>
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                Se o parser regex/OCR falhar, envia páginas como imagem para o Claude.
+                Ideal para extratos escaneados (Print to PDF do internet banking).
+                Limite: 20 páginas por arquivo. Custo extra na fatura Anthropic.
+              </p>
+            </div>
+          </label>
+        )}
+
         {/* Drop zone */}
         <div
           onClick={() => inputRef.current?.click()}
@@ -167,7 +196,7 @@ export function ConciliacaoPage() {
           <span className="text-sm text-muted-foreground text-center">
             {formato === "csv"
               ? "Arraste ou clique — até 2 arquivos CSV (extrato e razão contábil)"
-              : "Arraste ou clique — OFX, PDF ou XML (até 50 arquivos)"}
+              : "Arraste ou clique — OFX, PDF, XML, MD ou TXT (até 50 arquivos)"}
           </span>
           <input
             ref={inputRef}
@@ -213,11 +242,11 @@ export function ConciliacaoPage() {
             </>
           ) : "Iniciar conciliação"}
         </Button>
-      </section>
+      </Panel>
 
       {resultado && (
         <section className="space-y-4 animate-fade-in">
-          <div className="flex flex-wrap gap-3 items-center rounded-2xl border glass p-4">
+          <div className="trust-glass rounded-2xl p-4 flex flex-wrap gap-3 items-center">
             <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
             <span className="text-sm font-mono text-muted-foreground flex-1 truncate">
               ID: {resultado.report_id}
@@ -242,7 +271,7 @@ export function ConciliacaoPage() {
 
           <AnomaliasTable anomalias={resultado.anomalias} />
 
-          <article className="prose prose-sm dark:prose-invert max-w-none rounded-2xl border glass p-6 overflow-auto max-h-[60vh]">
+          <article className="trust-glass prose prose-sm dark:prose-invert max-w-none rounded-2xl p-6 overflow-auto max-h-[60vh]">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{resultado.relatorio_md}</ReactMarkdown>
           </article>
         </section>
@@ -254,7 +283,7 @@ export function ConciliacaoPage() {
 function AnomaliasTable({ anomalias }: { anomalias: Anomalia[] }) {
   if (!anomalias.length) {
     return (
-      <div className="rounded-2xl border glass p-6 flex items-center gap-3 text-sm text-muted-foreground">
+      <div className="trust-glass rounded-2xl p-6 flex items-center gap-3 text-sm text-muted-foreground">
         <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
         Nenhuma anomalia detectada.
       </div>
@@ -262,7 +291,7 @@ function AnomaliasTable({ anomalias }: { anomalias: Anomalia[] }) {
   }
 
   return (
-    <div className="overflow-auto rounded-2xl border">
+    <div className="trust-glass rounded-2xl overflow-auto">
       <table className="w-full text-sm">
         <thead className="bg-muted/50">
           <tr>

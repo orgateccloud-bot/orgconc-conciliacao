@@ -3,10 +3,19 @@ uvicorn[standard]==0.47.0
 python-multipart==0.0.28
 anthropic==0.102.0
 pdfplumber==0.11.9
+pymupdf==1.25.5           # render PDF page como imagem (OCR + Vision)
+pytesseract==0.3.13       # wrapper Tesseract (binary em C:\Program Files\Tesseract-OCR)
+Pillow>=10.0              # PIL — usado pelo PyMuPDF + pytesseract
 openpyxl==3.1.5
 Markdown==3.10.2
 python-dotenv==1.2.2
 slowapi==0.1.9
+redis==5.2.1
+limits[redis]==3.13.0   # backend Redis para slowapi
+arq==0.27.0             # fila assincrona em Redis (item 13)
+boto3==1.36.5           # S3-compatible storage (item 15)
+prometheus-client==0.21.1   # metricas /metrics (item 18)
+sentry-sdk[fastapi]==2.20.0  # error tracking (item 19)
 weasyprint==68.0
 jinja2==3.1.6
 pyjwt[crypto]==2.12.0

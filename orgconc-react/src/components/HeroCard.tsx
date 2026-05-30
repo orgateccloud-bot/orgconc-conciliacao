@@ -1,4 +1,5 @@
 import { Logo } from "@/components/Logo";
+import { APP_VERSION } from "@/lib/version";
 
 interface Props {
   eyebrow?: string;
@@ -42,7 +43,7 @@ export function HeroCard({ eyebrow, title, titleAccent, subtitle }: Props) {
           <div className="flex items-center gap-3 pt-2">
             <span className="deck-caption">Folha I</span>
             <span className="h-px flex-1 max-w-[120px] bg-border" />
-            <span className="deck-caption">Anno MMXXVI · v0.5.0</span>
+            <span className="deck-caption">Anno MMXXVI · v{APP_VERSION}</span>
           </div>
         </div>
 

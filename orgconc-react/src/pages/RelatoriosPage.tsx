@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { carregarHistoricoLocal, listarConciliacoes, type ConciliacaoMeta } from "@/lib/api";
 import { HeroCard } from "@/components/HeroCard";
+import { KpiCard, Panel } from "@/components/trust";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -120,31 +121,23 @@ export function RelatoriosPage() {
         subtitle="Conciliações no banco (quando online) ou histórico local do navegador."
       />
 
-      {/* KPI Cards */}
+      {/* KPI Cards — Trust */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: "Conciliações",    value: allRows.length,             icon: Hash,          color: "text-primary bg-primary/10" },
-          { label: "Transações",      value: totalTx.toLocaleString("pt-BR"), icon: TrendingUp,  color: "text-blue-500 bg-blue-50 dark:bg-blue-950/30" },
-          { label: "Anomalias",       value: totalAnom.toLocaleString("pt-BR"), icon: AlertTriangle, color: "text-orange-500 bg-orange-50 dark:bg-orange-950/30" },
-          { label: "Taxa anomalias",  value: `${taxaAnom}%`,             icon: Activity,      color: "text-purple-500 bg-purple-50 dark:bg-purple-950/30" },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="rounded-2xl border glass p-5 flex items-start gap-4">
-            <div className={cn("rounded-xl p-2.5", color)}>
-              <Icon className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-[11px] text-muted-foreground font-mono uppercase tracking-wide">{label}</p>
-              <p className="text-2xl font-bold mt-0.5">{value}</p>
-            </div>
-          </div>
-        ))}
+        <KpiCard label="Conciliações" value={allRows.length.toLocaleString("pt-BR")} icon={<Hash className="h-5 w-5" />} />
+        <KpiCard label="Transações"   value={totalTx.toLocaleString("pt-BR")}        icon={<TrendingUp className="h-5 w-5" />} />
+        <KpiCard
+          label="Anomalias"
+          value={totalAnom.toLocaleString("pt-BR")}
+          icon={<AlertTriangle className="h-5 w-5" />}
+          delta={totalAnom > 0 ? { value: `${taxaAnom}%`, direction: "crit" } : undefined}
+        />
+        <KpiCard label="Taxa anomalias" value={`${taxaAnom}%`} icon={<Activity className="h-5 w-5" />} />
       </div>
 
       {/* Charts */}
       {allRows.length > 1 && (
         <div className="grid gap-6 lg:grid-cols-2">
-          <div className="rounded-3xl border glass p-6">
-            <h3 className="text-sm font-semibold mb-4">Anomalias por período</h3>
+          <Panel title="Anomalias por período">
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -154,30 +147,29 @@ export function RelatoriosPage() {
                 <Line
                   type="monotone"
                   dataKey="anomalias"
-                  stroke="hsl(var(--primary))"
+                  stroke="#0052FF"
                   strokeWidth={2}
                   dot={{ r: 3 }}
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
-          <div className="rounded-3xl border glass p-6">
-            <h3 className="text-sm font-semibold mb-4">Por modo de análise</h3>
+          </Panel>
+          <Panel title="Por modo de análise">
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={modoData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="modo" tick={{ fontSize: 11 }} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                 <Tooltip />
-                <Bar dataKey="qtd" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="qtd" fill="#0052FF" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </Panel>
         </div>
       )}
 
-      {/* Table */}
-      <div className="rounded-3xl border overflow-hidden">
+      {/* Table (wrapper sem padding, ja tem header customizado) */}
+      <div className="trust-glass rounded-3xl overflow-hidden">
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2 p-4 border-b bg-muted/30">
           <div className="flex items-center gap-2 flex-1 min-w-40">
