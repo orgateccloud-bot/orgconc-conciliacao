@@ -1,9 +1,7 @@
 """Testes para api/services/carta_constatacao.py — gerador automático."""
 from __future__ import annotations
 
-from datetime import date
 
-import pytest
 
 from api.services.carta_constatacao import (
     _fmt_brl,

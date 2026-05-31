@@ -1,7 +1,6 @@
 """Testes para api/matchers/tributario.py — estimativa IRPJ+CSLL + retenções."""
 from __future__ import annotations
 
-import pytest
 
 from api.matchers.conformidade import ConformidadeScore
 from api.matchers.tributario import (

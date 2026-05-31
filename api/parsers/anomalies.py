@@ -141,7 +141,9 @@ def _detectar_anomalias(extratos: list[dict]) -> list[dict]:
                     if j in usados:
                         continue
                     if abs(abs(t1["valor"]) - abs(t2["valor"])) < 0.01 and t1["valor"] * t2["valor"] < 0:
-                        usados.add(j); casados += 1; break
+                        usados.add(j)
+                        casados += 1
+                        break
             sem_par = (len(tx1) - casados) + (len(tx2) - casados)
             if sem_par > 0:
                 anomalias.append({

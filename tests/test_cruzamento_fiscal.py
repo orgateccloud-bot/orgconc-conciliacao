@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-import pytest
 
 from api.matchers.cruzamento_fiscal import cruzar, resumo
 from api.matchers.xml_fiscal import DocumentoFiscalLido

@@ -16,7 +16,7 @@ def _conciliacao_local(extratos: list[dict], anomalias: list[dict]) -> str:
     """Gera relatorio de conciliacao deterministicamente (sem LLM) — versao enriquecida."""
     out = ["# Relatório de Conciliação Bancária\n"]
     out.append(f"**Gerado em:** {datetime.now().strftime('%d/%m/%Y %H:%M')}  \n")
-    out.append(f"**Modo:** Simulação local (sem LLM)  \n")
+    out.append("**Modo:** Simulação local (sem LLM)  \n")
     out.append(f"**Extratos analisados:** {len(extratos)}\n\n")
 
     stats = _top_categorias_e_contrapartes(extratos)

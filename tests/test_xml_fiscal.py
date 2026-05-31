@@ -4,10 +4,8 @@ from __future__ import annotations
 import io
 import zipfile
 
-import pytest
 
 from api.matchers.xml_fiscal import (
-    DocumentoFiscalLido,
     detectar_e_parsear,
     extrair_xmls_zip,
     parse_cte,

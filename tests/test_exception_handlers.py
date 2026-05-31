@@ -1,7 +1,6 @@
 """Testes do exception handler global 500."""
 from __future__ import annotations
 
-import os
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
