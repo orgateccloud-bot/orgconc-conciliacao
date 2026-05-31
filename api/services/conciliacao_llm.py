@@ -10,7 +10,7 @@ import time
 from anthropic import Anthropic, APIStatusError, RateLimitError
 from fastapi import HTTPException
 
-from api.core.config import SYSTEM_PROMPT, _MODELOS_MULTI
+from api.core.config import SYSTEM_PROMPT
 from api.core.llm_metrics import registrar_uso
 
 log = logging.getLogger("orgconc.llm")
