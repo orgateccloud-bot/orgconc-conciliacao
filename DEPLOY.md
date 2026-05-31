@@ -89,9 +89,10 @@ SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_ROLE_KEY=eyJ...
 
-# Autenticação
-JWT_SECRET=seu-segredo-jwt-256bits
-ORGCONC_AUTH_TOKEN=token-api-interno
+# Autenticação (a app usa ORGCONC_JWT_SECRET; >= 32 chars, OBRIGATORIO em producao)
+# Gere com: openssl rand -hex 32
+ORGCONC_JWT_SECRET=
+ORGCONC_ENV=production
 
 # Admin
 ORGCONC_ADMIN_EMAIL=admin@empresa.com
@@ -119,28 +120,40 @@ WORKERS=2
 2. Criar novo projeto: **orgconc**
 3. Anotar **Project URL** e **anon key** (Settings > API)
 
-### Executar SQL de Setup
+### Provisionar o schema (Supabase SQL + Alembic)
 
-No painel do Supabase, ir em **SQL Editor** e executar o arquivo `supabase/setup.sql`:
+O schema é provisionado em **duas etapas**: o SQL base do Supabase + as migrations
+Alembic incrementais. (NÃO existe `supabase/setup.sql` — use os arquivos abaixo.)
 
 ```bash
-# Tabelas criadas:
-# - clientes        (id, nome, cnpj, status, criado_em)
-# - conciliacoes    (id, cliente_id, status, periodo, criado_em)
-# - transacoes      (id, conciliacao_id, data, valor, tipo, descricao)
-# - anomalias       (id, conciliacao_id, tipo, descricao, valor, criado_em)
-# - audit_log       (id, usuario, acao, tabela, registro_id, criado_em)
+# 1. No SQL Editor do Supabase, aplicar NESTA ORDEM:
+#    supabase/migrations/001_schema_inicial.sql   # clientes, conciliacoes, transacoes
+#    supabase/migrations/002_fix_uuid_types.sql
+
+# 2. Marcar o baseline e aplicar as migrations incrementais (Alembic):
+export DATABASE_URL=postgresql://...    # connection string do pooler Supabase (porta 6543)
+alembic stamp 001       # baseline: assume que o SQL do passo 1 já foi aplicado
+alembic upgrade head    # aplica 003 (audit_events) → 007 (orgs, llm_cost_daily,
+                        # guia_tributo, contrato, transacao_disposicao + org_id)
 ```
+
+> **Importante:** sem o passo 2 o schema fica **incompleto** (faltam audit_events,
+> tabelas fiscais, orgs, etc.). A migration 007 é idempotente.
+> **Valide** com `alembic check` que `models.py` bate com o banco (diff vazio).
+
+Tabelas resultantes: `orgs`, `clientes`, `conciliacoes`, `transacoes`,
+`audit_events`, `ai_insights_cache`, `llm_cost_daily`, `guia_tributo`, `contrato`,
+`transacao_disposicao`, `documento_fiscal`, `cruzamento_fiscal`,
+`conformidade_fornecedor`, `carta_versao`.
 
 ### Políticas de Segurança (RLS)
 ```sql
--- Habilitar RLS em todas as tabelas
+-- Habilitar RLS nas tabelas base
 ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conciliacoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transacoes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE anomalias ENABLE ROW LEVEL SECURITY;
 
--- Política: usuários autenticados leem seus próprios dados
+-- Política: usuários autenticados (a app já isola por cliente_id na camada de aplicação)
 CREATE POLICY "usuarios_autenticados" ON clientes
   FOR ALL USING (auth.role() = 'authenticated');
 ```
@@ -185,7 +198,13 @@ curl -X POST https://seu-backend.railway.app/auth/login \
   -d '{"email":"admin@empresa.com","senha":"suasenha"}'
 ```
 
-**Resposta esperada do /health:**
+**Resposta esperada do /health** (estrutura real; `banco_dados` fica `skip` se sem DB):
 ```json
-{"status": "ok", "version": "0.9.0", "database": "connected"}
+{
+  "status": "ok",
+  "versao": "0.5.0",
+  "banco_dados": "ok",
+  "api_key_configured": true,
+  "dependencies": { "database": {"status": "ok"}, "anthropic": {"status": "ok"} }
+}
 ```
