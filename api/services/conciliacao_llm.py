@@ -24,6 +24,13 @@ try:
 except ValueError:
     _RETRY_BASE_DELAY = 2.0
 
+# Timeout de parede por chamada a um modelo. Override via env. Default 240s
+# (extratos grandes + Sonnet/Opus podem passar de 90s).
+try:
+    _LLM_TIMEOUT_S = float(os.environ.get("ORGCONC_LLM_TIMEOUT_S", "240"))
+except ValueError:
+    _LLM_TIMEOUT_S = 240.0
+
 
 def _get_client(api_key: str) -> Anthropic:
     """Fabrica do client Anthropic. Indirecao para facilitar mock em testes."""
@@ -58,17 +65,21 @@ async def chamar_modelo_async(
 
     def _call():
         c = _get_client(api_key)
-        resp = c.messages.create(
+        # Streaming: remove o limite de 10 min do SDK em respostas longas
+        # (max_tokens alto) e evita o ValueError "Streaming is required".
+        with c.messages.stream(
             model=model_id,
             max_tokens=max_tokens,
             # cache_control ephemeral economiza tokens em chamadas repetidas (system prompt fixo)
             system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": prompt}],
-        )
+        ) as stream:
+            resp = stream.get_final_message()
         return {
             "texto": "\n".join(b.text for b in resp.content if b.type == "text"),
             "input_tokens": resp.usage.input_tokens,
             "output_tokens": resp.usage.output_tokens,
+            "stop_reason": resp.stop_reason,
         }
 
     inicio = time.perf_counter()
@@ -77,12 +88,21 @@ async def chamar_modelo_async(
 
     for tentativa in range(1, _MAX_RETRIES + 1):
         try:
-            res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90.0)
+            res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=_LLM_TIMEOUT_S)
             res["erro"] = None
+            res["truncado"] = res.get("stop_reason") == "max_tokens"
+            if res["truncado"]:
+                log.warning(
+                    "Resposta de %s TRUNCADA em max_tokens=%d — relatorio incompleto",
+                    model_id, max_tokens,
+                )
             break
         except asyncio.TimeoutError:
-            log.warning("Timeout (90s) chamando modelo %s", model_id)
-            res = {"texto": "", "input_tokens": 0, "output_tokens": 0, "erro": "Timeout na API Claude (90s)"}
+            log.warning("Timeout (%.0fs) chamando modelo %s", _LLM_TIMEOUT_S, model_id)
+            res = {
+                "texto": "", "input_tokens": 0, "output_tokens": 0,
+                "erro": f"Timeout na API Claude ({_LLM_TIMEOUT_S:.0f}s)",
+            }
             break
         except (RateLimitError, APIStatusError) as e:
             ultimo_erro = e
@@ -101,6 +121,15 @@ async def chamar_modelo_async(
             res = {
                 "texto": "", "input_tokens": 0, "output_tokens": 0,
                 "erro": msg, "status_code": _status_de_erro(e),
+            }
+            break
+        except Exception as e:
+            # Defensivo: qualquer erro inesperado (ex.: ValueError do SDK) vira
+            # erro amigavel em vez de vazar como 500.
+            log.warning("Erro inesperado em %s: %s", model_id, e)
+            res = {
+                "texto": "", "input_tokens": 0, "output_tokens": 0,
+                "erro": f"{type(e).__name__}: {e}",
             }
             break
 

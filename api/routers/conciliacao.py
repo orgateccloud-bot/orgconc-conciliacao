@@ -293,6 +293,7 @@ async def conciliar_ofx(
                     "input_tokens": r.get("input_tokens", 0),
                     "output_tokens": r.get("output_tokens", 0),
                     "cost_usd": r.get("cost_usd", 0.0),
+                    "truncado": r.get("truncado", False),
                     "erro": r.get("erro"),
                 }
                 for r in resultados
@@ -326,6 +327,7 @@ async def conciliar_ofx(
             "input_tokens": res.get("input_tokens", 0),
             "output_tokens": res.get("output_tokens", 0),
             "cost_usd": res.get("cost_usd", 0.0),
+            "truncado": res.get("truncado", False),
         },
         "relatorio_md": relatorio,
         "relatorio_html": render_html(relatorio),

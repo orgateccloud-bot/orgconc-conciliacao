@@ -91,10 +91,10 @@ def test_sintetizar_consenso_um_valido():
 
 
 def test_chamar_modelo_async_timeout():
-    from api.services.conciliacao_llm import chamar_modelo_async
+    from api.services.conciliacao_llm import chamar_modelo_async, _LLM_TIMEOUT_S
     with patch("api.services.conciliacao_llm.asyncio.wait_for", side_effect=asyncio.TimeoutError):
         res = asyncio.run(chamar_modelo_async("key", "prompt", "claude-sonnet-4-6", "Sonnet", 100))
-    assert res["erro"] == "Timeout na API Claude (90s)"
+    assert res["erro"] == f"Timeout na API Claude ({_LLM_TIMEOUT_S:.0f}s)"
     assert res["texto"] == ""
 
 

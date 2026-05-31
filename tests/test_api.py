@@ -1722,16 +1722,33 @@ def _make_apistatus_error(msg: str, status_code: int = 400, error_message: str =
     return err
 
 
+def _wire_stream(fake_client, *, response=None, side_effect=None):
+    """Adapta um fake_client ao codigo que usa `c.messages.stream(...)` como
+    context manager. Sucesso: get_final_message()->response. Erro: levanta no enter."""
+    from unittest.mock import MagicMock
+
+    cm = MagicMock()
+    if side_effect is not None:
+        cm.__enter__ = MagicMock(side_effect=side_effect)
+    else:
+        stream = MagicMock()
+        stream.get_final_message = MagicMock(return_value=response)
+        cm.__enter__ = MagicMock(return_value=stream)
+    cm.__exit__ = MagicMock(return_value=False)
+    fake_client.messages.stream = MagicMock(return_value=cm)
+    return fake_client
+
+
 def test_conciliar_ofx_modo_llm_single_mockado():
     """POST /conciliar/ofx em modo LLM (sem multi-modelo): caminho happy."""
     from unittest.mock import MagicMock, patch
 
     fake_client = MagicMock()
-    fake_client.messages.create.return_value = _fake_anthropic_response(
+    _wire_stream(fake_client, response=_fake_anthropic_response(
         "# Relatório de Conciliação\n\nAnálise completa pelo Haiku.",
         in_tokens=150,
         out_tokens=400,
-    )
+    ))
 
     with (
         patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
@@ -1763,7 +1780,7 @@ def test_conciliar_ofx_llm_credito_esgotado_retorna_msg_amigavel():
         error_message="Your credit balance is too low to access the Anthropic API",
     )
     fake_client = MagicMock()
-    fake_client.messages.create.side_effect = err
+    _wire_stream(fake_client, side_effect=err)
 
     with (
         patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
@@ -1792,7 +1809,7 @@ def test_conciliar_ofx_llm_rate_limit_retorna_msg_amigavel():
         error_message="Rate limit exceeded for this organization",
     )
     fake_client = MagicMock()
-    fake_client.messages.create.side_effect = err
+    _wire_stream(fake_client, side_effect=err)
 
     with (
         patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
@@ -1860,11 +1877,11 @@ def test_conciliar_csv_modo_llm_mockado():
     from unittest.mock import MagicMock, patch
 
     fake_client = MagicMock()
-    fake_client.messages.create.return_value = _fake_anthropic_response(
+    _wire_stream(fake_client, response=_fake_anthropic_response(
         "## Conciliação Bancária — CSV\n\nDivergências identificadas.",
         in_tokens=80,
         out_tokens=250,
-    )
+    ))
 
     extrato_csv = b"data,valor,memo\n2026-01-01,-100.00,Saida\n"
     razao_csv = b"data,valor,conta\n2026-01-01,-100.00,Despesa Geral\n"
@@ -1930,7 +1947,7 @@ def test_chamar_modelo_async_apistatus_retorna_texto_vazio():
 
     fake_anthropic_class = MagicMock()
     fake_instance = MagicMock()
-    fake_instance.messages.create.side_effect = err
+    _wire_stream(fake_instance, side_effect=err)
     fake_anthropic_class.return_value = fake_instance
 
     async def _run():
