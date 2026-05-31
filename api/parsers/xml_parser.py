@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import xml.etree.ElementTree as _ET
 import defusedxml.ElementTree as ET
 

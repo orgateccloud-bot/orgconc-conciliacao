@@ -32,12 +32,10 @@ from api.matchers.cascata import ler_ofx
 from api.matchers.conformidade import calcular_conformidade_fornecedor, classificar_risco
 from api.matchers.cruzamento_fiscal import cruzar, resumo
 from api.matchers.tributario import (
-    consolidar_risco,
     estimar_retencoes_nao_recolhidas,
     estimar_risco_tributario_anual,
 )
 from api.matchers.xml_fiscal import (
-    extrair_xmls_zip,
     parse_lote_xmls,
 )
 from api.services.auth import TokenPayload, autorizar_cliente, current_user

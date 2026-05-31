@@ -1,7 +1,6 @@
 """Testes para api/matchers/nfe.py — matcher do estágio 2 (NF-e)."""
 from __future__ import annotations
 
-import asyncio
 import io
 import zipfile
 
@@ -9,7 +8,6 @@ import pytest
 
 from api.matchers.cascata import Resultado, Transacao, classificar, ler_ofx
 from api.matchers.nfe import (
-    NotaFiscal,
     indexar_bytes,
     ler_nfe_bytes,
     resolver,

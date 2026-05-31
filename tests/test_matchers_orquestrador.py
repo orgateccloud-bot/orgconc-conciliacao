@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from api.db.models import Cliente, Contrato, GuiaTributo
-from api.matchers.cascata import Disposicao, Resultado, Transacao, classificar
+from api.matchers.cascata import Disposicao, Transacao, classificar
 from api.matchers.orquestrador import conciliar, taxa_automatizacao
 
 
