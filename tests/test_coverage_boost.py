@@ -74,7 +74,7 @@ def test_friendly_anthropic_error_generico():
 def test_sintetizar_consenso_sem_validos():
     from api.services.conciliacao_llm import sintetizar_consenso
     resultados = [{"erro": "timeout", "texto": ""}, {"erro": "err", "texto": ""}]
-    texto, score = asyncio.run(sintetizar_consenso("key", resultados, 1000))
+    texto, score, _custo = asyncio.run(sintetizar_consenso("key", resultados, 1000))
     assert score == 0.0
     assert "valido" in texto.lower() or texto
 
@@ -85,16 +85,16 @@ def test_sintetizar_consenso_um_valido():
         {"erro": None, "texto": "Relatorio A", "label": "Sonnet"},
         {"erro": "timeout", "texto": ""},
     ]
-    texto, score = asyncio.run(sintetizar_consenso("key", resultados, 1000))
+    texto, score, _custo = asyncio.run(sintetizar_consenso("key", resultados, 1000))
     assert texto == "Relatorio A"
     assert score == 0.5
 
 
 def test_chamar_modelo_async_timeout():
-    from api.services.conciliacao_llm import chamar_modelo_async
+    from api.services.conciliacao_llm import chamar_modelo_async, _LLM_TIMEOUT_S
     with patch("api.services.conciliacao_llm.asyncio.wait_for", side_effect=asyncio.TimeoutError):
         res = asyncio.run(chamar_modelo_async("key", "prompt", "claude-sonnet-4-6", "Sonnet", 100))
-    assert res["erro"] == "Timeout na API Claude (90s)"
+    assert res["erro"] == f"Timeout na API Claude ({_LLM_TIMEOUT_S:.0f}s)"
     assert res["texto"] == ""
 
 
@@ -501,10 +501,16 @@ def test_conciliacoes_listar_com_mock_db():
     mock_db.__aenter__ = AsyncMock(return_value=mock_db)
     mock_db.__aexit__ = AsyncMock(return_value=False)
 
+    class _FakeListarConcUC:
+        def __init__(self, *a, **k):
+            pass
+
+        async def execute(self, _input):
+            return []
+
     with patch("api.routers.conciliacoes_list.DB_DISPONIVEL", True), \
          patch("api.routers.conciliacoes_list.SessionLocal", return_value=mock_db), \
-         patch("api.routers.conciliacoes_list.crud_conc.listar_conciliacoes",
-               return_value=[]):
+         patch("api.routers.conciliacoes_list.ListarConciliacoesUseCase", _FakeListarConcUC):
         r = c.get("/conciliacoes")
     assert r.status_code == 200
     assert r.json() == []

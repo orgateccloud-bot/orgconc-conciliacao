@@ -7,7 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
 from api.db import conciliacoes as crud_conc
+from api.infra.repositories.conciliacoes import ConciliacaoRepositorySQL
 from api.services.auth import current_user
+from api.usecases.listar_conciliacoes import ListarConciliacoesInput, ListarConciliacoesUseCase
 
 router = APIRouter(prefix="/conciliacoes", tags=["conciliacoes"], dependencies=[Depends(current_user)])
 
@@ -43,7 +45,8 @@ async def listar(request: Request, cliente_id: str | None = None, limit: int = 5
         except ValueError:
             raise HTTPException(400, "cliente_id invalido")
     async with SessionLocal() as db:
-        rows = await crud_conc.listar_conciliacoes(db, cliente_id=cid, limit=min(limit, 100), offset=offset)
+        uc = ListarConciliacoesUseCase(ConciliacaoRepositorySQL(db))
+        rows = await uc.execute(ListarConciliacoesInput(cliente_id=cid, limit=min(limit, 100), offset=offset))
     return [_serializar(c) for c in rows]
 
 
@@ -57,7 +60,8 @@ async def listar_por_cliente(request: Request, cliente_id: str, limit: int = 50,
     except ValueError:
         raise HTTPException(400, "cliente_id invalido")
     async with SessionLocal() as db:
-        rows = await crud_conc.listar_conciliacoes(db, cliente_id=cid, limit=min(limit, 100), offset=offset)
+        uc = ListarConciliacoesUseCase(ConciliacaoRepositorySQL(db))
+        rows = await uc.execute(ListarConciliacoesInput(cliente_id=cid, limit=min(limit, 100), offset=offset))
     return [_serializar(c) for c in rows]
 
 

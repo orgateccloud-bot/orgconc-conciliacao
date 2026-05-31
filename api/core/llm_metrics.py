@@ -23,9 +23,11 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("orgconc.llm.metrics")
 
-# Precos default (USD / 1M tokens) — pode ser sobrescrito por env
+# Precos default (USD / 1M tokens) — pode ser sobrescrito por env.
+# Atualizado p/ tabela oficial 2026 (claude.com/pricing#api):
+# Opus 4.5+ caiu para $5/$25 (era $15/$75 no Opus 4/4.1). O projeto usa opus-4-7.
 _DEFAULT_PRICES = {
-    "opus": {"input": 15.0, "output": 75.0},
+    "opus": {"input": 5.0, "output": 25.0},
     "sonnet": {"input": 3.0, "output": 15.0},
     "haiku": {"input": 1.0, "output": 5.0},
 }

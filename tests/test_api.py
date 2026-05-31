@@ -1316,36 +1316,41 @@ def test_criar_cliente_response_inclui_ativo():
     quebrando o endpoint com ResponseValidationError quando DATABASE_URL real
     estava configurado.
     """
-    from unittest.mock import AsyncMock, patch, MagicMock
     from datetime import datetime, timezone
+    from unittest.mock import patch
     import uuid as _uuid
 
-    fake_cliente = MagicMock()
-    fake_cliente.id = _uuid.uuid4()
-    fake_cliente.nome = "Empresa Teste"
-    fake_cliente.cnpj = "11444777000161"
-    fake_cliente.email = "teste@example.com"
-    fake_cliente.telefone = None
-    fake_cliente.plano = "basico"
-    fake_cliente.ativo = True
-    fake_cliente.criado_em = datetime.now(timezone.utc)
+    # Arquitetura limpa: o router instancia CriarClienteUseCase (router -> usecase
+    # -> repo). Mockamos a CLASSE do use case no modulo do router, preservando a
+    # intencao do teste: a resposta deve conter 'ativo'.
+    from api.usecases.criar_cliente import CriarClienteOutput
+    from api.domain.entities import Cliente as _ClienteEntity
 
-    async def fake_criar(*args, **kwargs):
-        return fake_cliente
+    entidade = _ClienteEntity(
+        id=_uuid.uuid4(),
+        nome="Empresa Teste",
+        cnpj="11444777000161",
+        email="teste@example.com",
+        telefone=None,
+        plano="basico",
+        ativo=True,
+        criado_em=datetime.now(timezone.utc),
+    )
 
-    session_mock = MagicMock()
-    session_mock.__aenter__ = AsyncMock(return_value=session_mock)
-    session_mock.__aexit__ = AsyncMock(return_value=False)
+    class _FakeCriarUC:
+        def __init__(self, *args, **kwargs):
+            pass
 
-    with (
-        patch("api.routers.clientes.DB_DISPONIVEL", True),
-        patch("api.routers.clientes.SessionLocal", return_value=session_mock),
-        patch("api.routers.clientes.crud_clientes.criar_cliente", side_effect=fake_criar),
-    ):
+        async def execute(self, _input):
+            return CriarClienteOutput(cliente=entidade)
+
+    ctx, _ = _patch_db_session()
+    with ctx, patch("api.routers.clientes.CriarClienteUseCase", _FakeCriarUC):
         r = client.post(
             "/clientes",
             json={"nome": "Empresa Teste", "cnpj": "11.444.777/0001-61", "plano": "basico"},
         )
+
     assert r.status_code == 201, f"POST /clientes falhou: {r.status_code} — {r.text}"
     body = r.json()
     # Todos os campos required de ClienteResponse devem estar presentes
@@ -1428,14 +1433,18 @@ def test_listar_clientes_com_db_mockado():
     """GET /clientes com DB mockado: retorna lista válida + response_model OK."""
     from unittest.mock import patch
 
-    async def fake_listar(*args, **kwargs):
-        return [
-            _fake_cliente_mock(nome="Cliente A"),
-            _fake_cliente_mock(nome="Cliente B"),
-        ]
+    class _FakeListarUC:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def execute(self, _input):
+            return [
+                _fake_cliente_mock(nome="Cliente A"),
+                _fake_cliente_mock(nome="Cliente B"),
+            ]
 
     ctx, _ = _patch_db_session()
-    with ctx, patch("api.main.crud_clientes.listar_clientes", side_effect=fake_listar):
+    with ctx, patch("api.routers.clientes.ListarClientesUseCase", _FakeListarUC):
         r = client.get("/clientes")
 
     assert r.status_code == 200, r.text
@@ -1525,11 +1534,15 @@ def test_criar_cliente_cnpj_duplicado_retorna_409():
     from unittest.mock import patch
     from sqlalchemy.exc import IntegrityError
 
-    async def fake_criar_dup(*args, **kwargs):
-        raise IntegrityError("INSERT INTO clientes", {}, Exception("UNIQUE violation"))
+    class _FakeCriarUCDup:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def execute(self, _input):
+            raise IntegrityError("INSERT INTO clientes", {}, Exception("UNIQUE violation"))
 
     ctx, _ = _patch_db_session()
-    with ctx, patch("api.main.crud_clientes.criar_cliente", side_effect=fake_criar_dup):
+    with ctx, patch("api.routers.clientes.CriarClienteUseCase", _FakeCriarUCDup):
         r = client.post(
             "/clientes",
             json={"nome": "Empresa Duplicada", "cnpj": "11444777000161", "plano": "basico"},
@@ -1709,16 +1722,33 @@ def _make_apistatus_error(msg: str, status_code: int = 400, error_message: str =
     return err
 
 
+def _wire_stream(fake_client, *, response=None, side_effect=None):
+    """Adapta um fake_client ao codigo que usa `c.messages.stream(...)` como
+    context manager. Sucesso: get_final_message()->response. Erro: levanta no enter."""
+    from unittest.mock import MagicMock
+
+    cm = MagicMock()
+    if side_effect is not None:
+        cm.__enter__ = MagicMock(side_effect=side_effect)
+    else:
+        stream = MagicMock()
+        stream.get_final_message = MagicMock(return_value=response)
+        cm.__enter__ = MagicMock(return_value=stream)
+    cm.__exit__ = MagicMock(return_value=False)
+    fake_client.messages.stream = MagicMock(return_value=cm)
+    return fake_client
+
+
 def test_conciliar_ofx_modo_llm_single_mockado():
     """POST /conciliar/ofx em modo LLM (sem multi-modelo): caminho happy."""
     from unittest.mock import MagicMock, patch
 
     fake_client = MagicMock()
-    fake_client.messages.create.return_value = _fake_anthropic_response(
+    _wire_stream(fake_client, response=_fake_anthropic_response(
         "# Relatório de Conciliação\n\nAnálise completa pelo Haiku.",
         in_tokens=150,
         out_tokens=400,
-    )
+    ))
 
     with (
         patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
@@ -1750,7 +1780,7 @@ def test_conciliar_ofx_llm_credito_esgotado_retorna_msg_amigavel():
         error_message="Your credit balance is too low to access the Anthropic API",
     )
     fake_client = MagicMock()
-    fake_client.messages.create.side_effect = err
+    _wire_stream(fake_client, side_effect=err)
 
     with (
         patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
@@ -1779,7 +1809,7 @@ def test_conciliar_ofx_llm_rate_limit_retorna_msg_amigavel():
         error_message="Rate limit exceeded for this organization",
     )
     fake_client = MagicMock()
-    fake_client.messages.create.side_effect = err
+    _wire_stream(fake_client, side_effect=err)
 
     with (
         patch("api.services.conciliacao_llm._get_client", return_value=fake_client),
@@ -1815,7 +1845,7 @@ def test_conciliar_ofx_multi_modelo_mockado():
     async def fake_sintetizar(api_key, resultados, max_tokens):
         # Verifica que recebeu 3 resultados
         assert len(resultados) == 3
-        return "## Índice de Consenso: 85/100\n\nRelatório consolidado", 0.85
+        return "## Índice de Consenso: 85/100\n\nRelatório consolidado", 0.85, 0.0123
 
     with (
         patch("api.routers.conciliacao.chamar_modelo_async", side_effect=fake_chamar_modelo),
@@ -1833,7 +1863,7 @@ def test_conciliar_ofx_multi_modelo_mockado():
     assert data["score_consenso"] == 0.85
     assert len(data["modelos"]) == 3  # opus + sonnet + haiku
     assert {m["modelo"] for m in data["modelos"]} == {
-        "claude-opus-4-7",
+        "claude-opus-4-8",
         "claude-sonnet-4-6",
         "claude-haiku-4-5-20251001",
     }
@@ -1847,11 +1877,11 @@ def test_conciliar_csv_modo_llm_mockado():
     from unittest.mock import MagicMock, patch
 
     fake_client = MagicMock()
-    fake_client.messages.create.return_value = _fake_anthropic_response(
+    _wire_stream(fake_client, response=_fake_anthropic_response(
         "## Conciliação Bancária — CSV\n\nDivergências identificadas.",
         in_tokens=80,
         out_tokens=250,
-    )
+    ))
 
     extrato_csv = b"data,valor,memo\n2026-01-01,-100.00,Saida\n"
     razao_csv = b"data,valor,conta\n2026-01-01,-100.00,Despesa Geral\n"
@@ -1884,7 +1914,7 @@ def test_sintetizar_consenso_zero_resultados_validos():
     async def _run():
         return await _sintetizar_consenso("fake-key", [], max_tokens=4000)
 
-    texto, score = asyncio.run(_run())
+    texto, score, _custo = asyncio.run(_run())
     assert "Nenhum modelo" in texto
     assert score == 0.0
 
@@ -1902,7 +1932,7 @@ def test_sintetizar_consenso_um_resultado_valido_score_0_5():
     async def _run():
         return await _sintetizar_consenso("fake-key", resultados, max_tokens=4000)
 
-    texto, score = asyncio.run(_run())
+    texto, score, _custo = asyncio.run(_run())
     assert texto == "Único relatório válido"
     assert score == 0.5
 
@@ -1917,7 +1947,7 @@ def test_chamar_modelo_async_apistatus_retorna_texto_vazio():
 
     fake_anthropic_class = MagicMock()
     fake_instance = MagicMock()
-    fake_instance.messages.create.side_effect = err
+    _wire_stream(fake_instance, side_effect=err)
     fake_anthropic_class.return_value = fake_instance
 
     async def _run():
