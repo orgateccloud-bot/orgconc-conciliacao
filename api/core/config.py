@@ -134,17 +134,43 @@ SYSTEM_PROMPT = (
     "executivo, achados criticos, classificacao contabil e plano de acao."
 )
 
-_MODELOS_MULTI = [
-    ("claude-opus-4-7", "Opus 4.7", "🔵"),
-    ("claude-sonnet-4-6", "Sonnet 4.6", "🟢"),
-    ("claude-haiku-4-5-20251001", "Haiku 4.5", "🟡"),
-]
+from api.core import model_registry as _model_registry
 
-_MODELOS_VALIDOS = {
-    "haiku": ("claude-haiku-4-5-20251001", "Haiku 4.5"),
-    "sonnet": ("claude-sonnet-4-6", "Sonnet 4.6"),
-    "opus": ("claude-opus-4-7", "Opus 4.7"),
-}
+# Modelos por familia. MUTAVEIS: atualizar_modelos() sobrescreve in-place com os
+# mais recentes via Models API (chamado no startup). Defaults = fallback offline.
+_MODELOS_VALIDOS = dict(_model_registry.DEFAULTS)  # {familia: (id, label)}
+
+
+def _multi_de_validos() -> list[tuple[str, str, str]]:
+    return [
+        (_MODELOS_VALIDOS[f][0], _MODELOS_VALIDOS[f][1], _model_registry.EMOJI.get(f, ""))
+        for f in ("opus", "sonnet", "haiku")
+        if f in _MODELOS_VALIDOS
+    ]
+
+
+_MODELOS_MULTI = _multi_de_validos()
+
+
+def atualizar_modelos(api_key: str | None = None) -> None:
+    """Atualiza _MODELOS_VALIDOS e _MODELOS_MULTI in-place com o modelo mais
+    recente de cada familia (via Models API). Best-effort: mantem os defaults se
+    a API falhar. Desligavel com ORGCONC_MODELS_AUTO=0.
+    """
+    if os.environ.get("ORGCONC_MODELS_AUTO", "1").strip().lower() in ("0", "false", "no"):
+        return
+    key = (api_key or os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    if not key:
+        return
+    try:
+        resolvido = _model_registry.descobrir_modelos(key)
+    except Exception:
+        log.warning("Falha ao descobrir modelos via API — usando defaults", exc_info=True)
+        return
+    for familia, par in resolvido.items():
+        _MODELOS_VALIDOS[familia] = par
+    _MODELOS_MULTI[:] = _multi_de_validos()
+    log.info("Modelos atualizados via API: %s", {f: v[0] for f, v in _MODELOS_VALIDOS.items()})
 
 _PLANOS_VALIDOS = {"basico", "pro", "enterprise"}
 

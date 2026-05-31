@@ -1863,7 +1863,7 @@ def test_conciliar_ofx_multi_modelo_mockado():
     assert data["score_consenso"] == 0.85
     assert len(data["modelos"]) == 3  # opus + sonnet + haiku
     assert {m["modelo"] for m in data["modelos"]} == {
-        "claude-opus-4-7",
+        "claude-opus-4-8",
         "claude-sonnet-4-6",
         "claude-haiku-4-5-20251001",
     }

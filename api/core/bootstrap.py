@@ -105,6 +105,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.warning("ANTHROPIC_API_KEY nao configurada")
+    # Resolve o modelo mais recente de cada familia via Models API (best-effort).
+    _config.atualizar_modelos()
     # Ping do DB movido para startup (era feito em import-time e bloqueava ate 14s)
     db_ok = verificar_db_disponivel()
     if db_ok:
