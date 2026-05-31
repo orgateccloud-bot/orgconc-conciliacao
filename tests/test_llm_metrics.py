@@ -25,9 +25,10 @@ def _limpar_estado():
 
 def test_calcular_custo_opus_usa_default():
     m = llm_metrics.calcular_custo("claude-opus-4-7", 1_000_000, 1_000_000)
-    assert m["cost_input_usd"] == 15.0
-    assert m["cost_output_usd"] == 75.0
-    assert m["cost_total_usd"] == 90.0
+    # Opus 4.5+ = $5/$25 (tabela oficial 2026)
+    assert m["cost_input_usd"] == 5.0
+    assert m["cost_output_usd"] == 25.0
+    assert m["cost_total_usd"] == 30.0
     assert m["model_id"] == "claude-opus-4-7"
 
 
@@ -61,7 +62,7 @@ def test_override_preco_invalido_cai_em_default(caplog):
     os.environ["ORGCONC_LLM_PRICE_OPUS_IN"] = "nao-eh-numero"
     with caplog.at_level(logging.WARNING):
         m = llm_metrics.calcular_custo("claude-opus-4-7", 1_000_000, 0)
-    assert m["cost_input_usd"] == 15.0
+    assert m["cost_input_usd"] == 5.0
 
 
 def test_registrar_uso_loga_estruturado(caplog):
