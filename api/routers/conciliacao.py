@@ -276,11 +276,12 @@ async def conciliar_ofx(
                 })
             else:
                 resultados.append(r)
-        relatorio_consolidado, score_consenso = await sintetizar_consenso(api_key, resultados, max_tokens)
+        relatorio_consolidado, score_consenso, custo_sintese = await sintetizar_consenso(api_key, resultados, max_tokens)
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado, owner_sub=user.sub)
         db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
-        custo_total_usd = round(sum(r.get("cost_usd", 0.0) for r in resultados), 6)
+        # custo_total inclui os modelos + a chamada de sintese (Sonnet)
+        custo_total_usd = round(sum(r.get("cost_usd", 0.0) for r in resultados) + custo_sintese, 6)
         return JSONResponse({
             "modo": "multi_modelo",
             "report_id": rid,

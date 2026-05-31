@@ -74,7 +74,7 @@ def test_friendly_anthropic_error_generico():
 def test_sintetizar_consenso_sem_validos():
     from api.services.conciliacao_llm import sintetizar_consenso
     resultados = [{"erro": "timeout", "texto": ""}, {"erro": "err", "texto": ""}]
-    texto, score = asyncio.run(sintetizar_consenso("key", resultados, 1000))
+    texto, score, _custo = asyncio.run(sintetizar_consenso("key", resultados, 1000))
     assert score == 0.0
     assert "valido" in texto.lower() or texto
 
@@ -85,7 +85,7 @@ def test_sintetizar_consenso_um_valido():
         {"erro": None, "texto": "Relatorio A", "label": "Sonnet"},
         {"erro": "timeout", "texto": ""},
     ]
-    texto, score = asyncio.run(sintetizar_consenso("key", resultados, 1000))
+    texto, score, _custo = asyncio.run(sintetizar_consenso("key", resultados, 1000))
     assert texto == "Relatorio A"
     assert score == 0.5
 
