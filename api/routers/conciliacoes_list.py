@@ -36,7 +36,7 @@ def _serializar(c) -> dict:
 @router.get("")
 @limiter.limit("30/minute")
 async def listar(request: Request, cliente_id: str | None = None, limit: int = 50, offset: int = 0):
-    if not DB_DISPONIVEL or SessionLocal is None:
+    if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
     cid = None
     if cliente_id:
@@ -53,7 +53,7 @@ async def listar(request: Request, cliente_id: str | None = None, limit: int = 5
 @router.get("/por-cliente/{cliente_id}")
 @limiter.limit("30/minute")
 async def listar_por_cliente(request: Request, cliente_id: str, limit: int = 50, offset: int = 0):
-    if not DB_DISPONIVEL or SessionLocal is None:
+    if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
     try:
         cid = uuid.UUID(cliente_id)

@@ -55,3 +55,8 @@ sim_resposta.json
 
 # Vite — cache de dependências
 .vite/
+
+# Obsidian / notas pessoais
+.obsidian/
+60-TEMPLATES/
+CEREBRO_OBSIDIAN_GUIA_COMPLETO.md
