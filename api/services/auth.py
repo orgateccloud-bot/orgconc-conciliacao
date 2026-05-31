@@ -12,6 +12,7 @@ Variaveis de ambiente:
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import secrets as _secrets
@@ -63,6 +64,19 @@ elif len(_JWT_SECRET) < 32:
 
 _JWT_TTL_MIN = int(os.environ.get("ORGCONC_JWT_TTL_MIN", "120"))
 _JWT_ALG = "HS256"
+
+# Refresh tokens (opacos, sha256) — TTL em dias.
+REFRESH_TTL_DAYS = int(os.environ.get("ORGCONC_REFRESH_TTL_DAYS", "30"))
+
+
+def gerar_refresh_token() -> str:
+    """Token opaco URL-safe (~64 chars). NUNCA é um JWT."""
+    return _secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    """sha256 hex (64 chars). Deterministico — usado para lookup no banco."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def hash_senha(senha: str) -> str:
