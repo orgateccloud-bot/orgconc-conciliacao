@@ -17,6 +17,10 @@ tests/_data_test/
 # Claude Code — apenas settings locais, nunca worktrees/cache
 .claude/
 
+# Agent skills instaladas localmente (npx skills add ...) — por desenvolvedor
+.agents/
+skills-lock.json
+
 # Dados bancários reais (não publicar)
 *.ofx
 *.OFX
