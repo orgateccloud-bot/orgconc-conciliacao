@@ -276,14 +276,14 @@ async def conciliar_ofx(
                 })
             else:
                 resultados.append(r)
-        relatorio_consolidado, score_consenso, custo_sintese = await sintetizar_consenso(api_key, resultados, max_tokens)
+        relatorio_consolidado, score_consenso, custo_sintese, sintese_in, sintese_out = await sintetizar_consenso(api_key, resultados, max_tokens)
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado, owner_sub=user.sub)
         # custo_total inclui os modelos paralelos + a chamada de sintese (Sonnet)
         custo_total_usd = round(sum(r.get("cost_usd", 0.0) for r in resultados) + custo_sintese, 6)
         usage_multi = {
-            "input_tokens": sum(r.get("input_tokens", 0) for r in resultados),
-            "output_tokens": sum(r.get("output_tokens", 0) for r in resultados),
+            "input_tokens": sum(r.get("input_tokens", 0) for r in resultados) + sintese_in,
+            "output_tokens": sum(r.get("output_tokens", 0) for r in resultados) + sintese_out,
             "cost_usd": custo_total_usd,
         }
         db_status = await salvar_no_banco(

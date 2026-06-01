@@ -79,12 +79,9 @@ def registrar_llm_prometheus(
         else "outro"
     )
     try:
-        if input_tokens:
-            _LLM_TOKENS.labels(familia, "input").inc(input_tokens)
-        if output_tokens:
-            _LLM_TOKENS.labels(familia, "output").inc(output_tokens)
-        if cost_usd:
-            _LLM_COST.labels(familia).inc(cost_usd)
+        _LLM_TOKENS.labels(familia, "input").inc(input_tokens)
+        _LLM_TOKENS.labels(familia, "output").inc(output_tokens)
+        _LLM_COST.labels(familia).inc(cost_usd)
     except Exception:  # pragma: no cover — telemetria não pode quebrar fluxo
         pass
 

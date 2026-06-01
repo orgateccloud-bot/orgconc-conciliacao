@@ -119,7 +119,8 @@ class _AcumuladorDiario:
         hoje = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         with self._lock:
             self._rolar_dia_se_preciso(hoje)
-            delta_usd = self._total_usd - self._persistido_usd
+            # max(0.0, ...) evita delta negativo por drift de arredondamento float.
+            delta_usd = max(0.0, self._total_usd - self._persistido_usd)
             delta_chamadas = self._chamadas - self._persistido_chamadas
             return self._dia, round(delta_usd, 6), delta_chamadas
 
@@ -209,8 +210,9 @@ async def persistir_custo_diario_async(db: "AsyncSession") -> bool:
     persistências no mesmo dia e reinício do processo.
     """
     dia_iso, delta_usd, delta_chamadas = _ACUMULADOR.delta_para_persistir()
-    if not dia_iso or delta_chamadas <= 0 or delta_usd <= 0:
+    if not dia_iso or delta_chamadas <= 0:
         return False
+    committed = False
     try:
         from sqlalchemy.dialects.postgresql import insert as _pg_insert
         from api.db.models import LlmCostDaily
@@ -235,9 +237,7 @@ async def persistir_custo_diario_async(db: "AsyncSession") -> bool:
         )
         await db.execute(stmt)
         await db.commit()
-        # Só marca como gravado após COMMIT bem-sucedido — se falhar, o delta
-        # será re-tentado na próxima persistência (não perde nem duplica).
-        _ACUMULADOR.confirmar_persistido(dia_iso, delta_usd, delta_chamadas)
+        committed = True
         return True
     except Exception:  # noqa: BLE001 — best-effort, não pode quebrar request
         log.exception("Falha persistindo custo diário (dia=%s, delta=%.4f)", dia_iso, delta_usd)
@@ -246,3 +246,8 @@ async def persistir_custo_diario_async(db: "AsyncSession") -> bool:
         except Exception:  # noqa: BLE001
             pass
         return False
+    finally:
+        # Marca delta como gravado mesmo sob CancelledError (BaseException).
+        # Se não houve commit, committed=False e o delta será retentado.
+        if committed:
+            _ACUMULADOR.confirmar_persistido(dia_iso, delta_usd, delta_chamadas)

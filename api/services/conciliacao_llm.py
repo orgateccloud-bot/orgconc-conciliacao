@@ -161,17 +161,17 @@ async def sintetizar_consenso(
     api_key: str,
     resultados: list[dict],
     max_tokens: int,
-) -> tuple[str, float, float]:
-    """Retorna (relatorio_consolidado, score_consenso, custo_sintese_usd).
+) -> tuple[str, float, float, int, int]:
+    """Retorna (relatorio_consolidado, score_consenso, custo_sintese_usd, input_tokens, output_tokens).
 
-    custo_sintese_usd e o custo da chamada de sintese (Sonnet); 0.0 quando nao
-    ha sintese (0 ou 1 modelo valido).
+    Tokens e custo referem-se somente à chamada de síntese (Sonnet); zeros quando
+    não há síntese (0 ou 1 modelo válido).
     """
     validos = [r for r in resultados if not r.get("erro") and r["texto"]]
     if not validos:
-        return "Nenhum modelo produziu resultado valido.", 0.0, 0.0
+        return "Nenhum modelo produziu resultado valido.", 0.0, 0.0, 0, 0
     if len(validos) == 1:
-        return validos[0]["texto"], 0.5, 0.0
+        return validos[0]["texto"], 0.5, 0.0, 0, 0
 
     secoes = "\n\n".join(f"### Análise — {r['label']}\n{r['texto']}" for r in validos)
     prompt_juiz = (
@@ -187,7 +187,13 @@ async def sintetizar_consenso(
     texto = res["texto"] or validos[0]["texto"]
     m = re.search(r"[Íi]ndice\s+de\s+[Cc]onsenso[:\s]+(\d+)", texto)
     score = int(m.group(1)) / 100.0 if m else (len(validos) / 3 * 0.8)
-    return texto, round(min(max(score, 0.0), 1.0), 3), res.get("cost_usd", 0.0)
+    return (
+        texto,
+        round(min(max(score, 0.0), 1.0), 3),
+        res.get("cost_usd", 0.0),
+        res.get("input_tokens", 0),
+        res.get("output_tokens", 0),
+    )
 
 
 def get_api_key() -> str:

@@ -30,6 +30,10 @@ conciliar_ofx.py
 resultado.py
 teste*.py
 
+# Scripts de análise forense por cliente (dados sensíveis, nunca publicar)
+scripts/analisar_locar.py
+scripts/analisar_*.py
+
 # Python
 .venv/
 venv/
