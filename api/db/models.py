@@ -178,6 +178,20 @@ class ReconciliacaoDataset(Base):
     criado_em: Mapped[datetime]   = mapped_column(TIMESTAMPTZ, server_default=text("now()"), nullable=False)
 
 
+class CnpjCache(Base):
+    """Cache de enriquecimento de CNPJ (BrasilAPI/RFB) compartilhado entre réplicas.
+
+    Substitui o JSON local (data/cnpj_cache.json), efêmero no Railway — sem isto o
+    enriquecimento cadastral (situação/pós-baixa/MEI) não persiste entre deploys.
+    `info` é o CnpjInfo serializado.
+    """
+    __tablename__ = "cnpj_cache"
+
+    cnpj:          Mapped[str]      = mapped_column(String(14), primary_key=True)
+    info:          Mapped[dict]     = mapped_column(JSONB, nullable=False)
+    atualizado_em: Mapped[datetime] = mapped_column(TIMESTAMPTZ, server_default=text("now()"), nullable=False)
+
+
 class GuiaTributo(Base):
     """Guias tributárias cadastradas pela firma (DARF, DAS, GPS, GNRE, etc.).
 
