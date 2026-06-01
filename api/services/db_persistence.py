@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 
 from api.core import config as _config
@@ -17,7 +18,11 @@ async def salvar_no_banco(
     anomalias: list[dict],
     modo: str,
     cliente_id: Optional[str] = None,
+    usage: Optional[dict] = None,
 ) -> dict:
+    """Persiste a conciliação. ``usage`` (opcional) registra o consumo LLM da
+    operação: {"input_tokens": int, "output_tokens": int, "cost_usd": float}.
+    """
     if not DB_DISPONIVEL:
         return {"status": "skip", "motivo": "db_indisponivel"}
     try:
@@ -45,6 +50,8 @@ async def salvar_no_banco(
 
         async with SessionLocal() as db:
             async with db.begin():
+                u = usage or {}
+                custo = u.get("cost_usd")
                 conc = models.Conciliacao(
                     cliente_id=cid,
                     report_id=report_id,
@@ -55,6 +62,9 @@ async def salvar_no_banco(
                     valor_total_debito=total_deb,
                     periodo_inicio=date.fromisoformat(datas[0]) if datas else None,
                     periodo_fim=date.fromisoformat(datas[-1]) if datas else None,
+                    usage_input_tokens=u.get("input_tokens"),
+                    usage_output_tokens=u.get("output_tokens"),
+                    usage_cost_usd=Decimal(str(custo)) if custo is not None else None,
                 )
                 db.add(conc)
                 await db.flush()  # gera conc.id

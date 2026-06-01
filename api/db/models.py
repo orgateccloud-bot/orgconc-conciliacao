@@ -74,6 +74,9 @@ class Conciliacao(Base):
     periodo_fim:          Mapped[date | None]  = mapped_column(Date)
     criado_em:            Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
     usage_latency_ms:     Mapped[int | None]   = mapped_column(Integer)
+    usage_input_tokens:   Mapped[int | None]   = mapped_column(Integer)
+    usage_output_tokens:  Mapped[int | None]   = mapped_column(Integer)
+    usage_cost_usd:       Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
 
     cliente: Mapped["Cliente | None"] = relationship(back_populates="conciliacoes")
     transacoes: Mapped[list["Transacao"]] = relationship(back_populates="conciliacao")

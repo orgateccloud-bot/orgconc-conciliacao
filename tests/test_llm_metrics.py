@@ -99,3 +99,49 @@ def test_threshold_zero_nao_dispara(caplog):
     with caplog.at_level(logging.WARNING, logger="orgconc.llm.metrics"):
         llm_metrics.registrar_uso("claude-opus-4-7", "O", 1_000_000, 1_000_000)
     assert not any(r.message == "llm_custo_threshold_atingido" for r in caplog.records)
+
+
+# --- Acumulador: persistencia incremental por delta (suporte a workers > 1) ---
+
+
+def test_delta_reflete_total_nao_persistido():
+    # Duas chamadas haiku de 0.6 USD cada → total 1.2, 2 chamadas, nada persistido
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)
+    dia, delta_usd, delta_chamadas = llm_metrics._ACUMULADOR.delta_para_persistir()
+    assert dia  # dia ISO nao vazio
+    assert delta_usd == pytest.approx(1.2, rel=1e-3)
+    assert delta_chamadas == 2
+
+
+def test_confirmar_persistido_zera_delta():
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)
+    acc = llm_metrics._ACUMULADOR
+    dia, delta_usd, delta_chamadas = acc.delta_para_persistir()
+    acc.confirmar_persistido(dia, delta_usd, delta_chamadas)
+    # Sem novas chamadas apos confirmar → nada a persistir
+    _, d2_usd, d2_chamadas = acc.delta_para_persistir()
+    assert d2_chamadas == 0
+    assert d2_usd == pytest.approx(0.0, abs=1e-9)
+
+
+def test_delta_incremental_apos_confirmar():
+    acc = llm_metrics._ACUMULADOR
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)  # 0.6
+    dia, d_usd, d_ch = acc.delta_para_persistir()
+    acc.confirmar_persistido(dia, d_usd, d_ch)
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)  # +0.6
+    _, d2_usd, d2_ch = acc.delta_para_persistir()
+    assert d2_ch == 1  # so o incremento novo
+    assert d2_usd == pytest.approx(0.6, rel=1e-3)
+
+
+def test_confirmar_persistido_dia_diferente_eh_noop():
+    # Se o dia virou entre o peek e o confirm, o delta antigo nao e remarcado.
+    acc = llm_metrics._ACUMULADOR
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)
+    dia, d_usd, d_ch = acc.delta_para_persistir()
+    acc.confirmar_persistido("1999-01-01", d_usd, d_ch)  # dia errado
+    _, d2_usd, d2_ch = acc.delta_para_persistir()
+    assert d2_ch == d_ch  # delta intacto — nada foi confirmado
+    assert d2_usd == pytest.approx(d_usd, rel=1e-3)

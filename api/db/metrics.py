@@ -5,13 +5,14 @@ Todas funcoes async e recebem AsyncSession.
 """
 from __future__ import annotations
 
+import calendar
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Conciliacao, Transacao
+from .models import Conciliacao, LlmCostDaily, Transacao
 
 
 def _now_utc() -> datetime:
@@ -258,3 +259,79 @@ def _descricao_score(score: int) -> str:
     if score >= 50:
         return "Atencao — revisar anomalias recentes"
     return "Critico — auditoria manual recomendada"
+
+
+async def custo_llm_resumo(db: AsyncSession, periodo_dias: int = 30) -> dict[str, Any]:
+    """Resumo de custo Claude API + previsao de gastos a partir de llm_cost_daily.
+
+    Calcula, a partir do historico diario persistido:
+    - total no periodo de exibicao (custo USD + chamadas)
+    - custo de hoje
+    - burn rate diario = media dos ultimos 7 dias de CALENDARIO (dias sem registro
+      contam como 0 — metrica conservadora que nao superestima em uso esporadico)
+    - mes corrente: gasto ate agora, dias restantes, projecao linear ate o fim do mes
+    - projecao para os proximos 30 dias (burn_rate * 30)
+    - serie diaria para o grafico
+
+    A janela buscada cobre simultaneamente o periodo de exibicao, o mes corrente e
+    a janela de 7 dias do burn rate — mesmo quando ``periodo_dias`` e pequeno — para
+    que as projecoes nunca fiquem sem dados.
+    """
+    hoje = _now_utc().date()
+    inicio_mes = hoje.replace(day=1)
+    desde_display = hoje - timedelta(days=periodo_dias - 1)
+    desde_burn = hoje - timedelta(days=6)
+    desde_query = min(desde_display, desde_burn, inicio_mes)
+
+    q = (
+        select(LlmCostDaily.dia, LlmCostDaily.custo_usd, LlmCostDaily.chamadas)
+        .where(LlmCostDaily.dia >= desde_query)
+        .order_by(LlmCostDaily.dia)
+    )
+    rows = (await db.execute(q)).all()
+
+    por_dia_custo = {r.dia.isoformat(): float(r.custo_usd or 0) for r in rows}
+
+    # Serie do grafico: apenas o periodo de exibicao solicitado.
+    serie = [
+        {
+            "data": r.dia.isoformat(),
+            "custo_usd": float(r.custo_usd or 0),
+            "chamadas": int(r.chamadas or 0),
+        }
+        for r in rows
+        if r.dia >= desde_display
+    ]
+
+    total_periodo_usd = round(sum(d["custo_usd"] for d in serie), 4)
+    total_chamadas = sum(d["chamadas"] for d in serie)
+    custo_hoje_usd = round(por_dia_custo.get(hoje.isoformat(), 0.0), 4)
+
+    # Burn rate: media dos ultimos 7 dias de calendario (inclui dias zerados).
+    custo_7d = sum(v for k, v in por_dia_custo.items() if k >= desde_burn.isoformat())
+    burn_rate_diario_usd = round(custo_7d / 7, 4)
+
+    # Mes corrente + projecao linear ate o ultimo dia do mes.
+    custo_mes = round(
+        sum(v for k, v in por_dia_custo.items() if k >= inicio_mes.isoformat()), 4
+    )
+    dias_no_mes = calendar.monthrange(hoje.year, hoje.month)[1]
+    dias_restantes = dias_no_mes - hoje.day
+    projecao_fim_mes_usd = round(custo_mes + burn_rate_diario_usd * dias_restantes, 4)
+    projecao_30d_usd = round(burn_rate_diario_usd * 30, 4)
+
+    return {
+        "periodo_dias": periodo_dias,
+        "total_periodo_usd": total_periodo_usd,
+        "total_chamadas": total_chamadas,
+        "custo_hoje_usd": custo_hoje_usd,
+        "burn_rate_diario_usd": burn_rate_diario_usd,
+        "mes_corrente": {
+            "custo_ate_agora_usd": custo_mes,
+            "dias_no_mes": dias_no_mes,
+            "dias_restantes": dias_restantes,
+            "projecao_fim_mes_usd": projecao_fim_mes_usd,
+        },
+        "projecao_30d_usd": projecao_30d_usd,
+        "serie_diaria": serie,
+    }
