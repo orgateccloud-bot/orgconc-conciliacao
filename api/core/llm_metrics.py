@@ -66,7 +66,14 @@ def calcular_custo(model_id: str, input_tokens: int, output_tokens: int) -> dict
 
 
 class _AcumuladorDiario:
-    """Acumula custo do dia (UTC) e dispara alerta unico acima do threshold."""
+    """Acumula custo do dia (UTC) e dispara alerta unico acima do threshold.
+
+    Rastreia tambem o quanto ja foi persistido no banco (``_persistido_*``) para
+    permitir UPSERT *incremental* por delta. Isso e essencial com multiplos
+    workers (uvicorn --workers N): cada processo tem seu proprio acumulador com
+    apenas a SUA fatia do custo; persistir incrementalmente o delta soma as
+    fatias no banco em vez de um worker sobrescrever o do outro.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -74,17 +81,26 @@ class _AcumuladorDiario:
         self._total_usd: float = 0.0
         self._chamadas: int = 0
         self._alerta_disparado: bool = False
+        # Marcadores do que ja foi gravado em llm_cost_daily (para delta).
+        self._persistido_usd: float = 0.0
+        self._persistido_chamadas: int = 0
+
+    def _rolar_dia_se_preciso(self, hoje: str) -> None:
+        """Zera o estado quando vira o dia (UTC). Chamar sob lock."""
+        if hoje != self._dia:
+            self._dia = hoje
+            self._total_usd = 0.0
+            self._chamadas = 0
+            self._alerta_disparado = False
+            self._persistido_usd = 0.0
+            self._persistido_chamadas = 0
 
     def adicionar(self, custo_usd: float) -> tuple[float, bool]:
         """Soma o custo e retorna (total_dia_usd, atingiu_threshold_agora)."""
         hoje = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         threshold = _threshold_alerta()
         with self._lock:
-            if hoje != self._dia:
-                self._dia = hoje
-                self._total_usd = 0.0
-                self._chamadas = 0
-                self._alerta_disparado = False
+            self._rolar_dia_se_preciso(hoje)
             self._total_usd += custo_usd
             self._chamadas += 1
             atingiu = False
@@ -97,6 +113,28 @@ class _AcumuladorDiario:
         """Retorna (dia_iso, total_usd, chamadas) atomicamente."""
         with self._lock:
             return self._dia, self._total_usd, self._chamadas
+
+    def delta_para_persistir(self) -> tuple[str, float, int]:
+        """Retorna (dia_iso, delta_usd, delta_chamadas) ainda nao gravado."""
+        hoje = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        with self._lock:
+            self._rolar_dia_se_preciso(hoje)
+            delta_usd = self._total_usd - self._persistido_usd
+            delta_chamadas = self._chamadas - self._persistido_chamadas
+            return self._dia, round(delta_usd, 6), delta_chamadas
+
+    def confirmar_persistido(self, dia: str, delta_usd: float, delta_chamadas: int) -> None:
+        """Marca o delta como gravado — somente se ainda for o mesmo dia.
+
+        Se o dia virou entre o peek e a confirmacao, o estado ja foi zerado e o
+        delta antigo nao deve ser remarcado (a gravacao do dia anterior ja foi
+        persistida corretamente; o novo dia comeca do zero).
+        """
+        with self._lock:
+            if dia != self._dia:
+                return
+            self._persistido_usd += delta_usd
+            self._persistido_chamadas += delta_chamadas
 
 
 def _threshold_alerta() -> float:
@@ -133,6 +171,18 @@ def registrar_uso(
     if duracao_ms is not None:
         extra["llm_duracao_ms"] = round(duracao_ms, 1)
     log.info("llm_uso", extra=extra)
+    # Exporta para Prometheus (best-effort — lib opcional, nunca quebra).
+    try:
+        from api.core.prometheus_metrics import registrar_llm_prometheus
+
+        registrar_llm_prometheus(
+            model_id,
+            metrics["input_tokens"],
+            metrics["output_tokens"],
+            metrics["cost_total_usd"],
+        )
+    except Exception:  # noqa: BLE001 — telemetria opcional
+        pass
     if atingiu:
         log.warning(
             "llm_custo_threshold_atingido",
@@ -149,42 +199,48 @@ def resetar_acumulador_para_testes() -> None:
 
 
 async def persistir_custo_diario_async(db: "AsyncSession") -> bool:
-    """UPSERT do acumulador in-memory na tabela llm_cost_daily.
+    """UPSERT *incremental* do delta nao gravado na tabela llm_cost_daily.
 
-    Best-effort: nunca propaga exceção — só loga. Pula se acumulador vazio.
+    Best-effort: nunca propaga exceção — só loga. Pula se não há delta novo.
     Retorna True se persistiu, False caso contrário.
+
+    Em conflito (dia já existe), SOMA o delta ao valor atual (não substitui).
+    Isso mantém a contabilização correta com múltiplos workers, múltiplas
+    persistências no mesmo dia e reinício do processo.
     """
-    dia_iso, total_usd, chamadas = _ACUMULADOR.snapshot()
-    if not dia_iso or chamadas == 0:
+    dia_iso, delta_usd, delta_chamadas = _ACUMULADOR.delta_para_persistir()
+    if not dia_iso or delta_chamadas <= 0 or delta_usd <= 0:
         return False
     try:
         from sqlalchemy.dialects.postgresql import insert as _pg_insert
         from api.db.models import LlmCostDaily
 
         dia_obj = _date.fromisoformat(dia_iso)
-        valor = Decimal(str(round(total_usd, 4)))
+        valor = Decimal(str(round(delta_usd, 4)))
 
         stmt = _pg_insert(LlmCostDaily).values(
             dia=dia_obj,
             custo_usd=valor,
-            chamadas=chamadas,
+            chamadas=delta_chamadas,
             atualizado_em=datetime.now(timezone.utc),
         )
-        # UPSERT atômico — em conflito (dia já existe), substitui pelos valores atuais
-        # (o acumulador in-memory já contém o total do dia, então é set, não increment)
+        # UPSERT atômico incremental — em conflito soma o delta ao acumulado.
         stmt = stmt.on_conflict_do_update(
             index_elements=["dia"],
             set_={
-                "custo_usd": stmt.excluded.custo_usd,
-                "chamadas": stmt.excluded.chamadas,
+                "custo_usd": LlmCostDaily.custo_usd + stmt.excluded.custo_usd,
+                "chamadas": LlmCostDaily.chamadas + stmt.excluded.chamadas,
                 "atualizado_em": stmt.excluded.atualizado_em,
             },
         )
         await db.execute(stmt)
         await db.commit()
+        # Só marca como gravado após COMMIT bem-sucedido — se falhar, o delta
+        # será re-tentado na próxima persistência (não perde nem duplica).
+        _ACUMULADOR.confirmar_persistido(dia_iso, delta_usd, delta_chamadas)
         return True
     except Exception:  # noqa: BLE001 — best-effort, não pode quebrar request
-        log.exception("Falha persistindo custo diário (dia=%s, total=%.4f)", dia_iso, total_usd)
+        log.exception("Falha persistindo custo diário (dia=%s, delta=%.4f)", dia_iso, delta_usd)
         try:
             await db.rollback()
         except Exception:  # noqa: BLE001

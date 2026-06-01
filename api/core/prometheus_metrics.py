@@ -47,6 +47,46 @@ if _PROMETHEUS_OK:
         "orgconc_http_requests_in_progress",
         "Requisições HTTP em andamento",
     )
+    _LLM_TOKENS = Counter(
+        "orgconc_llm_tokens_total",
+        "Tokens consumidos na API Claude",
+        ["model", "direction"],
+    )
+    _LLM_COST = Counter(
+        "orgconc_llm_cost_usd_total",
+        "Custo acumulado da API Claude em USD",
+        ["model"],
+    )
+
+
+def registrar_llm_prometheus(
+    model_id: str,
+    input_tokens: int,
+    output_tokens: int,
+    cost_usd: float,
+) -> None:
+    """Incrementa contadores de tokens/custo LLM. No-op se lib ausente.
+
+    Normaliza o model_id para a família (opus/sonnet/haiku) para evitar
+    explosão de cardinalidade por sufixos de versão/data.
+    """
+    if not _PROMETHEUS_OK:
+        return
+    familia = (
+        "opus" if "opus" in model_id
+        else "sonnet" if "sonnet" in model_id
+        else "haiku" if "haiku" in model_id
+        else "outro"
+    )
+    try:
+        if input_tokens:
+            _LLM_TOKENS.labels(familia, "input").inc(input_tokens)
+        if output_tokens:
+            _LLM_TOKENS.labels(familia, "output").inc(output_tokens)
+        if cost_usd:
+            _LLM_COST.labels(familia).inc(cost_usd)
+    except Exception:  # pragma: no cover — telemetria não pode quebrar fluxo
+        pass
 
 
 def _rota_template(request: Request) -> str:

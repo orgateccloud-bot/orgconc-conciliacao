@@ -279,9 +279,16 @@ async def conciliar_ofx(
         relatorio_consolidado, score_consenso, custo_sintese = await sintetizar_consenso(api_key, resultados, max_tokens)
         anomalias = _detectar_anomalias(extratos_parsed)
         rid = salvar_dataset(extratos_parsed, anomalias, relatorio_consolidado, owner_sub=user.sub)
-        db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "multi_modelo", cliente_id)
-        # custo_total inclui os modelos + a chamada de sintese (Sonnet)
+        # custo_total inclui os modelos paralelos + a chamada de sintese (Sonnet)
         custo_total_usd = round(sum(r.get("cost_usd", 0.0) for r in resultados) + custo_sintese, 6)
+        usage_multi = {
+            "input_tokens": sum(r.get("input_tokens", 0) for r in resultados),
+            "output_tokens": sum(r.get("output_tokens", 0) for r in resultados),
+            "cost_usd": custo_total_usd,
+        }
+        db_status = await salvar_no_banco(
+            rid, extratos_parsed, anomalias, "multi_modelo", cliente_id, usage=usage_multi
+        )
         return JSONResponse({
             "modo": "multi_modelo",
             "report_id": rid,
@@ -315,7 +322,14 @@ async def conciliar_ofx(
     relatorio = res["texto"]
     anomalias = _detectar_anomalias(extratos_parsed)
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
-    db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "llm", cliente_id)
+    db_status = await salvar_no_banco(
+        rid, extratos_parsed, anomalias, "llm", cliente_id,
+        usage={
+            "input_tokens": res.get("input_tokens", 0),
+            "output_tokens": res.get("output_tokens", 0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        },
+    )
     return JSONResponse({
         "modo": "claude_llm",
         "modelo": modelo,
@@ -420,7 +434,14 @@ async def conciliar_csv(
     relatorio = res["texto"]
     anomalias = []
     rid = salvar_dataset(extratos_parsed, anomalias, relatorio, owner_sub=user.sub)
-    db_status = await salvar_no_banco(rid, extratos_parsed, anomalias, "llm_csv", cliente_id)
+    db_status = await salvar_no_banco(
+        rid, extratos_parsed, anomalias, "llm_csv", cliente_id,
+        usage={
+            "input_tokens": res.get("input_tokens", 0),
+            "output_tokens": res.get("output_tokens", 0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        },
+    )
     return JSONResponse({
         "modo": "claude_llm_csv",
         "report_id": rid,

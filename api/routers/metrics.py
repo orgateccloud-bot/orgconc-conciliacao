@@ -5,6 +5,7 @@ Endpoints:
 - GET /metrics/trend             : serie temporal
 - GET /metrics/distribuicao      : por modo de conciliacao
 - GET /metrics/heatmap           : volume diario
+- GET /metrics/custo-llm         : custo Claude API + previsao de gastos
 
 Cache em memoria para evitar 10+ round-trips quando o dashboard monta.
 """
@@ -139,6 +140,18 @@ async def trust_score(
         resultado = await crud_metrics.calcular_trust_score(db, periodo_dias=periodo)
     _trust_cache[cache_key] = (agora, resultado)
     return resultado
+
+
+@router.get("/custo-llm")
+@limiter.limit("60/minute")
+async def custo_llm(
+    request: Request,
+    periodo: int = Query(30, ge=1, le=365),
+):
+    """Custo Claude API + previsao de gastos (burn rate, projecao mes/30d)."""
+    _check_db()
+    async with SessionLocal() as db:
+        return await crud_metrics.custo_llm_resumo(db, periodo_dias=periodo)
 
 
 def invalidar_cache_metrics(user_sub: str | None = None) -> None:
