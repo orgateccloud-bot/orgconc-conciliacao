@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -24,6 +25,8 @@ import httpx
 CACHE_PATH = Path(__file__).resolve().parents[2] / "data" / "cnpj_cache.json"
 BRASILAPI_URL = "https://brasilapi.com.br/api/cnpj/v1/{cnpj}"
 TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+
+log = logging.getLogger("orgconc.cnpj")
 
 
 @dataclass
@@ -48,7 +51,34 @@ class CnpjInfo:
 # ────────────────────────────────────────────────────────────────────────
 
 
+def _db_url() -> str:
+    from api.core import config
+    return (config._DB_URL or "").strip().replace("postgresql+asyncpg://", "postgresql://", 1)
+
+
+def _db_ativo() -> bool:
+    from api.core import config
+    return bool(config.DB_DISPONIVEL) and bool(_db_url())
+
+
 def _carregar_cache() -> dict:
+    """Carrega o cache de CNPJ: Postgres (cnpj_cache) quando disponível, senão JSON local.
+
+    Compartilhado entre réplicas + persistente entre deploys quando em DB.
+    """
+    if _db_ativo():
+        try:
+            import psycopg2
+
+            conn = psycopg2.connect(_db_url(), connect_timeout=5)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT cnpj, info FROM cnpj_cache")
+                    return {row[0]: dict(row[1]) for row in cur.fetchall()}
+            finally:
+                conn.close()
+        except Exception:
+            log.warning("Falha ao ler cnpj_cache do DB; fallback para arquivo", exc_info=True)
     if not CACHE_PATH.exists():
         return {}
     try:
@@ -58,6 +88,26 @@ def _carregar_cache() -> dict:
 
 
 def _salvar_cache(cache: dict) -> None:
+    if _db_ativo() and cache:
+        try:
+            import psycopg2
+            from psycopg2.extras import Json, execute_values
+
+            conn = psycopg2.connect(_db_url(), connect_timeout=5)
+            try:
+                with conn.cursor() as cur:
+                    execute_values(
+                        cur,
+                        "INSERT INTO cnpj_cache (cnpj, info) VALUES %s "
+                        "ON CONFLICT (cnpj) DO UPDATE SET info = EXCLUDED.info, atualizado_em = now()",
+                        [(cnpj, Json(info)) for cnpj, info in cache.items()],
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+            return
+        except Exception:
+            log.warning("Falha ao gravar cnpj_cache no DB; fallback para arquivo", exc_info=True)
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
