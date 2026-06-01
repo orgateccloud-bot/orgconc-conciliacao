@@ -123,7 +123,6 @@ _LOG_JSON = os.environ.get("ORGCONC_LOG_JSON", "true").strip().lower() not in ("
 _LOG_LEVEL = os.environ.get("ORGCONC_LOG_LEVEL", "INFO").strip()
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-STATIC_DIR = ROOT_DIR / "static"
 REACT_DIST = ROOT_DIR / "orgconc-react" / "dist"
 
 SYSTEM_PROMPT = (

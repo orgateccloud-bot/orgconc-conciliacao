@@ -12,7 +12,7 @@ from openpyxl.utils import get_column_letter
 
 from api.parsers import _classificar, _top_categorias_e_contrapartes
 
-_LOGO_PATH = Path(__file__).resolve().parent.parent.parent / "static" / "logo.png"
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "logo.png"
 
 
 def _xlsx_estilos() -> dict:

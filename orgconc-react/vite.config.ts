@@ -26,7 +26,6 @@ export default defineConfig({
       "/activity":    "http://127.0.0.1:8765",
       "/ai":          "http://127.0.0.1:8765",
       "/logo-base64": "http://127.0.0.1:8765",
-      "/ui":          "http://127.0.0.1:8765",
     },
   },
 });

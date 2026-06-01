@@ -5,10 +5,10 @@ Execucao:
 """
 from __future__ import annotations
 
+import logging
 import os
 
 from fastapi import HTTPException
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.core.bootstrap import criar_app
@@ -16,8 +16,6 @@ from api.core.prometheus_metrics import metrics_endpoint
 from api.core.config import (
     DB_DISPONIVEL,  # noqa: F401 — re-export p/ testes
     REACT_DIST,
-    ROOT_DIR,
-    STATIC_DIR,
     SessionLocal,  # noqa: F401 — re-export p/ testes
     crud_clientes,  # noqa: F401 — re-export p/ testes
     _LOG_JSON,
@@ -89,33 +87,29 @@ app.include_router(guias_router.router)
 app.include_router(contratos_router.router)
 app.include_router(fiscal_router.router)
 
-# UI legada (periodo de transicao)
-if STATIC_DIR.exists():
-    app.mount("/ui", StaticFiles(directory=str(STATIC_DIR), html=True), name="ui_legacy")
-
+# Frontend React (SPA) — servido em /app quando o build existe (orgconc-react/dist).
+# Em produção o build é publicado via GitHub Pages (ver deploy.yml); este mount
+# cobre o uso local/Docker após `npm run build` em orgconc-react/.
 if REACT_DIST.exists():
     app.mount("/app", StaticFiles(directory=str(REACT_DIST), html=True), name="react_app")
 else:
-    # Build React ausente (dev/CI sem `npm run build`): serve o dashboard
-    # canonico em frontend/index.html para que /app continue funcional.
+    _frontend_log = logging.getLogger("orgconc.frontend")
+
     @app.get("/app", include_in_schema=False)
-    def app_dashboard_fallback():
-        html_path = ROOT_DIR / "frontend" / "index.html"
-        if not html_path.exists():
-            raise HTTPException(404, "Dashboard nao encontrado")
-        return FileResponse(str(html_path), media_type="text/html")
+    @app.get("/app/{_caminho:path}", include_in_schema=False)
+    def app_build_ausente(_caminho: str = ""):
+        """Build do React ausente: falha explícita em vez de servir UI fantasma."""
+        _frontend_log.warning(
+            "Build do React ausente em %s — rode `npm run build` em orgconc-react/.",
+            REACT_DIST,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Frontend não compilado. Rode `npm run build` em orgconc-react/.",
+        )
 
 
 @app.get("/metrics", include_in_schema=False)
 def prometheus_metrics():
     """Exposição de métricas no formato Prometheus (text/plain)."""
     return metrics_endpoint()
-
-
-@app.get("/deck", include_in_schema=False)
-def frontend_legacy_redirect():
-    """Dashboard HTML legado em frontend/."""
-    html_path = ROOT_DIR / "frontend" / "index.html"
-    if not html_path.exists():
-        raise HTTPException(404, "Frontend nao encontrado")
-    return FileResponse(str(html_path), media_type="text/html")

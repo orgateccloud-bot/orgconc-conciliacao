@@ -2,21 +2,29 @@
 
 ## URLs do Projeto
 
-- **Frontend (GitHub Pages):** https://orgateccloud-bot.github.io/orgconc-conciliacao/
-- **Login:** https://orgateccloud-bot.github.io/orgconc-conciliacao/frontend/login.html
-- **Dashboard:** https://orgateccloud-bot.github.io/orgconc-conciliacao/frontend/dashboard_trust.html
+- **App (frontend + API):** servido pelo **Railway** — o React é buildado na imagem Docker e servido pelo FastAPI em `/app` (mesma origem da API).
 - **Repositório:** https://github.com/orgateccloud-bot/orgconc-conciliacao
 
 ---
 
-## 1. Frontend (GitHub Pages) — Automático
+## 1. Frontend (React) — servido pelo Railway
 
-O frontend é publicado automaticamente via GitHub Actions a cada push na branch `main`.
+O frontend é o SPA **React** em `orgconc-react/`, servido na **mesma origem** da API
+(o `api.ts` chama a API por caminhos relativos + usa cookie httpOnly de refresh, então
+servir cross-origin não é uma opção). O `Dockerfile` é **multi-stage**: um estágio Node
+roda `npm ci && npm run build` e o `dist` resultante é copiado para a imagem Python em
+`orgconc-react/dist`. O FastAPI monta esse build em `/app`. Sem o build (ex.: em CI),
+`/app` responde **503** explícito — nunca serve UI legada.
 
-**Arquivos publicados:**
-- `frontend/login.html` — Página de entrada com autenticação JWT + Supabase
-- `frontend/dashboard_trust.html` — Dashboard principal com API e conciliação
-- `frontend/index.html` — Landing page
+> O deploy no GitHub Pages foi **removido**: o `base: "/app/"` do Vite não casa com a
+> URL do Pages, e de lá o React não conseguiria falar com a API (origem diferente).
+
+**Desenvolvimento local:**
+```bash
+cd orgconc-react
+npm install
+npm run dev          # Vite em http://127.0.0.1:5176, proxy da API para :8765
+```
 
 ---
 
@@ -175,14 +183,12 @@ Configurar em **Settings > Secrets and variables > Actions**:
 
 ## 5. Conectar Frontend ao Backend
 
-Após deploy do backend, atualizar a URL da API nos arquivos frontend:
+O SPA React (`orgconc-react`) chama a API por caminhos relativos (`/auth/...`,
+`/conciliar/...`). Em desenvolvimento o Vite faz proxy para `http://127.0.0.1:8765`
+(ver `orgconc-react/vite.config.ts`). Em produção, sirva o build na **mesma origem**
+da API (mount `/app` do FastAPI) ou configure um proxy/redirect para o backend.
 
-```javascript
-// Em frontend/login.html e frontend/dashboard_trust.html
-const API_BASE = 'https://seu-backend.railway.app';  // ou Render/VPS
-const SUPABASE_URL = 'https://xxxx.supabase.co';
-const SUPABASE_ANON_KEY = 'sua-chave-anon';
-```
+Garanta que `ORGCONC_CORS_ORIGINS` (backend) inclua a origem do frontend.
 
 ---
 
