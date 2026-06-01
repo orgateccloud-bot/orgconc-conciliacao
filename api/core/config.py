@@ -175,6 +175,14 @@ def atualizar_modelos(api_key: str | None = None) -> None:
     _MODELOS_MULTI[:] = _multi_de_validos()
     log.info("Modelos atualizados via API: %s", {f: v[0] for f, v in _MODELOS_VALIDOS.items()})
 
+# === ENRIQUECIMENTO CNPJ (BrasilAPI / RFB local) ===
+# Máximo de CNPJs enriquecidos por job de background (por upload fiscal).
+CNPJ_ENRICH_LIMITE: int = int(os.environ.get("CNPJ_ENRICH_LIMITE", "300"))
+# Concorrência máxima de requisições simultâneas ao BrasilAPI.
+CNPJ_ENRICH_CONCURRENCY: int = int(os.environ.get("CNPJ_ENRICH_CONCURRENCY", "3"))
+# Timeout total (segundos) por requisição ao BrasilAPI.
+CNPJ_ENRICH_TIMEOUT_S: float = float(os.environ.get("CNPJ_ENRICH_TIMEOUT_S", "10"))
+
 _PLANOS_VALIDOS = {"basico", "pro", "enterprise"}
 
 log = logging.getLogger("orgconc")

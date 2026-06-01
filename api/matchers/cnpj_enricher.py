@@ -24,7 +24,24 @@ import httpx
 
 CACHE_PATH = Path(__file__).resolve().parents[2] / "data" / "cnpj_cache.json"
 BRASILAPI_URL = "https://brasilapi.com.br/api/cnpj/v1/{cnpj}"
-TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+TIMEOUT = httpx.Timeout(10.0, connect=5.0)  # substituído em runtime por _enrich_timeout()
+
+
+def _enrich_timeout() -> httpx.Timeout:
+    try:
+        from api.core import config as _cfg
+        t = _cfg.CNPJ_ENRICH_TIMEOUT_S
+        return httpx.Timeout(t, connect=min(t / 2, 5.0))
+    except Exception:
+        return TIMEOUT
+
+
+def _enrich_concurrency() -> int:
+    try:
+        from api.core import config as _cfg
+        return _cfg.CNPJ_ENRICH_CONCURRENCY
+    except Exception:
+        return 3
 
 log = logging.getLogger("orgconc.cnpj")
 
@@ -434,15 +451,19 @@ async def enriquecer_um(
 async def enriquecer_lote(
     cnpjs: list[str],
     db=None,
-    max_concurrency: int = 3,
+    max_concurrency: int = 0,
     progress_cb=None,
 ) -> dict[str, CnpjInfo]:
-    """Enriquece uma lista de CNPJs em paralelo (com rate limit)."""
+    """Enriquece uma lista de CNPJs em paralelo (com rate limit).
+
+    `max_concurrency=0` usa o valor de CNPJ_ENRICH_CONCURRENCY (env var, default 3).
+    """
+    concurrency = max_concurrency or _enrich_concurrency()
     cache = _carregar_cache()
-    semaforo = asyncio.Semaphore(max_concurrency)
+    semaforo = asyncio.Semaphore(concurrency)
     resultados: dict[str, CnpjInfo] = {}
 
-    async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": "OrgConc/0.5"}) as client:
+    async with httpx.AsyncClient(timeout=_enrich_timeout(), headers={"User-Agent": "OrgConc/0.5"}) as client:
         async def _job(c: str):
             info = await enriquecer_um(c, cache, client, db, semaforo)
             resultados[normaliza_cnpj(c)] = info

@@ -184,19 +184,34 @@ def construir_cadastro(transacoes, cache: dict | None = None) -> dict:
     return cadastro
 
 
-async def enriquecer_cadastro(transacoes, db=None, limite: int = 300) -> int:
+async def enriquecer_cadastro(transacoes, db=None, limite: int | None = None) -> int:
     """Job de background: enriquece (BrasilAPI → RFB local) os CNPJs ainda não
     cacheados e popula o cache. A próxima análise pega pós-baixa/MEI via cache.
 
-    Bounded por `limite` para não virar job longo. Retorna quantos processou.
+    `limite=None` usa CNPJ_ENRICH_LIMITE (env var, default 300).
+    Quando `db=None` e DB está disponível, cria sessão própria para acesso
+    ao fallback RFB local (schema cnpj.*).
     """
+    from api.core import config as _cfg
     from api.matchers import cnpj_enricher
 
+    _limite = limite if limite is not None else _cfg.CNPJ_ENRICH_LIMITE
     cache = cnpj_enricher._carregar_cache()
-    faltantes = [c for c in cnpjs_das_transacoes(transacoes) if c not in cache][:limite]
+    faltantes = [c for c in cnpjs_das_transacoes(transacoes) if c not in cache][:_limite]
     if not faltantes:
         return 0
-    await cnpj_enricher.enriquecer_lote(faltantes, db=db)
+
+    # Cria sessão própria para o RFB local quando nenhuma foi fornecida.
+    # O background task não herda a sessão do request (ela já foi fechada).
+    _own_db = False
+    if db is None and _cfg.DB_DISPONIVEL and _cfg.SessionLocal is not None:
+        db = _cfg.SessionLocal()
+        _own_db = True
+    try:
+        await cnpj_enricher.enriquecer_lote(faltantes, db=db)
+    finally:
+        if _own_db and db is not None:
+            await db.close()
     return len(faltantes)
 
 
