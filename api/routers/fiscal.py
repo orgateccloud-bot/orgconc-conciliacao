@@ -382,6 +382,13 @@ async def risco_tributario(
         "retencoes": retencoes,
         "regime_pressuposto": "LUCRO_REAL",
         "aliquota_aplicada_pct": 34.0,  # IRPJ 25% + CSLL 9%
+        "metodologia": "cruzamento_simples_doc_pagamento",
+        "aviso": (
+            "INDICADOR conservador derivado do cruzamento doc×pagamento — superestima "
+            "quando o extrato não traz CNPJ no memo (match baixo em dados reais). "
+            "NÃO é conclusão de auditoria. O achado central da auditoria forense é o "
+            "múltiplo do teto de regime — ver 'auditoria_forense' em POST /fiscal/processar."
+        ),
     })
 
 
