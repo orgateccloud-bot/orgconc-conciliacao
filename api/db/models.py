@@ -159,6 +159,25 @@ class LlmCostDaily(Base):
     atualizado_em: Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
 
 
+class ReconciliacaoDataset(Base):
+    """Dataset de conciliação (extratos + anomalias + relatório markdown) para export.
+
+    Substitui o armazenamento em disco local (DATA_DIR/{rid}.json), que impedia
+    escala horizontal: o export caía numa réplica sem o arquivo (404). Em DB o
+    dataset é compartilhado entre réplicas. `id` é o report_id (12 hex).
+    """
+    __tablename__ = "reconciliacao_datasets"
+    __table_args__ = (
+        Index("ix_reconciliacao_datasets_owner", "owner_sub"),
+        Index("ix_reconciliacao_datasets_criado", text("criado_em DESC")),
+    )
+
+    id:        Mapped[str]        = mapped_column(String(12), primary_key=True)
+    owner_sub: Mapped[str | None] = mapped_column(Text)
+    payload:   Mapped[dict]       = mapped_column(JSONB, nullable=False)
+    criado_em: Mapped[datetime]   = mapped_column(TIMESTAMPTZ, server_default=text("now()"), nullable=False)
+
+
 class GuiaTributo(Base):
     """Guias tributárias cadastradas pela firma (DARF, DAS, GPS, GNRE, etc.).
 
