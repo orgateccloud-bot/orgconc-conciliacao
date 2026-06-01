@@ -1845,7 +1845,7 @@ def test_conciliar_ofx_multi_modelo_mockado():
     async def fake_sintetizar(api_key, resultados, max_tokens):
         # Verifica que recebeu 3 resultados
         assert len(resultados) == 3
-        return "## Índice de Consenso: 85/100\n\nRelatório consolidado", 0.85, 0.0123
+        return "## Índice de Consenso: 85/100\n\nRelatório consolidado", 0.85, 0.0123, 0, 0
 
     with (
         patch("api.routers.conciliacao.chamar_modelo_async", side_effect=fake_chamar_modelo),
@@ -1914,7 +1914,7 @@ def test_sintetizar_consenso_zero_resultados_validos():
     async def _run():
         return await _sintetizar_consenso("fake-key", [], max_tokens=4000)
 
-    texto, score, _custo = asyncio.run(_run())
+    texto, score, _custo, *_ = asyncio.run(_run())
     assert "Nenhum modelo" in texto
     assert score == 0.0
 
@@ -1932,7 +1932,7 @@ def test_sintetizar_consenso_um_resultado_valido_score_0_5():
     async def _run():
         return await _sintetizar_consenso("fake-key", resultados, max_tokens=4000)
 
-    texto, score, _custo = asyncio.run(_run())
+    texto, score, _custo, *_ = asyncio.run(_run())
     assert texto == "Único relatório válido"
     assert score == 0.5
 

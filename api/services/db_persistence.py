@@ -1,6 +1,7 @@
 """Persistencia de conciliacoes no banco PostgreSQL."""
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -64,7 +65,7 @@ async def salvar_no_banco(
                     periodo_fim=date.fromisoformat(datas[-1]) if datas else None,
                     usage_input_tokens=u.get("input_tokens"),
                     usage_output_tokens=u.get("output_tokens"),
-                    usage_cost_usd=Decimal(str(custo)) if custo is not None else None,
+                    usage_cost_usd=Decimal(str(custo)) if (custo is not None and math.isfinite(custo)) else None,
                 )
                 db.add(conc)
                 await db.flush()  # gera conc.id
