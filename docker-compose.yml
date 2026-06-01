@@ -48,7 +48,7 @@ services:
       start_period: 10s
 
 # Frontend: React (orgconc-react). Em dev rode `npm run dev` (Vite proxia a API);
-# em produção o build é publicado via GitHub Pages (ver .github/workflows/deploy.yml).
+# em produção o Dockerfile builda o React e o FastAPI o serve em /app (mesma origem).
 
 volumes:
   orgconc_data:

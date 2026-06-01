@@ -1,0 +1,24 @@
+# Git / CI / agente
+.git/
+.github/
+.claude/
+
+# Python
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Node — rebuildado no estágio "frontend"
+node_modules/
+orgconc-react/node_modules/
+orgconc-react/dist/
+
+# Ambiente (mantém .env.example)
+.env
+.env.local
+
+# Não necessários na imagem
+tests/

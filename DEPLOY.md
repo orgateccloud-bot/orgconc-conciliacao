@@ -2,17 +2,22 @@
 
 ## URLs do Projeto
 
-- **Frontend (GitHub Pages):** https://orgateccloud-bot.github.io/orgconc-conciliacao/ — SPA React (`orgconc-react`)
-- **Backend (API):** Railway (ver seção 2)
+- **App (frontend + API):** servido pelo **Railway** — o React é buildado na imagem Docker e servido pelo FastAPI em `/app` (mesma origem da API).
 - **Repositório:** https://github.com/orgateccloud-bot/orgconc-conciliacao
 
 ---
 
-## 1. Frontend (GitHub Pages) — Automático
+## 1. Frontend (React) — servido pelo Railway
 
-O frontend é o SPA **React** em `orgconc-react/`. O job `deploy-frontend` em
-`.github/workflows/deploy.yml` roda `npm ci && npm run build` e publica **apenas**
-`orgconc-react/dist` no GitHub Pages a cada push na `main`.
+O frontend é o SPA **React** em `orgconc-react/`, servido na **mesma origem** da API
+(o `api.ts` chama a API por caminhos relativos + usa cookie httpOnly de refresh, então
+servir cross-origin não é uma opção). O `Dockerfile` é **multi-stage**: um estágio Node
+roda `npm ci && npm run build` e o `dist` resultante é copiado para a imagem Python em
+`orgconc-react/dist`. O FastAPI monta esse build em `/app`. Sem o build (ex.: em CI),
+`/app` responde **503** explícito — nunca serve UI legada.
+
+> O deploy no GitHub Pages foi **removido**: o `base: "/app/"` do Vite não casa com a
+> URL do Pages, e de lá o React não conseguiria falar com a API (origem diferente).
 
 **Desenvolvimento local:**
 ```bash
@@ -20,13 +25,6 @@ cd orgconc-react
 npm install
 npm run dev          # Vite em http://127.0.0.1:5176, proxy da API para :8765
 ```
-
-**Build de produção:**
-```bash
-cd orgconc-react && npm run build   # gera orgconc-react/dist/
-```
-O backend (FastAPI) serve esse build em `/app` quando `orgconc-react/dist` existe;
-sem o build, `/app` responde **503** explícito (não serve mais UI legada).
 
 ---
 

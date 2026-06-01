@@ -1,26 +1,38 @@
-# Orgconc — Backend FastAPI
+# Orgconc — imagem de produção: builda o frontend React e serve tudo via FastAPI.
+
+# ── Estágio 1: build do SPA React (Vite) ─────────────────────────────
+FROM node:22-slim AS frontend
+WORKDIR /build
+# Cacheia deps: copia manifestos antes do código-fonte
+COPY orgconc-react/package.json orgconc-react/package-lock.json ./
+RUN npm ci
+COPY orgconc-react/ ./
+RUN npm run build          # gera /build/dist (base "/app/")
+
+# ── Estágio 2: runtime FastAPI ───────────────────────────────────────
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Instalar dependencias do sistema
+# Dependencias do sistema
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements (apenas producao — sem pytest/bandit/semgrep)
+# Dependencias Python (apenas producao — sem pytest/bandit/semgrep)
 COPY requirements-prod.txt ./requirements-prod.txt
-
-# Instalar dependencias Python
 RUN pip install --no-cache-dir -r requirements-prod.txt
 
-# Copiar codigo da API
+# Codigo da API
 COPY api/ ./api/
 COPY .env.example ./.env.example
 
-# Variavel de ambiente padrao
+# Frontend compilado — FastAPI serve em /app quando orgconc-react/dist existe
+COPY --from=frontend /build/dist ./orgconc-react/dist
+
+# Variaveis de ambiente padrao
 ENV PORT=8000
 ENV HOST=0.0.0.0
 ENV WORKERS=2
