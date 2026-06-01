@@ -28,7 +28,7 @@ jobs:
           cache: pip
 
       - name: Cache pip
-        uses: actions/cache@v4.2.3
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-${{ hashFiles('requirements-dev.txt', 'requirements-prod.txt') }}
@@ -161,7 +161,7 @@ jobs:
         working-directory: orgconc-react
         run: npm ci
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
