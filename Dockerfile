@@ -19,6 +19,10 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     curl \
+    # WeasyPrint (geração de PDF dos relatórios) — sem isto o PDF quebra em runtime
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencias Python (apenas producao — sem pytest/bandit/semgrep)
