@@ -80,15 +80,26 @@ def test_export_xlsx(rid):
     assert len(r.content) > 2000
 
 
-def test_export_pdf_gera_pdf_ou_fallback_html(rid):
+def test_export_pdf_renderiza_pdf(rid):
+    try:
+        import weasyprint  # noqa: F401
+
+        weasyprint_ok = True
+    except Exception:
+        weasyprint_ok = False
+
     r = client.get(f"/export/pdf/{rid}")
     assert r.status_code == 200, r.text
     ct = r.headers.get("content-type", "")
-    if ct.startswith("application/pdf"):
+    if weasyprint_ok:
+        # Onde o WeasyPrint existe (CI com libpango, prod) o PDF DEVE sair — sem
+        # fallback. Se as libs de sistema estiverem incompletas, o render falha e
+        # cai no HTML; este assert estrito flagra isso (a classe de bug do PDF mudo).
+        assert ct.startswith("application/pdf"), f"WeasyPrint disponível mas caiu no fallback: {ct}"
         assert r.content[:4] == b"%PDF", f"primeiros bytes: {r.content[:8]!r}"
         assert len(r.content) > 1000
     else:
-        # WeasyPrint indisponível (sem libpango) → fallback HTML imprimível
+        # Host sem libpango (ex.: Windows dev) → fallback HTML imprimível é aceitável
         assert "text/html" in ct
         assert b"Relat" in r.content
 
