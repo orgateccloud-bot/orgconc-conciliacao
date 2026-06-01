@@ -72,3 +72,25 @@ def test_sem_transacoes_nao_explode():
     assert r.n_transacoes == 0
     assert r.regime.multiplo_do_teto == 0.0
     assert r.regime.classe == "COMPATIVEL"
+
+
+def test_cnpjs_das_transacoes_unicos():
+    from api.matchers.auditoria_forense import cnpjs_das_transacoes
+    txs = [
+        _tx("2026-01-01", -1, nome="A 12.345.678/0001-90"),
+        _tx("2026-01-02", -1, nome="B 12.345.678/0001-90"),
+        _tx("2026-01-03", -1, nome="SEM CNPJ AQUI"),
+    ]
+    assert cnpjs_das_transacoes(txs) == ["12345678000190"]
+
+
+def test_construir_cadastro_do_cache_liga_pos_baixa():
+    from api.matchers.auditoria_forense import construir_cadastro
+    cnpj = "63567345000141"
+    cache = {cnpj: {"situacao": "BAIXADA", "data_situacao": "2026-03-11", "porte": "DEMAIS"}}
+    txs = [_tx("2026-05-13", -10_000, nome="PG 63.567.345/0001-41")]
+    cadastro = construir_cadastro(txs, cache=cache)
+    assert cadastro.get(cnpj, {}).get("situacao") == "BAIXADA"
+    # com o cadastro montado do cache, a auditoria liga pós-baixa
+    r = analisar_auditoria(txs, cadastro=cadastro)
+    assert r.pos_baixa_qtd == 1
