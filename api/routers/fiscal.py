@@ -17,7 +17,7 @@ import uuid
 import zipfile
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from api.core.config import (
@@ -28,7 +28,12 @@ from api.core.config import (
     SessionLocal,
 )
 from api.core.rate_limit import limiter
-from api.matchers.auditoria_forense import analisar_auditoria, resumo_para_dict
+from api.matchers.auditoria_forense import (
+    analisar_auditoria,
+    construir_cadastro,
+    enriquecer_cadastro,
+    resumo_para_dict,
+)
 from api.matchers.cascata import ler_ofx
 from api.matchers.conformidade import calcular_conformidade_fornecedor, classificar_risco
 from api.matchers.cruzamento_fiscal import cruzar, resumo
@@ -106,6 +111,7 @@ def _separar_arquivos_fiscal(arquivos: list[tuple[str, bytes]]) -> tuple[Optiona
 @limiter.limit("5/minute")
 async def processar_fiscal(
     request: Request,
+    background: BackgroundTasks,
     cliente_id: str = Form(..., description="UUID do cliente"),
     arquivos: List[UploadFile] = File(..., description="ZIP/OFX/XMLs de NF-e + CT-e + (opcional OFX)"),
     user: TokenPayload = Depends(current_user),
@@ -209,9 +215,14 @@ async def processar_fiscal(
         await db_audit.commit()
 
     # Auditoria forense (metodologia OrgAudi): regime/teto + risk score + retenções.
-    # Substitui o "risco" simplista do cruzamento. Enriquecimento cadastral
-    # (pós-baixa/MEI) entra como job de background — aqui roda determinístico.
-    auditoria = resumo_para_dict(analisar_auditoria(transacoes)) if transacoes else None
+    # Substitui o "risco" simplista do cruzamento. Cadastro vem do cache de CNPJ
+    # (inline, sem rede) para ligar pós-baixa/MEI; o enriquecimento pesado
+    # (BrasilAPI/RFB) roda em background e popula o cache para a próxima análise.
+    auditoria = None
+    if transacoes:
+        cadastro = construir_cadastro(transacoes)
+        auditoria = resumo_para_dict(analisar_auditoria(transacoes, cadastro=cadastro))
+        background.add_task(enriquecer_cadastro, transacoes)
 
     return JSONResponse({
         "cliente_id": cliente_id,

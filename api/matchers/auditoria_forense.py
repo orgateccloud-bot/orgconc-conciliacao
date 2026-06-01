@@ -151,6 +151,55 @@ def analisar_auditoria(transacoes, cadastro: dict | None = None, teto: float = T
     )
 
 
+def cnpjs_das_transacoes(transacoes) -> list[str]:
+    """CNPJs (14 dígitos) únicos extraídos do nome/memo das transações, em ordem."""
+    vistos: list[str] = []
+    seen: set[str] = set()
+    for t in transacoes:
+        c = forensics._extrair_cnpj_str(t)
+        if c and c not in seen:
+            seen.add(c)
+            vistos.append(c)
+    return vistos
+
+
+def construir_cadastro(transacoes, cache: dict | None = None) -> dict:
+    """Mapa cnpj -> {situacao, data_situacao, porte} a partir do cache de CNPJ (SEM rede).
+
+    Use inline no /fiscal para ligar pós-baixa/MEI sem latência. O cache é populado
+    pelo job `enriquecer_cadastro` (background, via BrasilAPI/RFB).
+    """
+    if cache is None:
+        from api.matchers import cnpj_enricher
+        cache = cnpj_enricher._carregar_cache()
+    cadastro: dict[str, dict] = {}
+    for cnpj in cnpjs_das_transacoes(transacoes):
+        info = cache.get(cnpj)
+        if info:
+            cadastro[cnpj] = {
+                "situacao": info.get("situacao", ""),
+                "data_situacao": info.get("data_situacao", ""),
+                "porte": info.get("porte", ""),
+            }
+    return cadastro
+
+
+async def enriquecer_cadastro(transacoes, db=None, limite: int = 300) -> int:
+    """Job de background: enriquece (BrasilAPI → RFB local) os CNPJs ainda não
+    cacheados e popula o cache. A próxima análise pega pós-baixa/MEI via cache.
+
+    Bounded por `limite` para não virar job longo. Retorna quantos processou.
+    """
+    from api.matchers import cnpj_enricher
+
+    cache = cnpj_enricher._carregar_cache()
+    faltantes = [c for c in cnpjs_das_transacoes(transacoes) if c not in cache][:limite]
+    if not faltantes:
+        return 0
+    await cnpj_enricher.enriquecer_lote(faltantes, db=db)
+    return len(faltantes)
+
+
 def resumo_para_dict(r: ResumoAuditoria) -> dict:
     """Serializa o resumo forense para a resposta JSON da API."""
     return {
