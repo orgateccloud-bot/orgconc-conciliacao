@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Iterable, Optional
 
 from sqlalchemy import insert, select
@@ -190,7 +190,7 @@ async def salvar_conformidade(
         for k, v in payload.items():
             if hasattr(existing, k):
                 setattr(existing, k, v)
-        existing.atualizado_em = datetime.utcnow()
+        existing.atualizado_em = datetime.now(timezone.utc)
         await db.flush()
         resultado = existing
     else:

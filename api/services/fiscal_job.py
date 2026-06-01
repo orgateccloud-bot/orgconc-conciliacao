@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +84,7 @@ async def rodar_para_cliente(
         "cliente_id": str(cliente.id),
         "documentos_encontrados": len(docs),
         "janela_dias": janela_dias,
-        "executado_em": datetime.utcnow().isoformat(),
+        "executado_em": datetime.now(timezone.utc).isoformat(),
     }
 
 
