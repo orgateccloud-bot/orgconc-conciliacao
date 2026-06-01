@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select, Numeric
+from sqlalchemy import func, select, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Conciliacao, Transacao
@@ -194,7 +194,7 @@ async def calcular_trust_score(db: AsyncSession, periodo_dias: int = 30) -> dict
         func.count(Conciliacao.id).label("total"),
         func.coalesce(
             func.sum(
-                func.cast(Conciliacao.total_anomalias == 0, Numeric)
+                case((Conciliacao.total_anomalias == 0, 1), else_=0)
             ),
             0,
         ).label("limpas"),
