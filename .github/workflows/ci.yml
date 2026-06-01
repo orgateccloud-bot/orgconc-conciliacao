@@ -36,7 +36,9 @@ jobs:
       - name: Instalar dependencias do sistema para weasyprint
         run: |
           sudo apt-get update
-          sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0
+          # Espelha as libs do Dockerfile de producao para o smoke renderizar PDF
+          # no mesmo ambiente que prod (libpango + cairo + gdk-pixbuf).
+          sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0
 
       - name: Instalar dependencias Python
         run: |

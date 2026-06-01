@@ -1,0 +1,37 @@
+name: Synthetic Monitor (prod)
+
+# Sonda externa de uptime: a cada 30 min verifica que a producao responde 200 em
+# /health e /app. Complementa o healthcheck interno do Railway (que so reinicia o
+# container) detectando falhas de roteamento/DNS/cert vistas de fora. Em falha, o
+# workflow falha -> GitHub notifica os admins do repo.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe prod (/health + /app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: HTTP 200 em /health e /app
+        env:
+          BASE: ${{ vars.PROD_BASE_URL || 'https://web-production-9f69.up.railway.app' }}
+        run: |
+          set -u
+          fail=0
+          for path in /health /app/; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$BASE$path" || echo 000)
+            echo "$path -> $code"
+            [ "$code" = "200" ] || fail=1
+          done
+          if [ "$fail" = "1" ]; then
+            echo "::error::Sonda sintetica de producao FALHOU ($BASE)"
+            exit 1
+          fi
+          echo "Producao saudavel."
