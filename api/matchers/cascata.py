@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from api.parsers.constants import GUIA_TRIBUTO_TIPOS
 from api.parsers.ofx import _parse_ofx
 
 
@@ -114,7 +115,7 @@ _RX_CNPJ = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
 _RX_CPF = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
 _RX_NF = re.compile(r"\bnf[\s:]*([0-9]{1,9})\b", re.IGNORECASE)
 
-_TRIBUTOS = ("DARF", "DAS", "GPS", "GNRE", "DAE", "DARJ")
+_TRIBUTOS = GUIA_TRIBUTO_TIPOS  # fonte unica em api/parsers/constants
 _TARIFAS = ("TARIFA", "JUROS", "IOF", "TAR.", "TARIF")
 
 # Palavras-chave que indicam transferência INTERNA real (mesma titularidade).

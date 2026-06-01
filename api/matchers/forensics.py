@@ -13,6 +13,8 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 
+from api.parsers.constants import GUIA_TRIBUTO_TIPOS
+
 
 # ────────────────────────────────────────────────────────────────────────
 # B) Identificacao - meio de pagamento
@@ -255,7 +257,8 @@ _RX_JUROS = re.compile(r"JUROS\s+CONTRATUAIS|JUROS\b", re.I)
 _RX_EMPRESTIMO = re.compile(r"EMPR[ÉE]STIMO|D[ÉE]B\.EMPR|LIBERA[ÇC][ÃA]O\s+TD", re.I)
 _RX_PIX = re.compile(r"\bPIX\b", re.I)
 _RX_TED = re.compile(r"\bTED\b", re.I)
-_RX_TRIBUTO = re.compile(r"\bDARF\b|\bDAS\b|\bGPS\b|\bGNRE\b|\bDAE\b|\bDARJ\b", re.I)
+# Derivado da fonte unica (api/parsers/constants.GUIA_TRIBUTO_TIPOS).
+_RX_TRIBUTO = re.compile(r"\b(" + "|".join(GUIA_TRIBUTO_TIPOS) + r")\b", re.I)
 _RX_CARTAO = re.compile(r"COMPRA\s+(VISA|MASTERCARD|MAESTRO|ELO|HIPER)", re.I)
 _RX_MESMA_TIT = re.compile(r"MESMA\s+TIT|TRANSF\.MESMA", re.I)
 _RX_BOLETO = re.compile(r"TIT\.COMPE|BOLETO|TIT\.PROP", re.I)
