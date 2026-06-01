@@ -24,6 +24,25 @@ export async function apiLogout(): Promise<void> {
   }
 }
 
+/**
+ * Renova o access token via cookie de refresh httpOnly (POST /auth/refresh).
+ * Retorna o novo access token, ou null se não foi possível renovar.
+ */
+export async function apiRefresh(): Promise<string | null> {
+  try {
+    const res = await fetch("/auth/refresh", { method: "POST", credentials: "include" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { access_token?: string };
+    if (data.access_token) {
+      setToken(data.access_token);
+      return data.access_token;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export interface HealthResponse {
   status: string;
   versao?: string;
@@ -50,6 +69,7 @@ export class ApiError extends Error {
 export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
+  _opts: { retryOn401?: boolean } = { retryOn401: true },
 ): Promise<T> {
   const headers = new Headers(init.headers);
   const token = getToken();
@@ -59,6 +79,12 @@ export async function apiFetch<T>(
   }
   const res = await fetch(path, { ...init, headers, credentials: "include" });
   if (res.status === 401) {
+    // Tenta renovar o access token via refresh cookie (uma vez) antes de deslogar.
+    // retryOn401=false na re-tentativa evita loop quando /auth/refresh dá 401.
+    if (_opts.retryOn401 && path !== "/auth/refresh") {
+      const novo = await apiRefresh();
+      if (novo) return apiFetch<T>(path, init, { retryOn401: false });
+    }
     setToken(null);
     window.dispatchEvent(new Event("orgconc:logout"));
     throw new ApiError("Sessão expirada", 401);

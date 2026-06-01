@@ -54,17 +54,49 @@ describe("apiFetch", () => {
     expect(headers.get("Content-Type")).toBe("application/json");
   });
 
-  it("401 limpa token e dispara evento orgconc:logout", async () => {
+  it("401 com refresh falho limpa token e dispara orgconc:logout", async () => {
     setToken("vai-ser-limpo");
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response("", { status: 401 }),
-    );
+    vi.spyOn(global, "fetch")
+      .mockResolvedValueOnce(new Response("", { status: 401 }))   // request original
+      .mockResolvedValueOnce(new Response("", { status: 401 }));  // /auth/refresh falha
     const ouvinte = vi.fn();
     window.addEventListener("orgconc:logout", ouvinte);
 
     await expect(apiFetch("/me")).rejects.toBeInstanceOf(ApiError);
     expect(getToken()).toBeNull();
     expect(ouvinte).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener("orgconc:logout", ouvinte);
+  });
+
+  it("401 com refresh OK renova o token e refaz a request", async () => {
+    setToken("token-velho");
+    const fetchSpy = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce(new Response("", { status: 401 })) // request original -> 401
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "token-novo" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ) // /auth/refresh -> token novo
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ); // re-tentativa -> 200
+    const ouvinte = vi.fn();
+    window.addEventListener("orgconc:logout", ouvinte);
+
+    const out = await apiFetch<{ ok: boolean }>("/me");
+
+    expect(out).toEqual({ ok: true });
+    expect(getToken()).toBe("token-novo");
+    expect(ouvinte).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    const retryHeaders = fetchSpy.mock.calls[2][1]?.headers as Headers;
+    expect(retryHeaders.get("Authorization")).toBe("Bearer token-novo");
 
     window.removeEventListener("orgconc:logout", ouvinte);
   });
