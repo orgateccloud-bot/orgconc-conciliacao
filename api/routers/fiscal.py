@@ -28,6 +28,7 @@ from api.core.config import (
     SessionLocal,
 )
 from api.core.rate_limit import limiter
+from api.matchers.auditoria_forense import analisar_auditoria, resumo_para_dict
 from api.matchers.cascata import ler_ofx
 from api.matchers.conformidade import calcular_conformidade_fornecedor, classificar_risco
 from api.matchers.cruzamento_fiscal import cruzar, resumo
@@ -207,6 +208,11 @@ async def processar_fiscal(
         )
         await db_audit.commit()
 
+    # Auditoria forense (metodologia OrgAudi): regime/teto + risk score + retenções.
+    # Substitui o "risco" simplista do cruzamento. Enriquecimento cadastral
+    # (pós-baixa/MEI) entra como job de background — aqui roda determinístico.
+    auditoria = resumo_para_dict(analisar_auditoria(transacoes)) if transacoes else None
+
     return JSONResponse({
         "cliente_id": cliente_id,
         "documentos_processados": len(documentos),
@@ -214,6 +220,7 @@ async def processar_fiscal(
         "ofx_transacoes": len(transacoes),
         "cruzamentos": resumo(cruzamentos) if cruzamentos else None,
         "fornecedores_classificados": len(scores_conformidade),
+        "auditoria_forense": auditoria,
     })
 
 
