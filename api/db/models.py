@@ -9,7 +9,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-from sqlalchemy import String, Boolean, Integer, Date, Numeric, ForeignKey, Text
+from sqlalchemy import String, Boolean, Integer, Date, Numeric, ForeignKey, Text, Index, text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS, JSONB
 
 TIMESTAMPTZ = _TS(timezone=True)
@@ -27,7 +27,7 @@ class Org(Base):
     id:           Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     nome:         Mapped[str]       = mapped_column(Text, nullable=False)
     plano:        Mapped[str]       = mapped_column(String(20), default="basico")
-    cnpj:         Mapped[str | None] = mapped_column(Text)
+    cnpj:         Mapped[str | None] = mapped_column(Text, unique=True)
     ativo:        Mapped[bool]      = mapped_column(Boolean, default=True)
     criado_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now)
     atualizado_em: Mapped[datetime] = mapped_column(TIMESTAMPTZ, default=_now)
@@ -35,8 +35,12 @@ class Org(Base):
 
 class Cliente(Base):
     __tablename__ = "clientes"
+    __table_args__ = (
+        Index("idx_clientes_org", "org_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    org_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     nome: Mapped[str] = mapped_column(Text, nullable=False)
     cnpj: Mapped[str | None] = mapped_column(String(18), unique=True)
     email: Mapped[str | None] = mapped_column(Text)
@@ -51,6 +55,11 @@ class Cliente(Base):
 
 class Conciliacao(Base):
     __tablename__ = "conciliacoes"
+    __table_args__ = (
+        Index("idx_conciliacoes_cliente", "cliente_id"),
+        Index("idx_conciliacoes_criado_em", "criado_em"),
+        Index("idx_conciliacoes_org", "org_id"),
+    )
 
     id:                   Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     org_id:               Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
@@ -72,10 +81,18 @@ class Conciliacao(Base):
 
 class Transacao(Base):
     __tablename__ = "transacoes"
+    __table_args__ = (
+        Index("idx_transacoes_conciliacao", "conciliacao_id"),
+        Index("idx_transacoes_cliente", "cliente_id"),
+        Index("idx_transacoes_data", "data_lancamento"),
+        Index("idx_transacoes_org", "org_id"),
+        Index("idx_transacoes_eh_anomalia", "eh_anomalia",
+              postgresql_where=text("eh_anomalia = true")),
+    )
 
     id:               Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     org_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
-    conciliacao_id:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("conciliacoes.id"))
+    conciliacao_id:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("conciliacoes.id", ondelete="CASCADE"))
     cliente_id:       Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="SET NULL"))
     data_lancamento:  Mapped[date]         = mapped_column(Date, nullable=False)
     valor:            Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False)
@@ -91,6 +108,11 @@ class Transacao(Base):
 
 class AuditEvent(Base):
     __tablename__ = "audit_events"
+    __table_args__ = (
+        Index("ix_audit_events_ts", text("ts DESC")),
+        Index("ix_audit_events_actor_ts", "actor_email", text("ts DESC")),
+        Index("ix_audit_events_resource", "resource_type", "resource_id"),
+    )
 
     id:            Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     ts:            Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
@@ -107,6 +129,10 @@ class AuditEvent(Base):
 
 class AiInsightsCache(Base):
     __tablename__ = "ai_insights_cache"
+    __table_args__ = (
+        Index("ix_ai_insights_cache_actor_periodo", "actor_sub", "periodo_dias",
+              text("expira_em DESC")),
+    )
 
     id:           Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     actor_sub:    Mapped[str]       = mapped_column(Text, nullable=False)
@@ -119,9 +145,12 @@ class AiInsightsCache(Base):
 class LlmCostDaily(Base):
     """Custo Claude API acumulado por dia (UTC) — sobrevive a restart do processo."""
     __tablename__ = "llm_cost_daily"
+    __table_args__ = (
+        Index("ix_llm_cost_daily_dia", "dia", unique=True),
+    )
 
     id:            Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    dia:           Mapped[date]       = mapped_column(Date, nullable=False, unique=True)
+    dia:           Mapped[date]       = mapped_column(Date, nullable=False)
     custo_usd:     Mapped[Decimal]    = mapped_column(Numeric(10, 4), nullable=False, default=Decimal("0"))
     chamadas:      Mapped[int]        = mapped_column(Integer, nullable=False, default=0)
     atualizado_em: Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
@@ -134,6 +163,9 @@ class GuiaTributo(Base):
     pagamentos no extrato com tributos previamente gerados.
     """
     __tablename__ = "guia_tributo"
+    __table_args__ = (
+        Index("ix_guia_tributo_cliente", "cliente_id"),
+    )
 
     id:              Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:      Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
@@ -153,6 +185,9 @@ class Contrato(Base):
     Usado pelo matcher do estágio 5 (api/matchers/contrato.py).
     """
     __tablename__ = "contrato"
+    __table_args__ = (
+        Index("ix_contrato_cliente", "cliente_id"),
+    )
 
     id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:     Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
@@ -172,6 +207,9 @@ class TransacaoDisposicao(Base):
     final do orquestrador (RESOLVIDO_NFE, RESOLVIDO_GUIA, PENDENTE_REVISAO, etc.).
     """
     __tablename__ = "transacao_disposicao"
+    __table_args__ = (
+        Index("ix_transacao_disposicao_conciliacao", "conciliacao_id"),
+    )
 
     id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     conciliacao_id: Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("conciliacoes.id", ondelete="CASCADE"), nullable=False)
@@ -198,6 +236,11 @@ class DocumentoFiscal(Base):
     precisa cruzar contra pagamentos no extrato (cf. Constatação VIII LOCAR).
     """
     __tablename__ = "documento_fiscal"
+    __table_args__ = (
+        Index("ix_docfiscal_cliente_chave", "cliente_id", "chave", unique=True),
+        Index("ix_docfiscal_cliente_emit", "cliente_id", "emit_cnpj"),
+        Index("ix_docfiscal_cliente_data", "cliente_id", "data_emissao"),
+    )
 
     id:                Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:        Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
@@ -232,6 +275,9 @@ class CruzamentoFiscal(Base):
     - SEM_NF: pagamento OFX sem documento fiscal correspondente (gap fiscal)
     """
     __tablename__ = "cruzamento_fiscal"
+    __table_args__ = (
+        Index("ix_cruzfiscal_cliente_status", "cliente_id", "status"),
+    )
 
     id:               Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:       Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
@@ -251,6 +297,9 @@ class CartaVersao(Base):
     qual versão foi entregue ao cliente.
     """
     __tablename__ = "carta_versao"
+    __table_args__ = (
+        Index("ix_carta_cliente_gerado", "cliente_id", text("gerado_em DESC")),
+    )
 
     id:                Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:        Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
@@ -269,6 +318,11 @@ class ConformidadeFornecedor(Base):
     fornecedores por classe de risco e priorizar ações.
     """
     __tablename__ = "conformidade_fornecedor"
+    __table_args__ = (
+        Index("ix_conformidade_cliente_cnpj", "cliente_id", "cnpj_fornecedor", unique=True),
+        Index("ix_conformidade_cliente_risco", "cliente_id", "risco_classe",
+              text("risco_tributario_anual DESC")),
+    )
 
     id:                       Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:               Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
@@ -294,6 +348,11 @@ class RefreshToken(Base):
     sobrevivência a restart do processo.
     """
     __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        Index("ix_refresh_tokens_sub_ativo", "sub",
+              postgresql_where=text("revogado_em IS NULL")),
+        Index("ix_refresh_tokens_expira", "expira_em"),
+    )
 
     id:              Mapped[uuid.UUID]       = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     sub:             Mapped[str]             = mapped_column(Text, nullable=False, index=True)
