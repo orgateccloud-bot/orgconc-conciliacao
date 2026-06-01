@@ -133,14 +133,18 @@ Três blobs absolutamente posicionados oscilando em loops longos (22–32s). Res
 
 ## Componentes implementados (Aurora Blue)
 
+> A UI migrou do protótipo single-file `frontend/index.html` (removido) para o
+> SPA React em `orgconc-react/`. As referências abaixo apontam para a
+> implementação React atual. A aurora animada agora vive no hero do Login.
+
 | Componente | Arquivo | Aurora? |
 |-----------|---------|---------|
-| Dashboard principal | `frontend/index.html` | ✅ |
-| Sidebar gradient | `frontend/index.html` | ✅ |
-| Topbar glass | `frontend/index.html` | ✅ |
-| Cards glassmorphism | `frontend/index.html` | ✅ |
-| CTA gradient | `frontend/index.html` | ✅ |
-| Aurora blobs animados | `frontend/index.html` | ✅ |
+| Dashboard principal | `orgconc-react/src/pages/DashboardPage.tsx` | ✅ |
+| Sidebar gradient | `orgconc-react/src/components/Sidebar.tsx` (classe `.coastline-r`) | ✅ |
+| Topbar glass | `orgconc-react/src/components/Topbar.tsx` | ✅ |
+| Cards glassmorphism | `orgconc-react/src/index.css` (utility `.glass`) | ✅ |
+| CTA gradient | `orgconc-react/tailwind.config.js` (`bg-brand-gradient`) | ✅ |
+| Aurora blobs animados | `orgconc-react/src/pages/LoginPage.module.css` (`.auroraBand`) + `src/components/Starfield.tsx` | ✅ |
 | Relatório HTML standalone | `api/main.py:_render_html()` | ✅ |
 | Relatório PDF (estático) | `api/main.py:_render_pdf_html()` | ✅ (sem animação) |
 | Export XLSX | `api/main.py` | ⚪ (mantém estilo Excel) |

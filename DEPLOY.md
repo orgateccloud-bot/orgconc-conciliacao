@@ -2,21 +2,31 @@
 
 ## URLs do Projeto
 
-- **Frontend (GitHub Pages):** https://orgateccloud-bot.github.io/orgconc-conciliacao/
-- **Login:** https://orgateccloud-bot.github.io/orgconc-conciliacao/frontend/login.html
-- **Dashboard:** https://orgateccloud-bot.github.io/orgconc-conciliacao/frontend/dashboard_trust.html
+- **Frontend (GitHub Pages):** https://orgateccloud-bot.github.io/orgconc-conciliacao/ — SPA React (`orgconc-react`)
+- **Backend (API):** Railway (ver seção 2)
 - **Repositório:** https://github.com/orgateccloud-bot/orgconc-conciliacao
 
 ---
 
 ## 1. Frontend (GitHub Pages) — Automático
 
-O frontend é publicado automaticamente via GitHub Actions a cada push na branch `main`.
+O frontend é o SPA **React** em `orgconc-react/`. O job `deploy-frontend` em
+`.github/workflows/deploy.yml` roda `npm ci && npm run build` e publica **apenas**
+`orgconc-react/dist` no GitHub Pages a cada push na `main`.
 
-**Arquivos publicados:**
-- `frontend/login.html` — Página de entrada com autenticação JWT + Supabase
-- `frontend/dashboard_trust.html` — Dashboard principal com API e conciliação
-- `frontend/index.html` — Landing page
+**Desenvolvimento local:**
+```bash
+cd orgconc-react
+npm install
+npm run dev          # Vite em http://127.0.0.1:5176, proxy da API para :8765
+```
+
+**Build de produção:**
+```bash
+cd orgconc-react && npm run build   # gera orgconc-react/dist/
+```
+O backend (FastAPI) serve esse build em `/app` quando `orgconc-react/dist` existe;
+sem o build, `/app` responde **503** explícito (não serve mais UI legada).
 
 ---
 
@@ -175,14 +185,12 @@ Configurar em **Settings > Secrets and variables > Actions**:
 
 ## 5. Conectar Frontend ao Backend
 
-Após deploy do backend, atualizar a URL da API nos arquivos frontend:
+O SPA React (`orgconc-react`) chama a API por caminhos relativos (`/auth/...`,
+`/conciliar/...`). Em desenvolvimento o Vite faz proxy para `http://127.0.0.1:8765`
+(ver `orgconc-react/vite.config.ts`). Em produção, sirva o build na **mesma origem**
+da API (mount `/app` do FastAPI) ou configure um proxy/redirect para o backend.
 
-```javascript
-// Em frontend/login.html e frontend/dashboard_trust.html
-const API_BASE = 'https://seu-backend.railway.app';  // ou Render/VPS
-const SUPABASE_URL = 'https://xxxx.supabase.co';
-const SUPABASE_ANON_KEY = 'sua-chave-anon';
-```
+Garanta que `ORGCONC_CORS_ORIGINS` (backend) inclua a origem do frontend.
 
 ---
 
