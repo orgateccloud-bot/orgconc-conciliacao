@@ -55,12 +55,15 @@ from api.services.fiscal_persistence import (
     listar_conformidade,
     listar_cruzamentos,
     listar_documentos_por_cliente,
+    salvar_apuracao,
     salvar_conformidade,
     salvar_cruzamentos,
     salvar_documentos_fiscais,
 )
 from api.services.storage import read_limited
 from api.services import laudo_forense as laudo
+from api.services import calculadora_cbs_ibs
+from api.schemas_cbs_ibs import OperacaoFiscalInput
 
 router = APIRouter(tags=["fiscal"], prefix="/fiscal")
 log = logging.getLogger("orgconc.fiscal")
@@ -107,6 +110,36 @@ def _separar_arquivos_fiscal(arquivos: list[tuple[str, bytes]]) -> tuple[Optiona
         raise HTTPException(400, "Nenhum XML fornecido (direto ou via ZIP).")
 
     return ofx_bytes, xmls
+
+
+@router.post("/apurar")
+@limiter.limit("30/minute")
+async def apurar_cbs_ibs(
+    request: Request,
+    operacao: OperacaoFiscalInput,
+    user: TokenPayload = Depends(current_user),
+):
+    """Apura CBS/IBS de uma operação (contrato IC-02 §3.2).
+
+    Orquestra o motor de cálculo (stub PILOTO em dev; SERPRO hospedado/offline em
+    prod — o OrgConc não recalcula) e persiste o resultado + memória de cálculo.
+    Resposta = ApuracaoCBSIBS com gate de proveniência (versao_base/ambiente/
+    fundamentacao). Em PILOTO os valores são provisórios (§4.2).
+    """
+    try:
+        apuracao = await calculadora_cbs_ibs.apurar(operacao)
+    except NotImplementedError as e:
+        raise HTTPException(501, str(e))
+
+    if DB_DISPONIVEL and SessionLocal is not None:
+        try:
+            async with SessionLocal() as db:
+                await salvar_apuracao(db, apuracao)
+                await db.commit()
+        except Exception:
+            log.exception("Falha ao persistir apuração CBS/IBS (segue sem persistir)")
+
+    return JSONResponse(apuracao.model_dump(mode="json"))
 
 
 @router.post("/processar")

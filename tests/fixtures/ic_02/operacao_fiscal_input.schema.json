@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orgatec.local/ic-02/operacao_fiscal_input.schema.json",
+  "title": "OperacaoFiscalInput",
+  "description": "Entrada da Calculadora CBS/IBS (IC-02 §3.1). Enviada pelo consumidor (OrgConc.fiscal / Planejador-Tributario). Pode fornecer apenas a referencia ao XML (xml_path) — a Calculadora reprocessa o XML para extrair os itens (IC-02 §8.2) — ou os itens ja resolvidos.",
+  "type": "object",
+  "required": ["documento_id", "uf", "municipio_ibge", "data_fato_gerador"],
+  "anyOf": [
+    { "required": ["xml_path"] },
+    { "required": ["itens"] }
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "documento_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identificador do documento no consumidor (rastreabilidade; ecoado na resposta)."
+    },
+    "chave": {
+      "type": "string",
+      "pattern": "^[0-9]{44}$",
+      "description": "Chave de acesso da NF-e (44 digitos), quando houver."
+    },
+    "xml_path": {
+      "type": "string",
+      "description": "Caminho do XML completo no storage. Obrigatorio se 'itens' nao for fornecido."
+    },
+    "uf": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "UF do fato gerador."
+    },
+    "municipio_ibge": {
+      "type": "string",
+      "pattern": "^[0-9]{7}$",
+      "description": "Codigo IBGE do municipio (7 digitos). Resolvido a partir de xMun+UF se ausente (IC-02 §6.2)."
+    },
+    "data_fato_gerador": {
+      "type": "string",
+      "format": "date",
+      "description": "Data do fato gerador; define a vigencia das regras (art. 10 da LC 214/2025)."
+    },
+    "itens": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Itens da operacao. Opcional se xml_path for fornecido (a Calculadora extrai do XML).",
+      "items": {
+        "type": "object",
+        "required": ["numero", "cst", "cClassTrib", "base_calculo"],
+        "additionalProperties": false,
+        "properties": {
+          "numero": { "type": "integer", "minimum": 1 },
+          "ncm": { "type": ["string", "null"], "description": "Nomenclatura Comum do Mercosul (bens)." },
+          "nbs": { "type": ["string", "null"], "description": "Nomenclatura Brasileira de Servicos." },
+          "cst": { "type": "string", "pattern": "^[0-9]{3}$", "description": "Codigo de Situacao Tributaria CBS/IBS (ex.: 000)." },
+          "cClassTrib": { "type": "string", "pattern": "^[0-9]{6}$", "description": "Classificacao Tributaria (ex.: 000001)." },
+          "base_calculo": { "type": "number", "minimum": 0 },
+          "quantidade": { "type": "number", "exclusiveMinimum": 0 },
+          "unidade": { "type": "string" }
+        }
+      }
+    }
+  }
+}
