@@ -46,7 +46,7 @@ async def main_async() -> None:
     print("Gerando MD / HTML / PDF...")
     md, _ = L.gerar_md(stats)
     base.with_suffix(".md").write_text(md, encoding="utf-8")
-    html = L.gerar_html(md)
+    html = L.gerar_html(md, stats.get("periodo_str", ""))
     base.with_suffix(".html").write_text(html, encoding="utf-8")
     print(f"  MD/HTML: {base.with_suffix('.md')}")
     if await L.gerar_pdf(html, base.with_suffix(".pdf")):

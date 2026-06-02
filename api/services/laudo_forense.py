@@ -1246,7 +1246,7 @@ def gerar_md(stats):
         "",
         "---",
         "",
-        "## 1. Capa e Sumario Executivo",
+        "## 1. Sumario Executivo",
         "",
         "| Indicador | Valor |",
         "|---|---:|",
@@ -1433,53 +1433,102 @@ def gerar_md(stats):
     return "\n".join(lines), {"total_pr": total_pr, "total_exc": total_exc, "total_pb": total_pb}
 
 
-def gerar_html(md_text):
+def gerar_html(md_text, periodo=""):
     import markdown as mdlib
     body = mdlib.markdown(md_text, extensions=["tables", "fenced_code"])
+    # A capa já carrega título/empresa/período — remove o cabeçalho redundante do MD
+    # (tudo antes da primeira seção "## N.") para o conteúdo começar direto nas seções.
+    if "<h2" in body:
+        body = body[body.index("<h2"):]
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    razao = EMPRESA.get("razao_social", "") or "—"
+    cnpj = EMPRESA.get("cnpj", "—")
     css = """
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
-@page { size: A4 landscape; margin: 14mm 12mm 16mm 12mm;
-  @bottom-right { content: "Página " counter(page) " de " counter(pages); font-size: 8.5pt; color: #8a93a0; font-family: 'Source Sans 3', sans-serif; }
-  @bottom-left { content: "ORGATEC · Auditoria Bancária Forense"; font-size: 8.5pt; color: #8a93a0; font-family: 'Source Sans 3', sans-serif; }
+@page { size: A4 landscape; margin: 14mm 14mm 16mm 14mm;
+  @bottom-center { content: "ORGATEC · Sistema OrgAudi · Auditoria Bancária Forense   —   página " counter(page) " de " counter(pages); font-family: 'Source Sans 3', sans-serif; font-size: 8pt; color: #8a93a0; }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Source Sans 3', 'Segoe UI', Arial, sans-serif; font-size: 10pt; color: #1b2733; line-height: 1.55; }
-.hd { border-top: 4pt solid #12345e; border-bottom: 1pt solid #c4d4e2;
-      padding: 16px 4px 14px; margin-bottom: 22px; display: flex; align-items: center; gap: 18px; }
-.hd .bar { width: 6px; align-self: stretch; border-radius: 3px;
-           background: linear-gradient(180deg, #1f7fb8, #38c4e6, #8fe6ee); }
-.hd-text { flex: 1; }
-.hd h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 22pt; color: #12345e; margin-bottom: 2px; }
-.hd .tag { font-size: 9pt; color: #1f7fb8; text-transform: uppercase; letter-spacing: 0.16em; font-weight: 600; }
-.hd .meta { font-size: 9pt; color: #5a82a8; margin-top: 8px; }
-h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 15pt; color: #12345e;
-     margin: 26px 0 10px; padding-bottom: 6px; border-bottom: 1.4pt solid #12345e; }
-body > h1::after { content: ""; display: block; height: 2px; width: 64px; margin-top: 6px;
-     background: linear-gradient(90deg, #1f7fb8, #38c4e6, #8fe6ee); }
-h2 { font-family: 'Playfair Display', Georgia, serif; font-size: 12.5pt; color: #12345e;
-     margin: 20px 0 8px; padding: 4px 0 4px 10px; border-left: 3pt solid #1f7fb8; }
-h3 { font-size: 10.5pt; color: #1f7fb8; margin: 14px 0 6px; font-weight: 700; }
+
+/* ---------- CAPA (altura cabe na pág. landscape margeada; sem @page:first p/ Chromium) ---------- */
+.capa { height: 176mm; padding: 14mm 24mm; display: flex; flex-direction: column;
+  justify-content: space-between; page-break-after: always; position: relative; color: #2a3a4a;
+  background:
+    radial-gradient(ellipse 60% 45% at 12% 8%, rgba(120,198,233,0.42), transparent 60%),
+    radial-gradient(ellipse 55% 42% at 90% 16%, rgba(142,182,224,0.40), transparent 63%),
+    linear-gradient(180deg, #d3e6f3 0%, #e2eef6 32%, #eef5fa 56%, #f8fbfc 78%, #ffffff 100%); }
+.capa::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 5mm;
+  background: linear-gradient(90deg, #1f7fb8 0%, #38c4e6 52%, #7fe0ec 100%); }
+.capa-brand { display: flex; align-items: center; }
+.capa-brand img { width: 52px !important; height: 52px !important; margin-right: 14px !important; filter: drop-shadow(0 1mm 2mm rgba(40,100,150,0.22)); }
+.capa-wm .nome { font-size: 22pt; font-weight: 700; letter-spacing: 0.20em; color: #12345e; line-height: 1; }
+.capa-wm .desc { font-size: 8pt; letter-spacing: 0.26em; text-transform: uppercase; color: #5a82a8; margin-top: 2mm; }
+.capa-sub { font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase; color: #7593af; margin-top: 7mm; }
+.capa-mid { display: flex; flex-direction: column; }
+.capa-titulo { font-family: 'Playfair Display', Georgia, serif; font-size: 34pt; font-weight: 700; line-height: 1.14; color: #12345e; }
+.capa-rule { width: 42mm; height: 2.4pt; margin: 8mm 0; background: linear-gradient(90deg, #1f7fb8, #38c4e6, #8fe6ee); }
+.capa-objeto { font-size: 11.5pt; color: #3f5468; max-width: 170mm; }
+.capa-selo { margin-top: 8mm; display: inline-block; align-self: flex-start; border: 0.7pt solid #1f7fb8; color: #1f7fb8; font-size: 7.6pt; letter-spacing: 0.14em; text-transform: uppercase; padding: 2mm 4mm; }
+.capa-meta { border-top: 0.5pt solid #c4d4e2; padding-top: 5mm; display: flex; gap: 20mm; font-size: 8.6pt; color: #65778a; }
+.capa-meta strong { color: #12345e; font-weight: 600; display: block; font-size: 9.4pt; margin-bottom: 1mm; }
+
+/* ---------- CONTEÚDO ---------- */
+.conteudo { padding-top: 2mm; }
+h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 15pt; color: #12345e; margin: 22px 0 8px; padding-bottom: 5px; border-bottom: 1.4pt solid #12345e; page-break-after: avoid; }
+h1::after { content: ""; display: block; height: 2px; width: 60px; margin-top: 5px; background: linear-gradient(90deg, #1f7fb8, #38c4e6, #8fe6ee); }
+h2 { font-family: 'Playfair Display', Georgia, serif; font-size: 12.5pt; color: #12345e; margin: 18px 0 6px; padding: 3px 0 3px 10px; border-left: 3pt solid #1f7fb8; page-break-after: avoid; }
+h3 { font-size: 10.5pt; color: #1f7fb8; margin: 12px 0 5px; font-weight: 700; }
 p { margin-bottom: 6px; }
-table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 9pt; border: 0.6pt solid #d4dde6; }
-th { background: #12345e; color: #eef4fb; padding: 6px 10px; text-align: left; font-weight: 600; }
-td { padding: 5px 10px; border-bottom: 0.5pt solid #d4dde6; }
+table { width: 100%; border-collapse: collapse; margin: 6px 0 14px; font-size: 8.8pt; border: 0.6pt solid #d4dde6; page-break-inside: avoid; }
+th { background: #12345e; color: #eef4fb; padding: 5px 9px; text-align: left; font-weight: 600; font-size: 8.4pt; }
+td { padding: 4px 9px; border: 0.5pt solid #d4dde6; vertical-align: top; }
 tr:nth-child(even) td { background: #eff4f9; }
-strong { color: #12345e; font-weight: 700; }
+strong { color: #12345e; font-weight: 600; }
 ul, ol { padding-left: 22px; margin-bottom: 8px; }
 li { margin-bottom: 3px; }
 em { color: #65778a; font-size: 8.6pt; }
-hr { border: none; border-top: 0.5pt solid #c4d4e2; margin: 16px 0; }
+hr { border: none; border-top: 0.5pt solid #c4d4e2; margin: 14px 0; }
+blockquote { border-left: 3pt solid #1f7fb8; background: #eef6fb; padding: 3mm 4mm; margin: 4mm 0; color: #364a5e; font-size: 9.6pt; }
+
+/* ---------- ASSINATURA ---------- */
+.assinatura { margin-top: 14mm; page-break-inside: avoid; }
+.assinatura .linha { border-top: 0.6pt solid #12345e; width: 86mm; margin-bottom: 1.4mm; }
+.assinatura .nome { font-weight: 600; color: #12345e; }
+.assinatura .cargo { font-size: 8.6pt; color: #51616f; }
 """
+    capa = f"""<section class="capa">
+  <div>
+    <div class="capa-brand">{html_logo_inline()}<div class="capa-wm">
+      <div class="nome">ORGATEC</div><div class="desc">Contabilidade e Auditoria</div></div></div>
+    <div class="capa-sub">Sistema OrgAudi · Auditoria Bancária Forense</div>
+  </div>
+  <div class="capa-mid">
+    <div class="capa-titulo">Laudo de Auditoria<br>Bancária Forense</div>
+    <div class="capa-rule"></div>
+    <div class="capa-objeto">{razao} — análise forense de extratos bancários (OFX): regime × teto,
+      retenções na fonte, tipologias (smurfing, carrossel, pós-baixa) e cruzamento cadastral RFB/BrasilAPI.</div>
+    <div class="capa-selo">Parecer técnico · assessoria · caráter indicativo</div>
+  </div>
+  <div class="capa-meta">
+    <div><strong>Entidade auditada</strong>{razao}<br>CNPJ {cnpj}</div>
+    <div><strong>Período</strong>{periodo or '—'}</div>
+    <div><strong>Emissão</strong>{agora}</div>
+  </div>
+</section>"""
+    assinatura = """<div class="assinatura">
+  <div class="linha"></div>
+  <div class="nome">ORGATEC — Contabilidade e Auditoria</div>
+  <div class="cargo">Sistema OrgAudi · Auditoria Bancária Forense assistida</div>
+</div>"""
     return f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Laudo de Auditoria · {EMPRESA.get('razao_social', '')}</title><style>{css}</style></head>
+<title>Laudo de Auditoria · {razao}</title><style>{css}</style></head>
 <body>
-<div class="hd"><div class="bar"></div>{html_logo_inline()}<div class="hd-text">
-<h1>ORGATEC</h1>
-<div class="tag">Sistema OrgAudi · Auditoria Bancária Forense</div>
-<div class="meta">{EMPRESA.get('razao_social', '')} · CNPJ {EMPRESA.get('cnpj', '—')} · Gerado em {agora}</div>
-</div></div>
+{capa}
+<section class="conteudo">
 {body}
+{assinatura}
+</section>
 </body></html>"""
 
 
