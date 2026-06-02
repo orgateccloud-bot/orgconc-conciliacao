@@ -28,6 +28,7 @@ import {
   Flame,
   Repeat,
   Ban,
+  Clock,
 } from "lucide-react";
 import { cn, formatBytes } from "@/lib/utils";
 
@@ -291,6 +292,22 @@ export function AuditoriaForensePage() {
               </div>
             </div>
           </section>
+
+          {/* Enriquecimento de CNPJ pendente → pós-baixa pode estar incompleta */}
+          {resumo.enriquecimento_pendente > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 px-4 py-3 flex items-start gap-3">
+              <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <span className="font-semibold text-amber-700 dark:text-amber-400">
+                  {resumo.enriquecimento_pendente} CNPJ(s) sendo enriquecidos em segundo plano.
+                </span>{" "}
+                <span className="text-muted-foreground">
+                  Situação cadastral (pós-baixa) pode estar incompleta. Re-analise em alguns
+                  minutos para o resultado fiel.
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Achado central: múltiplo do teto */}
           <section

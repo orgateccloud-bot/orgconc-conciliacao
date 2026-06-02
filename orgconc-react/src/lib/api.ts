@@ -576,6 +576,8 @@ export interface FiscalAuditoriaResumo {
   };
   conta: string | null;
   periodo: { inicio: string | null; fim: string | null };
+  /** CNPJs ainda não enriquecidos; >0 → pós-baixa pode estar incompleta (enriquecimento em background). */
+  enriquecimento_pendente: number;
   regime: FiscalAuditoriaRegime;
   n_transacoes: number;
   meses_observados: number;

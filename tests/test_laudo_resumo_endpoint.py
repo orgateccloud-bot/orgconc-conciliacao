@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
@@ -18,6 +19,21 @@ from api.main import app
 from api.services.auth import emitir_token
 
 client = TestClient(app)
+
+# O /laudo/resumo dispara enriquecer_cadastro em background (BrasilAPI). Nos testes,
+# trocamos por um spy no-op: evita rede e captura o enrich_all efetivamente passado.
+_ENRICH_CALLS: list = []
+
+
+@pytest.fixture(autouse=True)
+def _spy_enriquecimento(monkeypatch):
+    _ENRICH_CALLS.clear()
+
+    async def _spy(transacoes, db=None, limite=None, enrich_all=False):
+        _ENRICH_CALLS.append(enrich_all)
+        return 0
+
+    monkeypatch.setattr("api.routers.fiscal.enriquecer_cadastro", _spy)
 
 # Período curto (5–20 jan) + volume na casa dos milhões → anualizado >> teto EPP.
 # 3 PIX de < R$ 10k no mesmo dia (20/01) para o mesmo CNPJ → smurfing.
@@ -90,6 +106,10 @@ def test_laudo_resumo_estrutura_e_regime_critico():
     scores = [d["risk_score"] for d in top]
     assert scores == sorted(scores, reverse=True)
 
+    # CNPJs sintéticos não cacheados → background dispara enriquecimento COMPLETO.
+    assert isinstance(j["enriquecimento_pendente"], int) and j["enriquecimento_pendente"] >= 1
+    assert _ENRICH_CALLS == [True]
+
 
 def test_laudo_resumo_filtro_conta_inexistente_400():
     r = _post_resumo(conta="999999")
@@ -103,3 +123,30 @@ def test_laudo_resumo_exige_auth():
     with patch("api.services.auth._LEGACY_SERVICE_TOKEN", "legacy-test-token"):
         r = client.post("/fiscal/laudo/resumo", data=data, files=files)
     assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_enriquecer_cadastro_enrich_all_cobre_todos(monkeypatch):
+    """enrich_all=True ignora CNPJ_ENRICH_LIMITE e enriquece TODOS os faltantes
+    (pós-baixa fiel); sem ele, corta no top-N — o que zerava a pós-baixa no LOCAR."""
+    from api.matchers import auditoria_forense as af, cnpj_enricher
+    from api.matchers.cascata import Transacao
+
+    def _tx(cnpj_fmt: str) -> Transacao:
+        return Transacao(data="2026-01-01", tipo="DEBIT", valor=-100.0,
+                         fitid=cnpj_fmt, memo=f"PIX {cnpj_fmt}", nome="FORN", conta="CC 1")
+    txs = [_tx("11.222.333/0001-44"), _tx("22.333.444/0001-55"), _tx("33.444.555/0001-66")]
+
+    monkeypatch.setattr(cnpj_enricher, "_carregar_cache", lambda: {})
+    capturado = {}
+
+    async def _fake_lote(faltantes, db=None):
+        capturado["n"] = len(faltantes)
+        return {}
+
+    monkeypatch.setattr(cnpj_enricher, "enriquecer_lote", _fake_lote)
+
+    assert await af.enriquecer_cadastro(txs, limite=2) == 2          # top-N corta
+    assert capturado["n"] == 2
+    assert await af.enriquecer_cadastro(txs, limite=2, enrich_all=True) == 3  # cobre todos
+    assert capturado["n"] == 3
