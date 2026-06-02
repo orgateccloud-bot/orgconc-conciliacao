@@ -468,10 +468,12 @@ export interface FiscalRiscoResponse {
 export async function fiscalProcessar(
   clienteId: string,
   arquivos: File[],
+  enrichAll = false,
 ): Promise<FiscalProcessarResponse> {
   const fd = new FormData();
   fd.append("cliente_id", clienteId);
   arquivos.forEach((f) => fd.append("arquivos", f));
+  if (enrichAll) fd.append("enrich_all", "true");
   return apiFetch<FiscalProcessarResponse>("/fiscal/processar", {
     method: "POST",
     body: fd,
