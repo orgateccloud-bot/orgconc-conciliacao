@@ -442,18 +442,29 @@ def aba_documentos_fiscais(wb, nfes, ctes):
     ws.freeze_panes = f"A{start + 2}"
 
 
-def aba_conformidade_fiscal(wb, nfes, ctes, transacoes):
-    ws = wb.create_sheet("13. Conformidade Fiscal")
-    start = cabecalho(ws, 8, "Conformidade Fiscal")
-    ws.cell(row=start, column=1, value="CRUZAMENTO OFX x NF-e x CT-e - SCORE POR FORNECEDOR").font = TITLE_FONT
-    ws.merge_cells(f"A{start}:H{start}")
+def _conformidade_lista(nfes, ctes, transacoes, top=30):
+    """Cruza pagamentos OFX (por nome) com NF-e (emitente) e CT-e (dest) → lista
+    de fornecedores com score de conformidade. Reusado pela aba 13 e pelo MD/PDF."""
+    cb = re.sub(r"\D", "", EMPRESA.get("cnpj_basico", "") or "")
+    razao = _norm_nome(EMPRESA.get("razao_social", ""))
     pag = defaultdict(lambda: {"vol": 0.0, "n": 0})
     for t in transacoes:
-        if t.valor < 0:
-            nm = _norm_nome(t.nome)[:60]
-            if nm:
-                pag[nm]["vol"] += abs(t.valor)
-                pag[nm]["n"] += 1
+        if t.valor >= 0:
+            continue
+        txt = ((t.nome or "") + " " + (t.memo or "")).upper()
+        # Exclui auto-movimentação / mesma titularidade (próprio CNPJ ou própria razão):
+        # são partes relacionadas (aba 8), não fornecedores — evita falso-positivo.
+        if "MESMA TIT" in txt:
+            continue
+        if cb and cb in re.sub(r"\D", "", txt):
+            continue
+        nm = _norm_nome(t.nome)[:60]
+        if not nm:
+            continue
+        if len(razao) >= 8 and razao[:20] in nm:
+            continue
+        pag[nm]["vol"] += abs(t.valor)
+        pag[nm]["n"] += 1
     nfe_n = defaultdict(lambda: {"vol": 0.0, "cnpj": ""})
     for n in nfes:
         nm = _norm_nome(n.get("emit_nome"))[:60]
@@ -465,12 +476,8 @@ def aba_conformidade_fiscal(wb, nfes, ctes, transacoes):
         nm = _norm_nome(c.get("dest_nome"))[:60]
         if nm:
             cte_n[nm] += c["valor"]
-    r = start + 2
-    for col, h in enumerate(["#", "Fornecedor", "CNPJ", "Vol Pago OFX", "Vol NF-e", "Vol CT-e", "Conf %", "Classe"], 1):
-        ws.cell(row=r, column=col, value=h)
-    style_header(ws, r, 8)
-    r += 1
-    for i, (nm, info) in enumerate(sorted(pag.items(), key=lambda x: -x[1]["vol"])[:30], 1):
+    out = []
+    for nm, info in sorted(pag.items(), key=lambda x: -x[1]["vol"])[:top]:
         vp = info["vol"]
         match = None
         for k in nfe_n:
@@ -478,27 +485,42 @@ def aba_conformidade_fiscal(wb, nfes, ctes, transacoes):
                 match = nfe_n[k]
                 break
         vn = match["vol"] if match else 0.0
-        cnpj = match["cnpj"] if match else ""
         vc = cte_n.get(nm, 0.0)
         conf = ((vn + vc) / vp * 100) if vp else 0
         classe = "CONFORME" if conf >= 80 else "MEDIO" if conf >= 50 else "ALTO" if conf >= 20 else "CRITICO"
+        out.append({"nome": nm, "cnpj": match["cnpj"] if match else "",
+                    "vp": vp, "vn": vn, "vc": vc, "conf": conf, "classe": classe})
+    return out
+
+
+def aba_conformidade_fiscal(wb, conf):
+    ws = wb.create_sheet("13. Conformidade Fiscal")
+    start = cabecalho(ws, 8, "Conformidade Fiscal")
+    ws.cell(row=start, column=1, value="CRUZAMENTO OFX x NF-e x CT-e - SCORE POR FORNECEDOR").font = TITLE_FONT
+    ws.merge_cells(f"A{start}:H{start}")
+    r = start + 2
+    for col, h in enumerate(["#", "Fornecedor", "CNPJ", "Vol Pago OFX", "Vol NF-e", "Vol CT-e", "Conf %", "Classe"], 1):
+        ws.cell(row=r, column=col, value=h)
+    style_header(ws, r, 8)
+    r += 1
+    for i, c in enumerate(conf, 1):
         ws.cell(row=r, column=1, value=i)
-        ws.cell(row=r, column=2, value=nm[:48].title())
-        ws.cell(row=r, column=3, value=cnpj)
-        ws.cell(row=r, column=4, value=round(vp, 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=5, value=round(vn, 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=6, value=round(vc, 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=7, value=conf / 100).number_format = "0.0%"
-        cc = ws.cell(row=r, column=8, value=classe)
-        if classe == "CRITICO":
+        ws.cell(row=r, column=2, value=c["nome"][:48].title())
+        ws.cell(row=r, column=3, value=c["cnpj"])
+        ws.cell(row=r, column=4, value=round(c["vp"], 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=5, value=round(c["vn"], 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=6, value=round(c["vc"], 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=7, value=c["conf"] / 100).number_format = "0.0%"
+        cc = ws.cell(row=r, column=8, value=c["classe"])
+        if c["classe"] == "CRITICO":
             cc.fill = ALERT_FILL
             cc.font = Font(bold=True, color="B33A3A")
-        elif classe == "ALTO":
+        elif c["classe"] == "ALTO":
             cc.fill = ALERT_FILL_MEDIO
-        elif classe == "CONFORME":
+        elif c["classe"] == "CONFORME":
             cc.fill = SUCCESS_FILL
-        for c in range(1, 9):
-            ws.cell(row=r, column=c).border = THIN_BORDER
+        for cx in range(1, 9):
+            ws.cell(row=r, column=cx).border = THIN_BORDER
         r += 1
     for col, w in {1: 4, 2: 42, 3: 18, 4: 16, 5: 16, 6: 14, 7: 10, 8: 12}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
@@ -1468,13 +1490,22 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     ws.freeze_panes = f"A{start + 4}"
 
     # Abas fiscais (12, 13) — só quando há documentos NF-e/CT-e
+    fiscal = None
     if nfes or ctes:
         aba_documentos_fiscais(wb, nfes or [], ctes or [])
         _cb = re.sub(r"\D", "", EMPRESA.get("cnpj_basico", "") or "")
         nfes_receb = [n for n in (nfes or []) if re.sub(r"\D", "", n.get("emit_cnpj", "")) != _cb]
-        aba_conformidade_fiscal(wb, nfes_receb, ctes or [], [t for _, t, _ in todos])
+        conf = _conformidade_lista(nfes_receb, ctes or [], [t for _, t, _ in todos])
+        aba_conformidade_fiscal(wb, conf)
+        fiscal = {
+            "n_nfe": len(nfes or []), "n_cte": len(ctes or []),
+            "vol_nfe": round(sum(n["valor"] for n in (nfes or [])), 2),
+            "vol_cte": round(sum(c["valor"] for c in (ctes or [])), 2),
+            "criticos": [c for c in conf if c["classe"] in ("CRITICO", "ALTO")][:10],
+        }
 
     return wb, {
+        "fiscal": fiscal,
         "anualizado": anualizado, "multiplo": multiplo, "meses_obs": meses_obs,
         "n_total": n_total, "volume_bruto": volume_bruto,
         "cred_total": cred_total, "deb_total": deb_total,
@@ -1692,6 +1723,20 @@ def gerar_md(stats):
         achados.append(f"**{len(stats['pos_baixa'])} pagamentos pos-baixa** — R$ {total_pb:,.2f} a CNPJ ja baixado")
     if total_pr > 0:
         achados.append(f"**R$ {total_pr:,.2f} com partes relacionadas** — necessita lastro contratual")
+    fisc = stats.get("fiscal")
+    if fisc:
+        lines += ["", "## Conformidade Fiscal (OFX x NF-e x CT-e)", "",
+                  f"**Documentos:** {fisc['n_nfe']:,} NF-e (R$ {fisc['vol_nfe']:,.2f}) + "
+                  f"{fisc['n_cte']:,} CT-e (R$ {fisc['vol_cte']:,.2f}).", ""]
+        if fisc["criticos"]:
+            lines += ["Fornecedores com **gap de conformidade** (pago sem cobertura fiscal proporcional):", "",
+                      "| Fornecedor | Pago (OFX) | NF-e+CT-e | Conf % | Classe |", "|---|---:|---:|---:|:--:|"]
+            for c in fisc["criticos"]:
+                lines.append(f"| {c['nome'][:34].title()} | R$ {c['vp']:,.2f} | "
+                             f"R$ {c['vn'] + c['vc']:,.2f} | {c['conf']:.0f}% | {c['classe']} |")
+        else:
+            lines.append("Sem fornecedores em faixa critica de conformidade no recorte.")
+
     lines += ["", "## 9. Conclusao", ""]
     if achados:
         lines.append("Os testes deterministicos aplicados apontam os seguintes **pontos de atencao**, que "
