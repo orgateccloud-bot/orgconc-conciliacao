@@ -394,8 +394,8 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Total de transacoes", f"{n_total:,}"),
         ("Volume bruto movimentado", f"R$ {volume_bruto:,.2f}"),
         ("Volume anualizado projetado", f"R$ {volume_bruto * 12 / 4.5:,.2f}"),
-        ("Saldo inicial (01/01)", f"R$ {saldo_ini_jan:,.2f}"),
-        ("Saldo final (14/05)", f"R$ {saldo_fim_mai:,.2f}"),
+        ("Saldo inicial do periodo", f"R$ {saldo_ini_jan:,.2f}"),
+        ("Saldo final do periodo", f"R$ {saldo_fim_mai:,.2f}"),
         ("Variacao do periodo", f"R$ {saldo_fim_mai - saldo_ini_jan:,.2f}"),
         ("CNPJs identificados", f"{sum(1 for d in todas_disps if d.cnpj)}"),
         ("Alertas pos-baixa", f"{sum(1 for d in todas_disps if d.disposicao == 'ALERTA_POS_BAIXA')}"),
@@ -521,8 +521,8 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Volume de creditos", cred_total),
         ("Volume de debitos", deb_total),
         ("Volume bruto movimentado", volume_bruto),
-        ("Saldo inicial (01/01)", saldo_ini_jan),
-        ("Saldo final (14/05)", saldo_fim_mai),
+        ("Saldo inicial do periodo", saldo_ini_jan),
+        ("Saldo final do periodo", saldo_fim_mai),
         ("Variacao do periodo", saldo_fim_mai - saldo_ini_jan),
         ("Volume anualizado projetado", volume_bruto * 12 / 4.5),
         ("Limite EPP (referencia)", 4_800_000),
@@ -1254,14 +1254,14 @@ def gerar_md(stats):
         f"| Volume de creditos | R$ {cred:,.2f} |",
         f"| Volume de debitos | R$ {deb:,.2f} |",
         f"| Volume bruto movimentado | **R$ {vol:,.2f}** |",
-        f"| Saldo inicial (01/01) | R$ {saldo_ini:,.2f} |",
-        f"| Saldo final (14/05) | R$ {saldo_fim:,.2f} |",
+        f"| Saldo inicial do periodo | R$ {saldo_ini:,.2f} |",
+        f"| Saldo final do periodo | R$ {saldo_fim:,.2f} |",
         f"| Variacao do periodo | R$ {saldo_fim - saldo_ini:,.2f} |",
         f"| **Volume anualizado projetado** | **R$ {vol * 12 / 4.5:,.2f}** |",
         "| Limite EPP (referencia) | R$ 4.800.000,00 |",
         f"| **Multiplo do teto EPP** | **{vol * 12 / 4.5 / 4_800_000:.1f}x** |",
         f"| Alertas pos-baixa | {len(stats['pos_baixa'])} |",
-        f"| Retencao estimada (5m) | R$ {stats['total_ret_5m']:,.2f} |",
+        f"| Retencao estimada no periodo | R$ {stats['total_ret_5m']:,.2f} |",
         "",
         "## 2. Identificacao Cadastral",
         "",
@@ -1411,24 +1411,36 @@ def gerar_md(stats):
     lines.append(f"| | | **R$ {total_pb:,.2f}** | TOTAL | | |")
 
     # Conclusao
-    lines += [
-        "",
-        "## 9. Conclusao",
-        "",
-        "Os achados consolidados desta auditoria evidenciam **riscos tributarios e contabeis significativos** que demandam regularizacao imediata:",
-        "",
-        f"1. **Desenquadramento EPP retroativo** — empresa movimenta {vol * 12 / 4.5 / 4_800_000:.0f}x o limite anual permitido",
-        f"2. **Retencoes na fonte nao recolhidas** — R$ {stats['total_ret_5m']:,.2f} estimados em {stats['n_meses']} meses",
-        f"3. **{len(stats['meis'])} MEIs com volume acima do teto** — risco de pejotizacao",
-        f"4. **{len(stats['pos_baixa'])} pagamentos pos-baixa** — R$ {total_pb:,.2f} a fornecedor baixado",
-        f"5. **R$ {total_pr:,.2f} com partes relacionadas** — necessita lastro contratual documentado",
-        "",
-        "Recomenda-se acionamento das medidas formais descritas na **Carta de Constatacao** (documento anexo).",
-        "",
-        "---",
-        "",
-        "*Documento gerado pelo OrgConc/OrgNeural2 v0.5.0 - Sistema integrado de auditoria bancaria.*",
-    ]
+    # Conclusao DATA-DRIVEN — só afirma achados que existem (honesto p/ caso limpo/modelo).
+    mult = round((vol / stats["n_meses"] * 12) / 4_800_000, 1) if stats.get("n_meses") else 0.0
+    achados = []
+    if mult > 1:
+        achados.append(f"**Regime x teto** — volume anualizado ≈ **{mult:.1f}x** o teto EPP (R$ 4,8M); "
+                       "indicador de porte/incompatibilidade a verificar")
+    if stats["total_ret_5m"] > 0:
+        achados.append(f"**Retencoes estimadas na fonte** — R$ {stats['total_ret_5m']:,.2f} em "
+                       f"{stats['n_meses']} meses (PIS/COFINS/CSLL/IRRF sobre pagamentos a PJ de servico)")
+    if stats["meis"]:
+        achados.append(f"**{len(stats['meis'])} fornecedores PJ acima do teto MEI** — risco de pejotizacao")
+    if stats["pos_baixa"]:
+        achados.append(f"**{len(stats['pos_baixa'])} pagamentos pos-baixa** — R$ {total_pb:,.2f} a CNPJ ja baixado")
+    if total_pr > 0:
+        achados.append(f"**R$ {total_pr:,.2f} com partes relacionadas** — necessita lastro contratual")
+    lines += ["", "## 9. Conclusao", ""]
+    if achados:
+        lines.append("Os testes deterministicos aplicados apontam os seguintes **pontos de atencao**, que "
+                     "demandam verificacao documental e, se confirmados, regularizacao:")
+        lines.append("")
+        lines += [f"{i}. {a}" for i, a in enumerate(achados, 1)]
+        lines += ["", "Recomenda-se a verificacao dos itens acima e, quando aplicavel, o acionamento das "
+                  "medidas formais cabiveis (ex.: denuncia espontanea — CTN art. 138)."]
+    else:
+        lines.append("Nos testes deterministicos aplicados a este recorte **nao foram identificados achados "
+                     "materiais** (regime compativel com o teto, sem pagamentos pos-baixa, sem retencoes "
+                     "estimadas e sem MEIs acima do teto). Ver ressalvas de escopo e enriquecimento cadastral.")
+    lines += ["", "---", "",
+              "*Documento gerado pelo OrgConc — Sistema OrgAudi. Indicadores deterministicos; "
+              "NAO constituem conclusao de auditoria sem verificacao documental.*"]
 
     return "\n".join(lines), {"total_pr": total_pr, "total_exc": total_exc, "total_pb": total_pb}
 
