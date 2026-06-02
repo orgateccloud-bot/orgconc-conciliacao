@@ -1257,15 +1257,15 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     for cnpj, dd in por_cnpj_mei.items():
         info = cache.get(cnpj, {})
         cnae = info.get("cnae_principal", "")
-        anualizado = dd["deb"] * 12 / max(meses_obs, 1)
+        anualizado_mei = dd["deb"] * 12 / max(meses_obs, 1)
         teto = _limite_mei_por_cnae(cnae)
         eh_tac = teto == LIMITE_MEI_TAC
-        excesso = anualizado - teto if anualizado > teto else 0.0
+        excesso = anualizado_mei - teto if anualizado_mei > teto else 0.0
         item = {
             "cnpj": cnpj, "razao": info.get("razao_social", ""),
             "cnae": cnae, "cnae_desc": info.get("cnae_descricao", ""),
             "uf": info.get("uf", ""), "n": dd["n"],
-            "deb_5m": dd["deb"], "anualizado": anualizado,
+            "deb_5m": dd["deb"], "anualizado": anualizado_mei,
             "teto": teto, "excesso": excesso, "eh_tac": eh_tac,
         }
         if eh_tac and excesso > 0:
