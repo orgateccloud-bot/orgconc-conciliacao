@@ -51,6 +51,8 @@ def inserir_logo_xlsx(ws, anchor: str = "A1", largura_px: int = 70, altura_px: i
         return False
 from api.matchers.cascata import classificar, ler_ofx
 from api.matchers.cnpj_enricher import _carregar_cache, enriquecer_lote
+from api.matchers.auditoria_forense import _meses_observados
+from api.matchers.regime_fiscal import TETO_SIMPLES_EPP, analisar_regime
 from api.matchers.forensics import (
     calcular_agregados,
     calcular_risk_score,
@@ -294,6 +296,11 @@ def gerar_laudo_workbook(todos, saldos, cache):
     saldo_ini_jan = _m0["saldo_final"] - (_m0["cred"] + _m0["deb"])
     saldo_fim_mai = saldos[meses[-1]]["saldo_final"] if meses else 0.0
     volume_bruto = abs(cred_total) + abs(deb_total)
+    # Anualização e múltiplo do teto via MOTOR validado (dias corridos) — laudo == motor.
+    meses_obs = _meses_observados([t for _, t, _ in todos])
+    _regime = analisar_regime(cred_total, deb_total, meses_obs, TETO_SIMPLES_EPP)
+    anualizado = _regime.volume_anualizado
+    multiplo = _regime.multiplo_do_teto
 
     # Disposicoes com classificacao forense
     todas_disps = []
@@ -393,7 +400,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Periodo analisado", f"{periodo_str} ({n_meses} meses)"),
         ("Total de transacoes", f"{n_total:,}"),
         ("Volume bruto movimentado", f"R$ {volume_bruto:,.2f}"),
-        ("Volume anualizado projetado", f"R$ {volume_bruto * 12 / max(n_meses, 1):,.2f}"),
+        ("Volume anualizado projetado", f"R$ {anualizado:,.2f}"),
         ("Saldo inicial do periodo", f"R$ {saldo_ini_jan:,.2f}"),
         ("Saldo final do periodo", f"R$ {saldo_fim_mai:,.2f}"),
         ("Variacao do periodo", f"R$ {saldo_fim_mai - saldo_ini_jan:,.2f}"),
@@ -485,7 +492,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
     ws.merge_cells(f"A{r}:E{r}")
     r += 1
     # Divergências DATA-DRIVEN — calculadas dos dados, não hardcoded.
-    _anual = volume_bruto * 12 / max(n_meses, 1)
+    _anual = anualizado
     _mult = _anual / 4_800_000
     _cap = EMPRESA.get("capital_social", 0) or 0
     divergencias = []
@@ -538,9 +545,9 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Saldo inicial do periodo", saldo_ini_jan),
         ("Saldo final do periodo", saldo_fim_mai),
         ("Variacao do periodo", saldo_fim_mai - saldo_ini_jan),
-        ("Volume anualizado projetado", volume_bruto * 12 / max(n_meses, 1)),
+        ("Volume anualizado projetado", anualizado),
         ("Limite EPP (referencia)", 4_800_000),
-        ("Multiplo do teto EPP", volume_bruto * 12 / max(n_meses, 1) / 4_800_000),
+        ("Multiplo do teto EPP", multiplo),
     ]
     for k, v in kpis:
         ws.cell(row=r, column=1, value=k).font = Font(bold=True)
@@ -960,7 +967,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
     for cnpj, dd in por_cnpj_mei.items():
         info = cache.get(cnpj, {})
         cnae = info.get("cnae_principal", "")
-        anualizado = dd["deb"] * 12 / max(n_meses, 1)
+        anualizado = dd["deb"] * 12 / max(meses_obs, 1)
         teto = _limite_mei_por_cnae(cnae)
         eh_tac = teto == LIMITE_MEI_TAC
         excesso = anualizado - teto if anualizado > teto else 0.0
@@ -1224,6 +1231,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
     ws.freeze_panes = f"A{start + 4}"
 
     return wb, {
+        "anualizado": anualizado, "multiplo": multiplo, "meses_obs": meses_obs,
         "n_total": n_total, "volume_bruto": volume_bruto,
         "cred_total": cred_total, "deb_total": deb_total,
         "saldo_ini": saldo_ini_jan, "saldo_fim": saldo_fim_mai,
@@ -1271,9 +1279,9 @@ def gerar_md(stats):
         f"| Saldo inicial do periodo | R$ {saldo_ini:,.2f} |",
         f"| Saldo final do periodo | R$ {saldo_fim:,.2f} |",
         f"| Variacao do periodo | R$ {saldo_fim - saldo_ini:,.2f} |",
-        f"| **Volume anualizado projetado** | **R$ {vol * 12 / max(stats['n_meses'], 1):,.2f}** |",
+        f"| **Volume anualizado projetado** | **R$ {stats['anualizado']:,.2f}** |",
         "| Limite EPP (referencia) | R$ 4.800.000,00 |",
-        f"| **Multiplo do teto EPP** | **{vol * 12 / max(stats['n_meses'], 1) / 4_800_000:.1f}x** |",
+        f"| **Multiplo do teto EPP** | **{stats['multiplo']:.1f}x** |",
         f"| Alertas pos-baixa | {len(stats['pos_baixa'])} |",
         f"| Retencao estimada no periodo | R$ {stats['total_ret_5m']:,.2f} |",
         "",
@@ -1426,7 +1434,7 @@ def gerar_md(stats):
 
     # Conclusao
     # Conclusao DATA-DRIVEN — só afirma achados que existem (honesto p/ caso limpo/modelo).
-    mult = round((vol / stats["n_meses"] * 12) / 4_800_000, 1) if stats.get("n_meses") else 0.0
+    mult = stats.get("multiplo", 0.0)
     achados = []
     if mult > 1:
         achados.append(f"**Regime x teto** — volume anualizado ≈ **{mult:.1f}x** o teto EPP (R$ 4,8M); "
