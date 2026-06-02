@@ -393,7 +393,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Periodo analisado", f"{periodo_str} ({n_meses} meses)"),
         ("Total de transacoes", f"{n_total:,}"),
         ("Volume bruto movimentado", f"R$ {volume_bruto:,.2f}"),
-        ("Volume anualizado projetado", f"R$ {volume_bruto * 12 / 4.5:,.2f}"),
+        ("Volume anualizado projetado", f"R$ {volume_bruto * 12 / max(n_meses, 1):,.2f}"),
         ("Saldo inicial do periodo", f"R$ {saldo_ini_jan:,.2f}"),
         ("Saldo final do periodo", f"R$ {saldo_fim_mai:,.2f}"),
         ("Variacao do periodo", f"R$ {saldo_fim_mai - saldo_ini_jan:,.2f}"),
@@ -423,7 +423,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
     start = cabecalho(ws, 5, "Identificacao Cadastral")
     ws.cell(row=start, column=1, value="DADOS CADASTRAIS DA EMPRESA AUDITADA").font = TITLE_FONT
     ws.merge_cells(f"A{start}:E{start}")
-    ws.cell(row=start+1, column=1, value="Fontes: Contrato Social (2a Alteracao 06/11/2024) + Cartao CNPJ RFB (07/11/2024)").font = Font(italic=True, color="64748B", size=9)
+    ws.cell(row=start+1, column=1, value="Fontes: Contrato Social + Cartao CNPJ (RFB / BrasilAPI)").font = Font(italic=True, color="64748B", size=9)
     ws.merge_cells(f"A{start+1}:E{start+1}")
 
     r = start + 3
@@ -468,7 +468,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Participacao", EMPRESA["socio_quotas"]),
         ("Data de Nascimento", EMPRESA["socio_nascimento"]),
         ("Endereco Residencial", EMPRESA["socio_endereco"]),
-        ("Funcao", "Administrador unico por prazo indeterminado"),
+        ("Funcao", "—"),
     ]
     for k, v in socio:
         ws.cell(row=r, column=1, value=k).font = Font(bold=True)
@@ -484,12 +484,26 @@ def gerar_laudo_workbook(todos, saldos, cache):
     ws.cell(row=r, column=1, value="DIVERGENCIAS IDENTIFICADAS").font = Font(bold=True, size=11, color="B33A3A")
     ws.merge_cells(f"A{r}:E{r}")
     r += 1
-    divergencias = [
-        ("[!] Porte EPP vs Movimentacao", "Limite EPP: R$ 4,8M/ano | Real: R$ 187M/ano (39x acima)"),
-        ("[!] Capital vs Giro", "Capital R$ 400k | Giro anual R$ 187M (razao 1:468)"),
-        ("[!] Desenquadramento Tributario", "Provavelmente Lucro Real seria devido"),
-        ("[!] Mudanca de Razao Social", "06/11/2024 (1 mes antes do periodo) - estreitamento de objeto"),
-    ]
+    # Divergências DATA-DRIVEN — calculadas dos dados, não hardcoded.
+    _anual = volume_bruto * 12 / max(n_meses, 1)
+    _mult = _anual / 4_800_000
+    _cap = EMPRESA.get("capital_social", 0) or 0
+    divergencias = []
+    if _mult > 1:
+        divergencias.append(("[!] Porte EPP vs Movimentacao",
+                             f"Teto EPP: R$ 4.800.000/ano | Anualizado: R$ {_anual:,.2f} ({_mult:.1f}x o teto)"))
+    if _cap > 0 and _anual > 0:
+        divergencias.append(("[!] Capital vs Giro",
+                             f"Capital R$ {_cap:,.2f} | Giro anualizado R$ {_anual:,.2f} (razao 1:{_anual / _cap:.0f})"))
+    if _mult > 1:
+        divergencias.append(("[!] Regime tributario",
+                             "Volume anualizado pode exceder o sublimite Simples/EPP — verificar enquadramento"))
+    if EMPRESA.get("razao_anterior", "—") not in ("—", "", None):
+        divergencias.append(("[!] Mudanca de Razao Social", f"Anterior: {EMPRESA['razao_anterior']}"))
+    if not divergencias:
+        ws.cell(row=r, column=1, value="Nenhuma divergencia identificada nos testes deterministicos.").font = Font(italic=True, color="2F7D4F")
+        ws.merge_cells(f"A{r}:E{r}")
+        r += 1
     for k, v in divergencias:
         ws.cell(row=r, column=1, value=k).font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=1).fill = ALERT_FILL
@@ -524,9 +538,9 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Saldo inicial do periodo", saldo_ini_jan),
         ("Saldo final do periodo", saldo_fim_mai),
         ("Variacao do periodo", saldo_fim_mai - saldo_ini_jan),
-        ("Volume anualizado projetado", volume_bruto * 12 / 4.5),
+        ("Volume anualizado projetado", volume_bruto * 12 / max(n_meses, 1)),
         ("Limite EPP (referencia)", 4_800_000),
-        ("Multiplo do teto EPP", volume_bruto * 12 / 4.5 / 4_800_000),
+        ("Multiplo do teto EPP", volume_bruto * 12 / max(n_meses, 1) / 4_800_000),
     ]
     for k, v in kpis:
         ws.cell(row=r, column=1, value=k).font = Font(bold=True)
@@ -946,7 +960,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
     for cnpj, dd in por_cnpj_mei.items():
         info = cache.get(cnpj, {})
         cnae = info.get("cnae_principal", "")
-        anualizado = dd["deb"] * 12 / 4.5
+        anualizado = dd["deb"] * 12 / max(n_meses, 1)
         teto = _limite_mei_por_cnae(cnae)
         eh_tac = teto == LIMITE_MEI_TAC
         excesso = anualizado - teto if anualizado > teto else 0.0
@@ -1257,9 +1271,9 @@ def gerar_md(stats):
         f"| Saldo inicial do periodo | R$ {saldo_ini:,.2f} |",
         f"| Saldo final do periodo | R$ {saldo_fim:,.2f} |",
         f"| Variacao do periodo | R$ {saldo_fim - saldo_ini:,.2f} |",
-        f"| **Volume anualizado projetado** | **R$ {vol * 12 / 4.5:,.2f}** |",
+        f"| **Volume anualizado projetado** | **R$ {vol * 12 / max(stats['n_meses'], 1):,.2f}** |",
         "| Limite EPP (referencia) | R$ 4.800.000,00 |",
-        f"| **Multiplo do teto EPP** | **{vol * 12 / 4.5 / 4_800_000:.1f}x** |",
+        f"| **Multiplo do teto EPP** | **{vol * 12 / max(stats['n_meses'], 1) / 4_800_000:.1f}x** |",
         f"| Alertas pos-baixa | {len(stats['pos_baixa'])} |",
         f"| Retencao estimada no periodo | R$ {stats['total_ret_5m']:,.2f} |",
         "",
