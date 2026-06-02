@@ -92,11 +92,16 @@ export function AuditoriaForensePage() {
 
   const addFiles = useCallback((list: FileList | null) => {
     if (!list) return;
-    const ofx = Array.from(list).filter((f) => f.name.toLowerCase().endsWith(".ofx"));
-    if (ofx.length < Array.from(list).length) {
+    const todos = Array.from(list);
+    const ofx = todos.filter((f) => f.name.toLowerCase().endsWith(".ofx"));
+    if (ofx.length < todos.length) {
       toast.warning("Apenas arquivos .ofx são aceitos aqui.");
     }
-    setArquivos((prev) => [...prev, ...ofx].slice(0, 50));
+    setArquivos((prev) => {
+      const vistos = new Set(prev.map((f) => `${f.name}:${f.size}`));
+      const novos = ofx.filter((f) => !vistos.has(`${f.name}:${f.size}`));
+      return [...prev, ...novos].slice(0, 50);
+    });
   }, []);
 
   function onDrop(e: React.DragEvent) {
@@ -149,7 +154,9 @@ export function AuditoriaForensePage() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Revoga em tick posterior: revogar síncrono após click() pode abortar
+      // o download em alguns navegadores (Chromium/Safari).
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast.success("Laudo XLSX (11 abas) gerado.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha ao gerar o laudo");
@@ -234,14 +241,17 @@ export function AuditoriaForensePage() {
             multiple
             accept=".ofx"
             className="hidden"
-            onChange={(e) => addFiles(e.target.files)}
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = ""; // permite re-selecionar o mesmo arquivo
+            }}
           />
         </div>
 
         {arquivos.length > 0 && (
           <ul className="space-y-2 max-h-40 overflow-y-auto">
-            {arquivos.map((f, i) => (
-              <li key={i} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+            {arquivos.map((f) => (
+              <li key={`${f.name}:${f.size}`} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
                 <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <span className="flex-1 truncate font-mono text-xs">{f.name}</span>
                 <span className="text-xs text-muted-foreground">{formatBytes(f.size)}</span>

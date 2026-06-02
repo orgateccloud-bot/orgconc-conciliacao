@@ -144,7 +144,8 @@ export async function apiFetchBlob(
     throw new ApiError(msg, res.status, detail);
   }
   const cd = res.headers.get("content-disposition") || "";
-  const m = /filename="?([^";]+)"?/.exec(cd);
+  // (?!\*) evita casar o `filename*=UTF-8''...` (RFC 5987) e capturar lixo.
+  const m = /filename=(?!\*)"?([^";]+)"?/.exec(cd);
   return { blob: await res.blob(), filename: m ? m[1] : null };
 }
 
