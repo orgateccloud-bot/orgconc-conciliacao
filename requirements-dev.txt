@@ -12,4 +12,6 @@ ruff
 black
 bandit
 pip-audit
-semgrep
+# semgrep fica FORA daqui: depende de pyjwt~=2.12 e conflitaria com pyjwt 2.13.0
+# (correcao das 5 CVEs) na resolucao unica do `pip install -r` do job de testes.
+# O CI o instala no job 'security' (a parte); p/ SAST local: pip install semgrep.
