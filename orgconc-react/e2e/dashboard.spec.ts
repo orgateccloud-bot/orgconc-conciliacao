@@ -14,7 +14,6 @@ import { test, expect } from "@playwright/test";
  * caem em estados "vazio/erro" controlados — ainda assim verificavel.
  */
 
-const TOKEN_MOCK_KEY = "orgconc.access_token";
 // JWT decorativo (header.payload.signature) — apenas para nao redirecionar.
 // AuthContext valida via /auth/me — sem backend, retorna user=null e redireciona.
 // Para spec sem backend, usamos somente rotas que nao exigem auth.

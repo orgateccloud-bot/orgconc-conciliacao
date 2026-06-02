@@ -13,7 +13,6 @@ export function semViolacoesCriticas(results: AxeResults): boolean {
     (v) => v.impact === "critical" || v.impact === "serious",
   );
   if (criticas.length > 0) {
-    // eslint-disable-next-line no-console
     console.error(
       "Violacoes a11y criticas:\n" +
         criticas
