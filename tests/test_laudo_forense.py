@@ -43,6 +43,10 @@ def test_gerar_laudo_workbook_11_abas():
     assert wb.sheetnames == ABAS
     assert stats["n_total"] == 4
     assert stats["n_meses"] == 3
+    # gerar_md não pode quebrar sem MEIs/pós-baixa (regressão: total_exc indefinido)
+    md, totais = laudo.gerar_md(stats)
+    assert "Sumario Executivo" in md
+    assert isinstance(totais, dict) and "total_exc" in totais
 
 
 def test_construir_empresa_sem_cache_nao_vaza_dados():

@@ -1358,12 +1358,12 @@ def gerar_md(stats):
         f"### Casos acima do teto correspondente ({len(stats['meis'])} fornecedores)",
         "",
     ]
+    total_exc = 0.0
     if stats["meis"]:
         lines += [
             "| # | CNPJ | Razao Social | CNAE | Anualizado | Excesso |",
             "|---|---|---|---|---:|---:|",
         ]
-        total_exc = 0.0
         for i, m in enumerate(stats["meis"][:15], start=1):
             fmt = f"{m['cnpj'][:2]}.{m['cnpj'][2:5]}.{m['cnpj'][5:8]}/{m['cnpj'][8:12]}-{m['cnpj'][12:14]}"
             cnae_desc = m.get("cnae_desc", "") or m.get("cnae", "")
