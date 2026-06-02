@@ -135,19 +135,20 @@ def _limite_mei_por_cnae(cnae: str) -> float:
         return LIMITE_MEI_TAC
     return LIMITE_MEI_PADRAO
 
-NAVY = "0F172A"
+NAVY = "12345E"          # títulos/cabeçalhos (paleta AuditTax/OrgAudi)
+ACCENT = "1F7FB8"        # azul de destaque (alinhado ao laudo HTML/PDF)
 HEADER_FILL = PatternFill("solid", fgColor=NAVY)
-HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
-TOTAL_FILL = PatternFill("solid", fgColor="1E3A8A")
+HEADER_FONT = Font(bold=True, color="EEF4FB", size=11)
+TOTAL_FILL = PatternFill("solid", fgColor=ACCENT)
 TOTAL_FONT = Font(bold=True, color="FFFFFF", size=11)
-ZEBRA_FILL = PatternFill("solid", fgColor="F8FAFC")
-ALERT_FILL = PatternFill("solid", fgColor="FEE2E2")
-ALERT_FILL_MEDIO = PatternFill("solid", fgColor="FEF3C7")
-INFO_FILL = PatternFill("solid", fgColor="DBEAFE")
-SUCCESS_FILL = PatternFill("solid", fgColor="DCFCE7")
+ZEBRA_FILL = PatternFill("solid", fgColor="EFF4F9")
+ALERT_FILL = PatternFill("solid", fgColor="FBE6E4")        # risco alto/crítico (vermelho suave)
+ALERT_FILL_MEDIO = PatternFill("solid", fgColor="FBF2DD")  # risco médio (âmbar)
+INFO_FILL = PatternFill("solid", fgColor="EEF6FB")         # info (azul claro)
+SUCCESS_FILL = PatternFill("solid", fgColor="E6F0E8")      # baixo (verde)
 TITLE_FONT = Font(bold=True, size=14, color=NAVY)
 SUBTITLE_FONT = Font(bold=True, size=11, color=NAVY)
-BORDER = Side(border_style="thin", color="E2E8F0")
+BORDER = Side(border_style="thin", color="D4DDE6")
 THIN_BORDER = Border(top=BORDER, left=BORDER, right=BORDER, bottom=BORDER)
 
 
@@ -182,13 +183,13 @@ def cabecalho(ws, ultima_col, secao):
     c2 = ws.cell(row=2, column=1,
         value=f"Empresa: {EMPRESA['razao_social']} | CNPJ: {EMPRESA['cnpj']} | Socio: {EMPRESA['socio_nome']} (CPF {EMPRESA['socio_cpf']})")
     c2.font = Font(bold=True, size=10, color="FFFFFF")
-    c2.fill = PatternFill("solid", fgColor="1E3A8A")
+    c2.fill = PatternFill("solid", fgColor="1F7FB8")
     c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
     ws.merge_cells(f"A2:{get_column_letter(ultima_col)}2")
 
     c3 = ws.cell(row=3, column=1,
         value=f"{EMPRESA.get('razao_social', '')} · CNPJ {EMPRESA.get('cnpj', '—')} · Secao: {secao}")
-    c3.font = Font(size=9, color="0F172A")
+    c3.font = Font(size=9, color="12345E")
     c3.fill = INFO_FILL
     c3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
     ws.merge_cells(f"A3:{get_column_letter(ultima_col)}3")
@@ -371,7 +372,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
     for num, sec, desc, sheet_name in indice:
         ws.cell(row=r, column=1, value=num)
         c_sec = ws.cell(row=r, column=2, value=sec)
-        c_sec.font = Font(bold=True, color="0052FF", underline="single")
+        c_sec.font = Font(bold=True, color="1F7FB8", underline="single")
         # Hyperlink para a aba correspondente
         c_sec.hyperlink = f"#'{sheet_name}'!A1"
         c_sec.style = "Hyperlink"
@@ -403,7 +404,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=1, value=k).font = Font(bold=True)
         c = ws.cell(row=r, column=2, value=v)
         if "anualizado" in k or "Volume bruto" in k:
-            c.font = Font(bold=True, color="DC2626")
+            c.font = Font(bold=True, color="B33A3A")
         ws.merge_cells(f"B{r}:F{r}")
         for col in range(1, 7):
             ws.cell(row=r, column=col).border = THIN_BORDER
@@ -480,7 +481,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         r += 1
 
     r += 1
-    ws.cell(row=r, column=1, value="DIVERGENCIAS IDENTIFICADAS").font = Font(bold=True, size=11, color="DC2626")
+    ws.cell(row=r, column=1, value="DIVERGENCIAS IDENTIFICADAS").font = Font(bold=True, size=11, color="B33A3A")
     ws.merge_cells(f"A{r}:E{r}")
     r += 1
     divergencias = [
@@ -490,7 +491,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("[!] Mudanca de Razao Social", "06/11/2024 (1 mes antes do periodo) - estreitamento de objeto"),
     ]
     for k, v in divergencias:
-        ws.cell(row=r, column=1, value=k).font = Font(bold=True, color="DC2626")
+        ws.cell(row=r, column=1, value=k).font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=1).fill = ALERT_FILL
         ws.cell(row=r, column=2, value=v).fill = ALERT_FILL
         ws.merge_cells(f"B{r}:E{r}")
@@ -534,7 +535,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
             c.number_format = "#,##0.00"
         elif "Multiplo" in k:
             c.number_format = "0.0\\x"
-            c.font = Font(bold=True, color="DC2626")
+            c.font = Font(bold=True, color="B33A3A")
         for col in range(1, 3):
             ws.cell(row=r, column=col).border = THIN_BORDER
             if r % 2 == 0:
@@ -559,16 +560,16 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=1, value=mes).font = Font(bold=True)
         ws.cell(row=r, column=2, value=s["n"]).number_format = "#,##0"
         ws.cell(row=r, column=3, value=round(s["cred"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=3).font = Font(color="16A34A")
+        ws.cell(row=r, column=3).font = Font(color="2F7D4F")
         ws.cell(row=r, column=4, value=round(s["deb"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=4).font = Font(color="DC2626")
+        ws.cell(row=r, column=4).font = Font(color="B33A3A")
         fl = s["cred"] + s["deb"]
         ws.cell(row=r, column=5, value=round(fl, 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=5).font = Font(bold=True, color="DC2626" if fl < 0 else "16A34A")
+        ws.cell(row=r, column=5).font = Font(bold=True, color="B33A3A" if fl < 0 else "2F7D4F")
         ws.cell(row=r, column=6, value=round(s["saldo_final"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=6).font = Font(bold=True, color="DC2626" if s["saldo_final"] < 0 else "0F172A")
+        ws.cell(row=r, column=6).font = Font(bold=True, color="B33A3A" if s["saldo_final"] < 0 else "12345E")
         ws.cell(row=r, column=7, value=round(var, 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=7).font = Font(color="DC2626" if var < 0 else "16A34A")
+        ws.cell(row=r, column=7).font = Font(color="B33A3A" if var < 0 else "2F7D4F")
         for c in range(1, 8):
             ws.cell(row=r, column=c).border = THIN_BORDER
             if r % 2 == 0:
@@ -619,15 +620,15 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=4, value=t.tipo)
         cv = ws.cell(row=r, column=5, value=round(t.valor, 2))
         cv.number_format = "#,##0.00"
-        cv.font = Font(color=("DC2626" if t.valor < 0 else "16A34A"))
+        cv.font = Font(color=("B33A3A" if t.valor < 0 else "2F7D4F"))
         ws.cell(row=r, column=6, value=t.memo or "")
         ws.cell(row=r, column=7, value=t.nome or "")
         cc = ws.cell(row=r, column=8, value=d.contraparte or "")
         if d.disposicao == "ALERTA_POS_BAIXA":
-            cc.font = Font(bold=True, color="DC2626")
+            cc.font = Font(bold=True, color="B33A3A")
         cs = ws.cell(row=r, column=9, value=round(saldo_corrente, 2))
         cs.number_format = "#,##0.00"
-        cs.font = Font(bold=True, color=("DC2626" if saldo_corrente < 0 else "0F172A"))
+        cs.font = Font(bold=True, color=("B33A3A" if saldo_corrente < 0 else "12345E"))
         for c in range(1, 10):
             ws.cell(row=r, column=c).border = THIN_BORDER
             if d.disposicao == "ALERTA_POS_BAIXA":
@@ -695,7 +696,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=2, value=t.tipo)
         cv = ws.cell(row=r, column=3, value=round(t.valor, 2))
         cv.number_format = "#,##0.00"
-        cv.font = Font(color=("DC2626" if t.valor < 0 else "16A34A"), bold=is_alerta or is_critico)
+        cv.font = Font(color=("B33A3A" if t.valor < 0 else "2F7D4F"), bold=is_alerta or is_critico)
         ws.cell(row=r, column=4, value=t.memo or "")
         ws.cell(row=r, column=5, value=t.nome or "")
         ws.cell(row=r, column=6, value=t.fitid or "").font = Font(name="Consolas", size=9, color="64748B")
@@ -774,10 +775,10 @@ def gerar_laudo_workbook(todos, saldos, cache):
     r += 1
 
     cores = {
-        "CRITICO": ("DC2626", "FEE2E2", "Auditoria imediata - investigar"),
+        "CRITICO": ("B33A3A", "FEE2E2", "Auditoria imediata - investigar"),
         "ALTO":    ("D97706", "FEF3C7", "Revisao prioritaria"),
-        "MEDIO":   ("0052FF", "DBEAFE", "Conferir em lote"),
-        "BAIXO":   ("16A34A", "DCFCE7", "Auto-aprovar apos confirmacao"),
+        "MEDIO":   ("1F7FB8", "DBEAFE", "Conferir em lote"),
+        "BAIXO":   ("2F7D4F", "DCFCE7", "Auto-aprovar apos confirmacao"),
     }
     total_qtd = sum(v[0] for v in classe_counts.values())
     total_vol = sum(v[1] for v in classe_counts.values())
@@ -836,7 +837,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=2, value=info.get("razao_social", "(nao enriquecido)"))
         c_sit = ws.cell(row=r, column=3, value=info.get("situacao", ""))
         if is_baixada:
-            c_sit.font = Font(bold=True, color="DC2626")
+            c_sit.font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=4, value=info.get("data_situacao", ""))
         ws.cell(row=r, column=5, value=info.get("uf", ""))
         ws.cell(row=r, column=6, value=info.get("municipio", ""))
@@ -897,9 +898,9 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=1, value=nome)
         ws.cell(row=r, column=2, value=dados["n"]).number_format = "#,##0"
         ws.cell(row=r, column=3, value=round(dados["cred"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=3).font = Font(color="16A34A")
+        ws.cell(row=r, column=3).font = Font(color="2F7D4F")
         ws.cell(row=r, column=4, value=round(dados["deb"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=4).font = Font(color="DC2626")
+        ws.cell(row=r, column=4).font = Font(color="B33A3A")
         ws.cell(row=r, column=5, value=round(vol, 2)).number_format = "#,##0.00"
         ws.cell(row=r, column=5).font = Font(bold=True)
         for c in range(1, 6):
@@ -994,14 +995,14 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=2, value=teto)
         ws.cell(row=r, column=3, value=total).number_format = "#,##0"
         ws.cell(row=r, column=4, value=dentro).number_format = "#,##0"
-        ws.cell(row=r, column=4).font = Font(color="16A34A", bold=True)
+        ws.cell(row=r, column=4).font = Font(color="2F7D4F", bold=True)
         ws.cell(row=r, column=5, value=acima).number_format = "#,##0"
         if acima > 0:
-            ws.cell(row=r, column=5).font = Font(color="DC2626", bold=True)
+            ws.cell(row=r, column=5).font = Font(color="B33A3A", bold=True)
         c_status = ws.cell(row=r, column=6, value=status)
         if status == "OK":
             c_status.fill = SUCCESS_FILL
-            c_status.font = Font(bold=True, color="16A34A")
+            c_status.font = Font(bold=True, color="2F7D4F")
         elif status == "ATENCAO":
             c_status.fill = ALERT_FILL_MEDIO
             c_status.font = Font(bold=True, color="D97706")
@@ -1034,7 +1035,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
     total_excesso = 0.0
 
     if not todos_estourados:
-        ws.cell(row=r, column=1, value="(nenhum MEI excede o teto legal correspondente)").font = Font(italic=True, color="16A34A")
+        ws.cell(row=r, column=1, value="(nenhum MEI excede o teto legal correspondente)").font = Font(italic=True, color="2F7D4F")
     else:
         for i, (m, tipo) in enumerate(todos_estourados, start=1):
             cnpj_fmt = f"{m['cnpj'][:2]}.{m['cnpj'][2:5]}.{m['cnpj'][5:8]}/{m['cnpj'][8:12]}-{m['cnpj'][12:14]}"
@@ -1049,10 +1050,10 @@ def gerar_laudo_workbook(todos, saldos, cache):
             ws.cell(row=r, column=8, value=round(m["deb_5m"], 2)).number_format = "#,##0.00"
             c9 = ws.cell(row=r, column=9, value=round(m["anualizado"], 2))
             c9.number_format = "#,##0.00"
-            c9.font = Font(bold=True, color="DC2626")
+            c9.font = Font(bold=True, color="B33A3A")
             c10 = ws.cell(row=r, column=10, value=round(m["excesso"], 2))
             c10.number_format = "#,##0.00"
-            c10.font = Font(bold=True, color="DC2626")
+            c10.font = Font(bold=True, color="B33A3A")
             for c in range(1, 11):
                 ws.cell(row=r, column=c).border = THIN_BORDER
                 if m["excesso"] > 100_000:
@@ -1112,7 +1113,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         if qtd == 0:
             continue
         c1 = ws.cell(row=r, column=1, value=cat)
-        c1.font = Font(bold=True, color="DC2626" if cat.startswith("RETENCAO") else "0F172A")
+        c1.font = Font(bold=True, color="B33A3A" if cat.startswith("RETENCAO") else "12345E")
         ws.cell(row=r, column=2, value=qtd).number_format = "#,##0"
         ws.cell(row=r, column=3, value=round(cat_volume[cat], 2)).number_format = "#,##0.00"
         cret = ws.cell(row=r, column=4, value=round(cat_retencao[cat], 2))
@@ -1187,10 +1188,10 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=3, value=p["t"].data)
         cv = ws.cell(row=r, column=4, value=round(p["t"].valor, 2))
         cv.number_format = "#,##0.00"
-        cv.font = Font(bold=True, color="DC2626")
+        cv.font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=5, value=f"{cnpj_fmt} - {razao}")
-        ws.cell(row=r, column=6, value=p["info"].get("data_situacao", "")).font = Font(bold=True, color="DC2626")
-        ws.cell(row=r, column=7, value=p["dias"]).font = Font(bold=True, color="DC2626")
+        ws.cell(row=r, column=6, value=p["info"].get("data_situacao", "")).font = Font(bold=True, color="B33A3A")
+        ws.cell(row=r, column=7, value=p["dias"]).font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=7).number_format = "#,##0"
         for c in range(1, 8):
             ws.cell(row=r, column=c).border = THIN_BORDER
@@ -1437,38 +1438,45 @@ def gerar_html(md_text):
     body = mdlib.markdown(md_text, extensions=["tables", "fenced_code"])
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     css = """
-@page { size: A4 landscape; margin: 14mm 12mm 14mm 12mm;
-  @bottom-right { content: "Pagina " counter(page) " de " counter(pages); font-size: 9px; color: #6B7280; }
-  @bottom-left { content: "Relatorio Integrado de Auditoria — ORGATEC"; font-size: 9px; color: #6B7280; }
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
+@page { size: A4 landscape; margin: 14mm 12mm 16mm 12mm;
+  @bottom-right { content: "Página " counter(page) " de " counter(pages); font-size: 8.5pt; color: #8a93a0; font-family: 'Source Sans 3', sans-serif; }
+  @bottom-left { content: "ORGATEC · Auditoria Bancária Forense"; font-size: 8.5pt; color: #8a93a0; font-family: 'Source Sans 3', sans-serif; }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 10pt; color: #1a202c; line-height: 1.55; }
-.hd { background: linear-gradient(135deg, #0F172A, #0B1B3D 45%, #0052FF); color: #fff;
-      padding: 24px 32px; border-radius: 4px; margin-bottom: 24px; display: flex; align-items: center; gap: 22px; }
+body { font-family: 'Source Sans 3', 'Segoe UI', Arial, sans-serif; font-size: 10pt; color: #1b2733; line-height: 1.55; }
+.hd { border-top: 4pt solid #12345e; border-bottom: 1pt solid #c4d4e2;
+      padding: 16px 4px 14px; margin-bottom: 22px; display: flex; align-items: center; gap: 18px; }
+.hd .bar { width: 6px; align-self: stretch; border-radius: 3px;
+           background: linear-gradient(180deg, #1f7fb8, #38c4e6, #8fe6ee); }
 .hd-text { flex: 1; }
-.hd h1 { font-size: 22pt; font-family: 'DejaVu Serif', Georgia, serif; margin-bottom: 4px; letter-spacing: 1px; }
-.hd .tag { font-size: 10pt; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.18em; }
-.hd .meta { font-size: 9pt; opacity: 0.85; margin-top: 8px; }
-h1 { font-size: 14pt; color: #0F172A; margin: 28px 0 10px; padding-bottom: 8px; border-bottom: 2px solid #0052FF; font-family: 'DejaVu Serif', Georgia, serif; }
-h2 { font-size: 12pt; color: #0F172A; margin: 22px 0 8px; padding: 8px 14px; background: linear-gradient(90deg, #F0F7FF, transparent); border-left: 4px solid #0052FF; }
-h3 { font-size: 10.5pt; color: #0052FF; margin: 14px 0 6px; font-weight: 700; }
-p { margin-bottom: 6px; text-align: justify; }
-table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 9pt; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-th { background: linear-gradient(180deg, #0F172A, #1E3A8A); color: #fff; padding: 6px 10px; text-align: left; font-weight: 600; }
-td { padding: 5px 10px; border-bottom: 1px solid #E2E8F0; }
-tr:nth-child(even) td { background: #F8FAFC; }
-strong { color: #0F172A; font-weight: 700; }
+.hd h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 22pt; color: #12345e; margin-bottom: 2px; }
+.hd .tag { font-size: 9pt; color: #1f7fb8; text-transform: uppercase; letter-spacing: 0.16em; font-weight: 600; }
+.hd .meta { font-size: 9pt; color: #5a82a8; margin-top: 8px; }
+h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 15pt; color: #12345e;
+     margin: 26px 0 10px; padding-bottom: 6px; border-bottom: 1.4pt solid #12345e; }
+body > h1::after { content: ""; display: block; height: 2px; width: 64px; margin-top: 6px;
+     background: linear-gradient(90deg, #1f7fb8, #38c4e6, #8fe6ee); }
+h2 { font-family: 'Playfair Display', Georgia, serif; font-size: 12.5pt; color: #12345e;
+     margin: 20px 0 8px; padding: 4px 0 4px 10px; border-left: 3pt solid #1f7fb8; }
+h3 { font-size: 10.5pt; color: #1f7fb8; margin: 14px 0 6px; font-weight: 700; }
+p { margin-bottom: 6px; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 9pt; border: 0.6pt solid #d4dde6; }
+th { background: #12345e; color: #eef4fb; padding: 6px 10px; text-align: left; font-weight: 600; }
+td { padding: 5px 10px; border-bottom: 0.5pt solid #d4dde6; }
+tr:nth-child(even) td { background: #eff4f9; }
+strong { color: #12345e; font-weight: 700; }
 ul, ol { padding-left: 22px; margin-bottom: 8px; }
 li { margin-bottom: 3px; }
-em { color: #64748B; font-size: 8.5pt; }
-hr { border: none; border-top: 1px solid #CBD5E1; margin: 16px 0; }
+em { color: #65778a; font-size: 8.6pt; }
+hr { border: none; border-top: 0.5pt solid #c4d4e2; margin: 16px 0; }
 """
     return f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Relatorio Integrado · {EMPRESA.get('razao_social', '')}</title><style>{css}</style></head>
+<title>Laudo de Auditoria · {EMPRESA.get('razao_social', '')}</title><style>{css}</style></head>
 <body>
-<div class="hd">{html_logo_inline()}<div class="hd-text">
+<div class="hd"><div class="bar"></div>{html_logo_inline()}<div class="hd-text">
 <h1>ORGATEC</h1>
-<div class="tag">Relatorio Integrado · Auditoria Bancaria</div>
+<div class="tag">Sistema OrgAudi · Auditoria Bancária Forense</div>
 <div class="meta">{EMPRESA.get('razao_social', '')} · CNPJ {EMPRESA.get('cnpj', '—')} · Gerado em {agora}</div>
 </div></div>
 {body}
