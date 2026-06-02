@@ -108,6 +108,46 @@ export async function apiFetch<T>(
   return res.text() as Promise<T>;
 }
 
+/**
+ * Variante de apiFetch para respostas binárias (ex.: XLSX/PDF). Mesma lógica de
+ * auth + refresh-on-401, mas devolve o Blob e o filename do Content-Disposition.
+ */
+export async function apiFetchBlob(
+  path: string,
+  init: RequestInit = {},
+  _opts: { retryOn401?: boolean } = { retryOn401: true },
+): Promise<{ blob: Blob; filename: string | null }> {
+  const headers = new Headers(init.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(path, { ...init, headers, credentials: "include" });
+  if (res.status === 401) {
+    if (_opts.retryOn401 && path !== "/auth/refresh") {
+      const novo = await apiRefresh();
+      if (novo) return apiFetchBlob(path, init, { retryOn401: false });
+    }
+    setToken(null);
+    window.dispatchEvent(new Event("orgconc:logout"));
+    throw new ApiError("Sessão expirada", 401);
+  }
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = await res.json();
+    } catch {
+      detail = await res.text();
+    }
+    const msg =
+      typeof detail === "object" && detail && "detail" in detail
+        ? String((detail as { detail: unknown }).detail)
+        : `Erro ${res.status}`;
+    throw new ApiError(msg, res.status, detail);
+  }
+  const cd = res.headers.get("content-disposition") || "";
+  const m = /filename="?([^";]+)"?/.exec(cd);
+  return { blob: await res.blob(), filename: m ? m[1] : null };
+}
+
 export interface LoginResponse {
   access_token: string;
   token_type: string;
@@ -497,6 +537,79 @@ export async function fiscalListarCartas(
   clienteId: string,
 ): Promise<FiscalCartasResponse> {
   return apiFetch<FiscalCartasResponse>(`/fiscal/cartas/${clienteId}`);
+}
+
+// ── Auditoria Forense (regime×teto + heatmap + sinais) ─────────────────────
+// Espelha o motor PRINCIPAL (laudo_forense): upload OFX → resumo JSON, e o XLSX
+// de 11 abas via /fiscal/laudo. Stateless/cache-only (sem persistir por cliente).
+
+export type RegimeClasse = "COMPATIVEL" | "ATENCAO" | "ALTO" | "CRITICO";
+export type RiscoClasse = "BAIXO" | "MEDIO" | "ALTO" | "CRITICO";
+
+export interface FiscalAuditoriaRegime {
+  volume_bruto: number;
+  volume_anualizado: number;
+  teto: number;
+  multiplo_do_teto: number;
+  classe: RegimeClasse;
+  incompativel: boolean;
+}
+
+export interface FiscalAuditoriaDisposicao {
+  data: string;
+  valor: number;
+  cnpj: string;
+  meio: string;
+  categoria_tributaria: string;
+  risk_score: number;
+  risco_classe: RiscoClasse;
+  sinais: string[];
+}
+
+export interface FiscalAuditoriaResumo {
+  empresa: {
+    cnpj: string;
+    razao_social: string;
+    porte: string;
+    situacao: string;
+    cnae: string;
+  };
+  conta: string | null;
+  periodo: { inicio: string | null; fim: string | null };
+  regime: FiscalAuditoriaRegime;
+  n_transacoes: number;
+  meses_observados: number;
+  heatmap: Record<string, { qtd: number; volume: number }>;
+  retencao_estimada: number;
+  sinais: { pos_baixa: number; smurfing: number; carrossel: number };
+  top_disposicoes: FiscalAuditoriaDisposicao[];
+}
+
+export async function fiscalLaudoResumo(
+  empresaCnpj: string,
+  conta: string,
+  arquivos: File[],
+): Promise<FiscalAuditoriaResumo> {
+  const fd = new FormData();
+  fd.append("empresa_cnpj", empresaCnpj);
+  fd.append("conta", conta);
+  arquivos.forEach((f) => fd.append("arquivos", f));
+  return apiFetch<FiscalAuditoriaResumo>("/fiscal/laudo/resumo", {
+    method: "POST",
+    body: fd,
+  });
+}
+
+export async function fiscalLaudoBlob(
+  empresaCnpj: string,
+  conta: string,
+  arquivos: File[],
+): Promise<{ blob: Blob; filename: string | null }> {
+  const fd = new FormData();
+  fd.append("empresa_cnpj", empresaCnpj);
+  fd.append("conta", conta);
+  arquivos.forEach((f) => fd.append("arquivos", f));
+  return apiFetchBlob("/fiscal/laudo", { method: "POST", body: fd });
 }
 
 // ── Dashboard metrics (PR 1 backend) ──────────────────────────────────────
