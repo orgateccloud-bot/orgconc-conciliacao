@@ -37,8 +37,12 @@ async def main_async() -> None:
         print("Nenhuma transacao encontrada — abortando.")
         return
 
-    print("Gerando XLSX (11 abas)...")
-    wb, stats = L.gerar_laudo_workbook(todos, saldos, cache)
+    print("Carregando documentos fiscais (NF-e / CT-e)...")
+    nfes, ctes, n_xml = L.carregar_docs(args.pasta)
+    print(f"  {n_xml:,} XMLs -> {len(nfes):,} NF-e + {len(ctes):,} CT-e")
+
+    print(f"Gerando XLSX ({13 if (nfes or ctes) else 11} abas)...")
+    wb, stats = L.gerar_laudo_workbook(todos, saldos, cache, nfes, ctes)
     out_xlsx = base.with_suffix(".xlsx")
     wb.save(str(out_xlsx))
     print(f"  XLSX: {out_xlsx}")

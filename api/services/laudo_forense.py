@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import base64
 import re
+import xml.etree.ElementTree as ET
+import zipfile
 from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -273,7 +275,237 @@ async def coletar_dados(pasta: str, conta_filtro: str, empresa_cnpj: str, enrich
 # ════════════════════════════════════════════════════════════════════════
 
 
-def gerar_laudo_workbook(todos, saldos, cache):
+# ════════════════════════════════════════════════════════════════════════
+# Documentos fiscais (NF-e / CT-e) — parsers por conteúdo + cruzamento OFX
+# ════════════════════════════════════════════════════════════════════════
+def _local(tag):
+    return tag.split("}")[-1]
+
+
+def _filho(elem, nome):
+    if elem is None:
+        return None
+    for f in elem:
+        if _local(f.tag) == nome:
+            return f
+    return None
+
+
+def _texto(elem, *caminho):
+    cur = elem
+    for nome in caminho:
+        cur = _filho(cur, nome)
+        if cur is None:
+            return ""
+    return cur.text.strip() if cur is not None and cur.text else ""
+
+
+def parse_nfe(conteudo):
+    try:
+        root = ET.fromstring(conteudo)
+    except ET.ParseError:
+        return None
+    inf = next((el for el in root.iter() if _local(el.tag) == "infNFe"), None)
+    if inf is None:
+        return None
+    ide, emit = _filho(inf, "ide"), _filho(inf, "emit")
+    total = _filho(inf, "total")
+    icms_tot = _filho(total, "ICMSTot") if total is not None else None
+    return {
+        "chave": (inf.get("Id") or "").lstrip("NFe"),
+        "data": (_texto(ide, "dhEmi") or _texto(ide, "dEmi"))[:10],
+        "emit_cnpj": _texto(emit, "CNPJ"), "emit_nome": _texto(emit, "xNome"),
+        "valor": float(_texto(icms_tot, "vNF") or 0) if icms_tot is not None else 0.0,
+        "modelo": _texto(ide, "mod") or "55", "uf": _texto(emit, "enderEmit", "UF"),
+    }
+
+
+def parse_cte(conteudo):
+    try:
+        root = ET.fromstring(conteudo)
+    except ET.ParseError:
+        return None
+    inf = next((el for el in root.iter() if _local(el.tag) in ("infCte", "infCTe")), None)
+    if inf is None:
+        return None
+    ide, dest = _filho(inf, "ide"), _filho(inf, "dest")
+    vprest = _filho(inf, "vPrest")
+    return {
+        "chave": (inf.get("Id") or "").lstrip("CTe"),
+        "data": (_texto(ide, "dhEmi") or _texto(ide, "dEmi"))[:10],
+        "dest_cnpj": _texto(dest, "CNPJ") if dest is not None else "",
+        "dest_nome": _texto(dest, "xNome") if dest is not None else "",
+        "valor": float(_texto(vprest, "vTPrest") or 0) if vprest is not None else 0.0,
+        "modelo": "57", "uf": _texto(ide, "UFIni"),
+    }
+
+
+def carregar_docs(pasta: str):
+    """Glob de *.zip; parse de TODO XML por conteúdo (infNFe/infCte); dedup por chave."""
+    nfes: dict[str, dict] = {}
+    ctes: dict[str, dict] = {}
+    n_xml = 0
+    for z in sorted(Path(pasta).glob("*.zip")):
+        try:
+            zf = zipfile.ZipFile(z)
+        except Exception:  # noqa: BLE001
+            continue
+        with zf:
+            for m in zf.namelist():
+                if not m.lower().endswith(".xml"):
+                    continue
+                n_xml += 1
+                try:
+                    raw = zf.read(m)
+                except Exception:  # noqa: BLE001
+                    continue
+                doc = parse_nfe(raw)
+                if doc and doc.get("chave"):
+                    nfes.setdefault(doc["chave"], doc)
+                    continue
+                cte = parse_cte(raw)
+                if cte and cte.get("chave"):
+                    ctes.setdefault(cte["chave"], cte)
+    return list(nfes.values()), list(ctes.values()), n_xml
+
+
+def _norm_nome(s: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]", " ", (s or "").upper())).strip()
+
+
+def aba_documentos_fiscais(wb, nfes, ctes):
+    ws = wb.create_sheet("12. Documentos Fiscais")
+    start = cabecalho(ws, 6, "Documentos Fiscais")
+    nfe_vol = sum(n["valor"] for n in nfes)
+    cte_vol = sum(c["valor"] for c in ctes)
+    ws.cell(row=start, column=1, value=f"DOCUMENTOS FISCAIS PROCESSADOS - {len(nfes) + len(ctes):,} XMLs").font = TITLE_FONT
+    ws.merge_cells(f"A{start}:F{start}")
+
+    def _per(docs):
+        ds = [d["data"] for d in docs if d.get("data")]
+        return f"{min(ds)} a {max(ds)}" if ds else "-"
+
+    r = start + 2
+    for c, h in enumerate(["Modelo", "Tipo", "Qtde", "Valor Total (R$)", "Periodo", "Fonte"], 1):
+        ws.cell(row=r, column=c, value=h)
+    style_header(ws, r, 6)
+    r += 1
+    for mod, tipo, qtd, val, per in [
+        ("55", "NF-e (Nota Fiscal Eletronica)", len(nfes), nfe_vol, _per(nfes)),
+        ("57", "CT-e (Conhecimento de Transporte)", len(ctes), cte_vol, _per(ctes)),
+    ]:
+        ws.cell(row=r, column=1, value=mod).font = Font(bold=True)
+        ws.cell(row=r, column=2, value=tipo)
+        ws.cell(row=r, column=3, value=qtd).number_format = "#,##0"
+        ws.cell(row=r, column=4, value=round(val, 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=5, value=per)
+        ws.cell(row=r, column=6, value="ZIPs")
+        for c in range(1, 7):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+        r += 1
+    ws.cell(row=r, column=2, value="TOTAL").font = TOTAL_FONT
+    ws.cell(row=r, column=3, value=len(nfes) + len(ctes)).number_format = "#,##0"
+    ws.cell(row=r, column=4, value=round(nfe_vol + cte_vol, 2)).number_format = "#,##0.00"
+    for c in range(1, 7):
+        ws.cell(row=r, column=c).fill = TOTAL_FILL
+        ws.cell(row=r, column=c).font = TOTAL_FONT
+    r += 3
+
+    ws.cell(row=r, column=1, value="TOP 10 EMITENTES DE NF-E (FORNECEDORES)").font = SUBTITLE_FONT
+    ws.merge_cells(f"A{r}:F{r}")
+    r += 1
+    for c, h in enumerate(["#", "Emitente", "CNPJ", "UF", "Qtd", "Valor Total"], 1):
+        ws.cell(row=r, column=c, value=h)
+    style_header(ws, r, 6)
+    r += 1
+    emit = defaultdict(lambda: {"qtd": 0, "vol": 0.0, "cnpj": "", "uf": ""})
+    for n in nfes:
+        k = (n.get("emit_nome") or "")[:50]
+        emit[k]["qtd"] += 1
+        emit[k]["vol"] += n["valor"]
+        emit[k]["cnpj"] = n.get("emit_cnpj", "")
+        emit[k]["uf"] = n.get("uf", "")
+    for i, (nome, info) in enumerate(sorted(emit.items(), key=lambda x: -x[1]["vol"])[:10], 1):
+        ws.cell(row=r, column=1, value=i)
+        ws.cell(row=r, column=2, value=nome)
+        ws.cell(row=r, column=3, value=info["cnpj"])
+        ws.cell(row=r, column=4, value=info["uf"])
+        ws.cell(row=r, column=5, value=info["qtd"]).number_format = "#,##0"
+        ws.cell(row=r, column=6, value=round(info["vol"], 2)).number_format = "#,##0.00"
+        for c in range(1, 7):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+            if r % 2 == 0:
+                ws.cell(row=r, column=c).fill = ZEBRA_FILL
+        r += 1
+    for col, w in {1: 5, 2: 46, 3: 20, 4: 6, 5: 10, 6: 18}.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = f"A{start + 2}"
+
+
+def aba_conformidade_fiscal(wb, nfes, ctes, transacoes):
+    ws = wb.create_sheet("13. Conformidade Fiscal")
+    start = cabecalho(ws, 8, "Conformidade Fiscal")
+    ws.cell(row=start, column=1, value="CRUZAMENTO OFX x NF-e x CT-e - SCORE POR FORNECEDOR").font = TITLE_FONT
+    ws.merge_cells(f"A{start}:H{start}")
+    pag = defaultdict(lambda: {"vol": 0.0, "n": 0})
+    for t in transacoes:
+        if t.valor < 0:
+            nm = _norm_nome(t.nome)[:60]
+            if nm:
+                pag[nm]["vol"] += abs(t.valor)
+                pag[nm]["n"] += 1
+    nfe_n = defaultdict(lambda: {"vol": 0.0, "cnpj": ""})
+    for n in nfes:
+        nm = _norm_nome(n.get("emit_nome"))[:60]
+        if nm:
+            nfe_n[nm]["vol"] += n["valor"]
+            nfe_n[nm]["cnpj"] = n.get("emit_cnpj", "")
+    cte_n = defaultdict(float)
+    for c in ctes:
+        nm = _norm_nome(c.get("dest_nome"))[:60]
+        if nm:
+            cte_n[nm] += c["valor"]
+    r = start + 2
+    for col, h in enumerate(["#", "Fornecedor", "CNPJ", "Vol Pago OFX", "Vol NF-e", "Vol CT-e", "Conf %", "Classe"], 1):
+        ws.cell(row=r, column=col, value=h)
+    style_header(ws, r, 8)
+    r += 1
+    for i, (nm, info) in enumerate(sorted(pag.items(), key=lambda x: -x[1]["vol"])[:30], 1):
+        vp = info["vol"]
+        match = None
+        for k in nfe_n:
+            if k[:30] == nm[:30] or (nm[:20] and nm[:20] in k) or (k[:20] and k[:20] in nm):
+                match = nfe_n[k]
+                break
+        vn = match["vol"] if match else 0.0
+        cnpj = match["cnpj"] if match else ""
+        vc = cte_n.get(nm, 0.0)
+        conf = ((vn + vc) / vp * 100) if vp else 0
+        classe = "CONFORME" if conf >= 80 else "MEDIO" if conf >= 50 else "ALTO" if conf >= 20 else "CRITICO"
+        ws.cell(row=r, column=1, value=i)
+        ws.cell(row=r, column=2, value=nm[:48].title())
+        ws.cell(row=r, column=3, value=cnpj)
+        ws.cell(row=r, column=4, value=round(vp, 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=5, value=round(vn, 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=6, value=round(vc, 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=7, value=conf / 100).number_format = "0.0%"
+        cc = ws.cell(row=r, column=8, value=classe)
+        if classe == "CRITICO":
+            cc.fill = ALERT_FILL
+            cc.font = Font(bold=True, color="B33A3A")
+        elif classe == "ALTO":
+            cc.fill = ALERT_FILL_MEDIO
+        elif classe == "CONFORME":
+            cc.fill = SUCCESS_FILL
+        for c in range(1, 9):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+        r += 1
+    for col, w in {1: 4, 2: 42, 3: 18, 4: 16, 5: 16, 6: 14, 7: 10, 8: 12}.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = f"A{start + 2}"
+
+
+def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     wb = Workbook()
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -367,15 +599,20 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("1", "Capa", "Indice, sumario executivo, totais", "1. Capa"),
         ("2", "Identificacao Cadastral", "Dados RFB + contrato social + quadro societario", "2. Identificacao"),
         ("3", "Resumo Executivo", "KPIs principais e evolucao mensal", "3. Resumo Executivo"),
-        ("4", "Transacoes", "7.110 lancamentos com saldo acumulado e contraparte", "4. Transacoes"),
+        ("4", "Transacoes", "Lancamentos com saldo acumulado e contraparte", "4. Transacoes"),
         ("5", "Disposicoes Forenses", "Classificacao em 27 colunas + Risk Score", "5. Disposicoes"),
         ("6", "Risk Heatmap", "Distribuicao por classe (CRITICO/ALTO/MEDIO/BAIXO)", "6. Risk Heatmap"),
         ("7", "CNPJs Enriquecidos", "Contrapartes identificadas via RFB / BrasilAPI", "7. CNPJs"),
         ("8", "Partes Relacionadas", "Auto-movimentacao (proprio CNPJ) + mesma titularidade", "8. Partes Relacionadas"),
-        ("9", "MEIs Estourando Teto", "32 fornecedores PJ acima de R$ 81k/ano", "9. MEIs Teto"),
+        ("9", "MEIs Estourando Teto", "Fornecedores PJ acima do teto MEI", "9. MEIs Teto"),
         ("10", "Status Tributario", "Categorias fiscais + retencoes estimadas", "10. Status Tributario"),
         ("11", "Pagamentos Pos-Baixa", "Transacoes a CNPJs ja baixados", "11. Pos-Baixa"),
     ]
+    if nfes or ctes:
+        indice += [
+            ("12", "Documentos Fiscais", "NF-e + CT-e processados (XMLs) + top emitentes", "12. Documentos Fiscais"),
+            ("13", "Conformidade Fiscal", "Cruzamento OFX x NF-e x CT-e por fornecedor", "13. Conformidade Fiscal"),
+        ]
     for num, sec, desc, sheet_name in indice:
         ws.cell(row=r, column=1, value=num)
         c_sec = ws.cell(row=r, column=2, value=sec)
@@ -1229,6 +1466,13 @@ def gerar_laudo_workbook(todos, saldos, cache):
     for col, w in {1: 4, 2: 10, 3: 12, 4: 14, 5: 60, 6: 13, 7: 12}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = f"A{start + 4}"
+
+    # Abas fiscais (12, 13) — só quando há documentos NF-e/CT-e
+    if nfes or ctes:
+        aba_documentos_fiscais(wb, nfes or [], ctes or [])
+        _cb = re.sub(r"\D", "", EMPRESA.get("cnpj_basico", "") or "")
+        nfes_receb = [n for n in (nfes or []) if re.sub(r"\D", "", n.get("emit_cnpj", "")) != _cb]
+        aba_conformidade_fiscal(wb, nfes_receb, ctes or [], [t for _, t, _ in todos])
 
     return wb, {
         "anualizado": anualizado, "multiplo": multiplo, "meses_obs": meses_obs,
