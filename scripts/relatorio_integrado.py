@@ -1,14 +1,15 @@
-"""Relatorio integrado LOCAR TRANSPORTE: combina o modelo MENSAL com o FORENSE.
+"""Laudo Integrado de Auditoria Bancaria — modelo PRINCIPAL (OrgConc).
 
-Funde:
-- AUDIT_LOCAR_158083-3_*.xlsx (modelo mensal: Resumo, Transacoes, Disposicoes,
-  Risk, CNPJs, Partes Relacionadas, Status Tributario - 7 abas por mes)
-- AUDITORIA_LOCAR_TRANSPORTE_BOVINOS.xlsx (modelo forense: Identificacao,
-  Partes Relacionadas, MEIs, Retencoes, Pos-Baixa - 5 abas)
+Gera um relatorio forense de 11 abas (Capa, Identificacao, Resumo Executivo,
+Transacoes, Disposicoes 27-col, Risk Heatmap, CNPJs, Partes Relacionadas,
+MEIs Teto, Status Tributario, Pos-Baixa) + MD + HTML + PDF, a partir de uma
+pasta de extratos OFX + enriquecimento cadastral (RFB/BrasilAPI).
 
-Saida unica em 11 abas + PDF + HTML + MD - relatorio completo cobrindo
-identificacao cadastral, movimentacao detalhada, classificacao forense,
-analise tributaria e achados criticos.
+Parametrizado (sem dados de cliente no codigo):
+    python scripts/relatorio_integrado.py --pasta <dir> --conta <id> \\
+        --empresa-cnpj <14d> --tag <nome> [--enrich-all]
+
+Nucleo reutilizavel pela API em api/services/laudo_forense.py (Fase 2).
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _logo_helper import html_logo_inline, inserir_logo_xlsx
 from api.matchers.cascata import Disposicao, classificar, ler_ofx
-from api.matchers.cnpj_enricher import _carregar_cache, _salvar_cache, enriquecer_um
+from api.matchers.cnpj_enricher import _carregar_cache, enriquecer_lote
 from api.matchers.forensics import (
     calcular_agregados,
     calcular_risk_score,
@@ -42,50 +43,66 @@ from api.matchers.forensics import (
     periodo_fiscal,
 )
 
-import httpx
-
 # ════════════════════════════════════════════════════════════════════════
-# Dados da empresa auditada (confirmados)
+# Configuração parametrizável — SEM dados de cliente hardcoded.
+# EMPRESA é montado em runtime de --empresa-cnpj + enriquecimento RFB/BrasilAPI.
 # ════════════════════════════════════════════════════════════════════════
 
-EMPRESA = {
-    "razao_social": "LOCAR TRANSPORTE DE BOVINOS LTDA",
-    "razao_anterior": "LOCAR TRANSPORTE E AGROPECUARIA LTDA (ate 06/11/2024)",
-    "cnpj": "05.509.396/0001-10",
-    "cnpj_basico": "05509396000110",
-    "nome_fantasia": "LOCAR TRANSPORTE DE BOVINOS",
-    "data_abertura": "27/01/2003",
-    "situacao": "ATIVA (desde 03/11/2005)",
-    "porte_declarado": "EPP - Empresa de Pequeno Porte",
-    "natureza_juridica": "206-2 Sociedade Empresaria Limitada",
-    "capital_social": 400_000.0,
-    "cnae_principal": "49.30-2-02 Transporte rodoviario de carga interestadual",
-    "cnae_secundario": "77.31-4-00 Aluguel de maquinas/equipamentos agricolas",
-    "endereco_sede": "EST MATA DO FORMOSO, 13 KM, ZONA RURAL - FORMOSO/GO - CEP 76.470-000",
-    "endereco_admin": "Rua Lino Coutinho, Qd 78, Lt 17/18, Capuava - GOIANIA/GO - CEP 74.450-070",
-    "email": "locarnotas@gmail.com",
-    "telefones": "(62) 3645-1165 / (62) 9131-9856",
-    "socio_nome": "RENATO COSTA ESPERIDIAO JUNIOR",
-    "socio_cpf": "931.891.171-87",
-    "socio_quotas": "400.000 quotas (100%)",
-    "socio_nascimento": "27/07/1981",
-    "socio_endereco": "Rua 22, n 805, Qd L19, Lt 7, Apart 2702, Setor Oeste, GOIANIA/GO",
-    "ultima_alteracao": "06/11/2024 (2a Alteracao e Consolidacao Contratual)",
-}
+MESES_PT = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
+ENRICH_LIMITE_PADRAO = 300
 
-OFX_LIST = [
-    (r"C:\Users\Veloso\Downloads\extrato-conta-corrente-ofx-unix_202605_20260514110822.ofx", "JAN/2026"),
-    (r"C:\Users\Veloso\Downloads\extrato-conta-corrente-ofx-unix_202605_20260514110841.ofx", "FEV/2026"),
-    (r"C:\Users\Veloso\Downloads\extrato-conta-corrente-ofx-unix_202605_20260514110900.ofx", "MAR/2026"),
-    (r"C:\Users\Veloso\Downloads\extrato-conta-corrente-ofx-unix_202605_20260514110917.ofx", "ABR/2026"),
-    (r"C:\Users\Veloso\Downloads\extrato-conta-corrente-ofx-unix_202605_20260514110938.ofx", "MAI/2026"),
-]
+EMPRESA: dict = {}  # preenchido por construir_empresa()
 
-OUT_BASE = r"C:\Users\Veloso\Downloads\RELATORIO_INTEGRADO_LOCAR_v3"
-OUT_XLSX = Path(f"{OUT_BASE}.xlsx")
-OUT_MD = Path(f"{OUT_BASE}.md")
-OUT_HTML = Path(f"{OUT_BASE}.html")
-OUT_PDF = Path(f"{OUT_BASE}.pdf")
+PASTA_DEFAULT = r"C:\Users\Veloso\Desktop\locar"
+OUT_DIR = Path(r"C:\Users\Veloso\Downloads")
+# OUT_* são definidos em main() a partir de --tag (módulo p/ as funções de escrita).
+OUT_XLSX: Path | None = None
+OUT_MD: Path | None = None
+OUT_HTML: Path | None = None
+OUT_PDF: Path | None = None
+
+
+def _mes_label(data_iso: str) -> str:
+    """'2026-01-15' -> 'JAN/2026'. Vazio/inválido -> '??/????'."""
+    try:
+        return f"{MESES_PT[int(data_iso[5:7]) - 1]}/{data_iso[:4]}"
+    except (ValueError, IndexError):
+        return "??/????"
+
+
+def construir_empresa(cnpj: str, cache: dict) -> dict:
+    """Monta EMPRESA do cache de CNPJ (RFB/BrasilAPI). Campos fora da base
+    pública (sócio, contrato) ficam '—' — preenchíveis manualmente depois."""
+    c = re.sub(r"\D", "", cnpj or "")
+    info = cache.get(c, {}) if c else {}
+    cnpj_fmt = f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}" if len(c) == 14 else (cnpj or "—")
+    cnae = info.get("cnae_principal") or ""
+    if cnae and info.get("cnae_descricao"):
+        cnae = f"{cnae} {info['cnae_descricao']}"
+    return {
+        "razao_social": info.get("razao_social") or "—",
+        "razao_anterior": "—",
+        "nome_fantasia": info.get("nome_fantasia") or "—",
+        "cnpj": cnpj_fmt,
+        "cnpj_basico": c,
+        "data_abertura": "—",
+        "situacao": info.get("situacao") or "—",
+        "porte_declarado": info.get("porte") or "—",
+        "natureza_juridica": "—",
+        "capital_social": float(info.get("capital_social") or 0.0),
+        "cnae_principal": cnae or "—",
+        "cnae_secundario": "—",
+        "endereco_sede": " - ".join(x for x in [info.get("municipio"), info.get("uf")] if x) or "—",
+        "endereco_admin": "—",
+        "email": "—",
+        "telefones": "—",
+        "socio_nome": "—",
+        "socio_cpf": "—",
+        "socio_quotas": "—",
+        "socio_nascimento": "—",
+        "socio_endereco": "—",
+        "ultima_alteracao": info.get("data_situacao") or "—",
+    }
 
 RX_CNPJ = re.compile(r"(\d{2})[.](\d{3})[.](\d{3})[ /](\d{4})[-](\d{2})")
 LIMITE_MEI_PADRAO = 81_000.0
@@ -134,7 +151,7 @@ def style_header(ws, row, n_cols):
 
 
 def cabecalho(ws, ultima_col, secao):
-    c1 = ws.cell(row=1, column=1, value="    ORGATEC · Relatorio Integrado de Auditoria · LOCAR TRANSPORTE DE BOVINOS LTDA")
+    c1 = ws.cell(row=1, column=1, value=f"    ORGATEC · Relatorio Integrado de Auditoria · {EMPRESA.get('razao_social', '')}")
     c1.font = Font(bold=True, size=14, color="FFFFFF")
     c1.fill = PatternFill("solid", fgColor=NAVY)
     c1.alignment = Alignment(horizontal="center", vertical="center", indent=2)
@@ -152,7 +169,7 @@ def cabecalho(ws, ultima_col, secao):
     ws.merge_cells(f"A2:{get_column_letter(ultima_col)}2")
 
     c3 = ws.cell(row=3, column=1,
-        value=f"Conta: 158083-3 > Agencia: 3333-2 > Banco: SICOOB 756 > Periodo: 01/01/2026 a 14/05/2026 > Secao: {secao}")
+        value=f"{EMPRESA.get('razao_social', '')} · CNPJ {EMPRESA.get('cnpj', '—')} · Secao: {secao}")
     c3.font = Font(size=9, color="0F172A")
     c3.fill = INFO_FILL
     c3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
@@ -165,41 +182,60 @@ def cabecalho(ws, ultima_col, secao):
 # ════════════════════════════════════════════════════════════════════════
 
 
-async def coletar_dados():
-    print("Coletando 5 OFXs e enriquecendo CNPJs...")
+async def coletar_dados(pasta: str, conta_filtro: str, empresa_cnpj: str, enrich_all: bool):
+    global EMPRESA
+    print(f"Coletando OFX de {pasta} ...")
     cache = _carregar_cache()
-    todos = []
-    saldos = {}
+    arquivos = sorted(Path(pasta).glob("*.ofx"))
+    brutas = []
+    for p in arquivos:
+        try:
+            brutas.extend(ler_ofx(str(p)))
+        except Exception as e:  # noqa: BLE001
+            print(f"  AVISO OFX {p.name}: {e}")
 
-    for path, mes in OFX_LIST:
-        txs = ler_ofx(path)
-        cred = sum(t.valor for t in txs if t.valor > 0)
-        deb = sum(t.valor for t in txs if t.valor < 0)
-        raw = Path(path).read_text(encoding="latin-1", errors="ignore")
-        bal = re.search(r"<BALAMT>([\d.\-]+)", raw)
-        saldo_final = float(bal.group(1)) if bal else 0.0
-        saldos[mes] = {
-            "saldo_final": saldo_final, "n": len(txs),
-            "cred": cred, "deb": deb,
-        }
-        for t in txs:
-            r = classificar(t)
-            todos.append((mes, t, r))
+    # dedup por (conta, fitid) — corrige downloads sobrepostos
+    vistos, dedup = set(), []
+    for t in brutas:
+        k = (t.conta, t.fitid) if t.fitid else (t.conta, t.data, round(t.valor, 2), t.memo, t.nome)
+        if k in vistos:
+            continue
+        vistos.add(k)
+        dedup.append(t)
+    if conta_filtro:
+        dedup = [t for t in dedup if conta_filtro in (t.conta or "")]
+    dedup.sort(key=lambda t: t.data or "")
+    print(f"  {len(arquivos)} arquivos, {len(brutas):,} linhas -> {len(dedup):,} após dedup"
+          + (f" (conta '{conta_filtro}')" if conta_filtro else ""))
 
-    # Enriquecer CNPJs faltantes
-    cnpjs_unicos = {_extrair_cnpj(t) for _, t, _ in todos if _extrair_cnpj(t)}
-    cnpjs_unicos.discard(None)
-    cnpjs_a_enriquecer = [c for c in cnpjs_unicos if c not in cache]
-    if cnpjs_a_enriquecer:
-        print(f"  Enriquecendo {len(cnpjs_a_enriquecer)} CNPJs novos via BrasilAPI...")
-        semaforo = asyncio.Semaphore(2)
-        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-            async def _job(c):
-                await enriquecer_um(c, cache, client, None, semaforo)
-            await asyncio.gather(*[_job(c) for c in cnpjs_a_enriquecer])
-        _salvar_cache(cache)
+    # bucket por mês; saldo corrente acumulado (âncora 0 — saldo é relativo)
+    todos, saldos, saldo_corr = [], {}, 0.0
+    for t in dedup:
+        mes = _mes_label(t.data)
+        todos.append((mes, t, classificar(t)))
+        s = saldos.setdefault(mes, {"saldo_final": 0.0, "n": 0, "cred": 0.0, "deb": 0.0})
+        s["n"] += 1
+        if t.valor > 0:
+            s["cred"] += t.valor
+        else:
+            s["deb"] += t.valor
+        saldo_corr += t.valor
+        s["saldo_final"] = round(saldo_corr, 2)
 
-    print(f"  {len(todos):,} transacoes carregadas | {len(cnpjs_unicos)} CNPJs no cache")
+    # enriquecer CNPJs faltantes (BrasilAPI → cache)
+    cnpjs = {_extrair_cnpj(t) for _, t, _ in todos if _extrair_cnpj(t)}
+    cnpjs.discard(None)
+    falt = [c for c in cnpjs if c not in cache]
+    if not enrich_all:
+        falt = falt[:ENRICH_LIMITE_PADRAO]
+    if falt:
+        print(f"  Enriquecendo {len(falt)} CNPJs via BrasilAPI...")
+        await enriquecer_lote(falt, db=None)
+        cache = _carregar_cache()
+
+    EMPRESA = construir_empresa(empresa_cnpj, cache)
+    print(f"  {len(todos):,} transacoes | {len(saldos)} meses | {len(cnpjs)} CNPJs"
+          f" | empresa: {EMPRESA['razao_social']}")
     return todos, saldos, cache
 
 
@@ -215,10 +251,21 @@ def gerar_xlsx(todos, saldos, cache):
 
     # ── Pre-calculos ────────────────────────────────────────────────────
     n_total = len(todos)
+    meses = list(saldos.keys())              # ordem cronológica (derivada dos dados)
+    n_meses = len(meses)
+    meses_curto = [m.split("/")[0] for m in meses]
+    ncol_trib = 4 + n_meses
+    _datas = sorted(t.data for _, t, _ in todos if t.data)
+
+    def _br(d):
+        return f"{d[8:10]}/{d[5:7]}/{d[:4]}" if d and len(d) >= 10 else (d or "—")
+
+    periodo_str = f"{_br(_datas[0])} a {_br(_datas[-1])}" if _datas else "—"
     cred_total = sum(s["cred"] for s in saldos.values())
     deb_total = sum(s["deb"] for s in saldos.values())
-    saldo_ini_jan = saldos["JAN/2026"]["saldo_final"] - (saldos["JAN/2026"]["cred"] + saldos["JAN/2026"]["deb"])
-    saldo_fim_mai = saldos["MAI/2026"]["saldo_final"]
+    _m0 = saldos[meses[0]] if meses else {"saldo_final": 0.0, "cred": 0.0, "deb": 0.0}
+    saldo_ini_jan = _m0["saldo_final"] - (_m0["cred"] + _m0["deb"])
+    saldo_fim_mai = saldos[meses[-1]]["saldo_final"] if meses else 0.0
     volume_bruto = abs(cred_total) + abs(deb_total)
 
     # Disposicoes com classificacao forense
@@ -290,7 +337,7 @@ def gerar_xlsx(todos, saldos, cache):
         ("5", "Disposicoes Forenses", "Classificacao em 27 colunas + Risk Score", "5. Disposicoes"),
         ("6", "Risk Heatmap", "Distribuicao por classe (CRITICO/ALTO/MEDIO/BAIXO)", "6. Risk Heatmap"),
         ("7", "CNPJs Enriquecidos", "Contrapartes identificadas via RFB / BrasilAPI", "7. CNPJs"),
-        ("8", "Partes Relacionadas", "LOCAR LOCADORA + MAQUINAS + Renato PF + MESMA TIT", "8. Partes Relacionadas"),
+        ("8", "Partes Relacionadas", "Auto-movimentacao (proprio CNPJ) + mesma titularidade", "8. Partes Relacionadas"),
         ("9", "MEIs Estourando Teto", "32 fornecedores PJ acima de R$ 81k/ano", "9. MEIs Teto"),
         ("10", "Status Tributario", "Categorias fiscais + retencoes estimadas", "10. Status Tributario"),
         ("11", "Pagamentos Pos-Baixa", "Transacoes a CNPJs ja baixados", "11. Pos-Baixa"),
@@ -316,7 +363,7 @@ def gerar_xlsx(todos, saldos, cache):
     ws.merge_cells(f"A{r}:F{r}")
     r += 1
     resumo = [
-        ("Periodo analisado", "01/01/2026 a 14/05/2026 (4,5 meses)"),
+        ("Periodo analisado", f"{periodo_str} ({n_meses} meses)"),
         ("Total de transacoes", f"{n_total:,}"),
         ("Volume bruto movimentado", f"R$ {volume_bruto:,.2f}"),
         ("Volume anualizado projetado", f"R$ {volume_bruto * 12 / 4.5:,.2f}"),
@@ -392,7 +439,7 @@ def gerar_xlsx(todos, saldos, cache):
         ("Socio Unico (100%)", EMPRESA["socio_nome"]),
         ("CPF", EMPRESA["socio_cpf"]),
         ("Participacao", EMPRESA["socio_quotas"]),
-        ("Data de Nascimento", f"{EMPRESA['socio_nascimento']} (44 anos)"),
+        ("Data de Nascimento", EMPRESA["socio_nascimento"]),
         ("Endereco Residencial", EMPRESA["socio_endereco"]),
         ("Funcao", "Administrador unico por prazo indeterminado"),
     ]
@@ -443,7 +490,7 @@ def gerar_xlsx(todos, saldos, cache):
     style_header(ws, r, 2)
     r += 1
     kpis = [
-        ("Total de transacoes (5 meses)", n_total),
+        (f"Total de transacoes ({n_meses} meses)", n_total),
         ("Volume de creditos", cred_total),
         ("Volume de debitos", deb_total),
         ("Volume bruto movimentado", volume_bruto),
@@ -480,7 +527,7 @@ def gerar_xlsx(todos, saldos, cache):
     r += 1
 
     saldo_anterior = saldo_ini_jan
-    for mes in ["JAN/2026", "FEV/2026", "MAR/2026", "ABR/2026", "MAI/2026"]:
+    for mes in meses:
         s = saldos[mes]
         var = s["saldo_final"] - saldo_anterior
         ws.cell(row=r, column=1, value=mes).font = Font(bold=True)
@@ -787,26 +834,23 @@ def gerar_xlsx(todos, saldos, cache):
     # ════════════════════════════════════════════════════════════════════
     ws = wb.create_sheet("8. Partes Relacionadas")
     start = cabecalho(ws, 5, "Partes Relacionadas")
-    ws.cell(row=start, column=1, value="MOVIMENTACAO COM PARTES RELACIONADAS DO GRUPO LOCAR").font = TITLE_FONT
+    razao = EMPRESA.get("razao_social", "a entidade")
+    ws.cell(row=start, column=1, value=f"MOVIMENTACAO COM PARTES RELACIONADAS — {razao}").font = TITLE_FONT
     ws.merge_cells(f"A{start}:E{start}")
 
-    # Calcula fluxos
+    # Fluxos data-driven: auto-movimentacao (proprio CNPJ) + mesma titularidade.
+    # Partes relacionadas nominais (coligadas/socios) exigem cadastro manual.
+    cnpj_basico = EMPRESA.get("cnpj_basico", "")
     fluxos = {
-        "Proprio CNPJ (auto-movimentacao 05.509.396)": {"n": 0, "cred": 0.0, "deb": 0.0},
-        "LOCAR LOCADORA E ??? (parte relacionada)": {"n": 0, "cred": 0.0, "deb": 0.0},
-        "LOCAR MAQUINAS E SERVICOS (parte relacionada)": {"n": 0, "cred": 0.0, "deb": 0.0},
-        "RENATO COSTA ESPERIDIAO JR (socio PF)": {"n": 0, "cred": 0.0, "deb": 0.0},
+        "Auto-movimentacao (proprio CNPJ)": {"n": 0, "cred": 0.0, "deb": 0.0},
+        "Mesma titularidade (transf. entre contas proprias)": {"n": 0, "cred": 0.0, "deb": 0.0},
     }
     for d in todas_disps:
         texto_up = ((d.transacao.nome or "") + " " + (d.transacao.memo or "")).upper()
-        if d.cnpj == EMPRESA["cnpj_basico"]:
-            target = fluxos["Proprio CNPJ (auto-movimentacao 05.509.396)"]
-        elif "LOCAR LOCADORA" in texto_up:
-            target = fluxos["LOCAR LOCADORA E ??? (parte relacionada)"]
-        elif "LOCAR MAQUINAS" in texto_up:
-            target = fluxos["LOCAR MAQUINAS E SERVICOS (parte relacionada)"]
-        elif "RENATO COSTA ESPERIDI" in texto_up:
-            target = fluxos["RENATO COSTA ESPERIDIAO JR (socio PF)"]
+        if cnpj_basico and (d.cnpj == cnpj_basico or cnpj_basico in re.sub(r"\D", "", texto_up)):
+            target = fluxos["Auto-movimentacao (proprio CNPJ)"]
+        elif "MESMA TIT" in texto_up or "MESMA TITULAR" in texto_up:
+            target = fluxos["Mesma titularidade (transf. entre contas proprias)"]
         else:
             continue
         target["n"] += 1
@@ -1008,9 +1052,9 @@ def gerar_xlsx(todos, saldos, cache):
     # Aba 10: Status Tributario
     # ════════════════════════════════════════════════════════════════════
     ws = wb.create_sheet("10. Status Tributario")
-    start = cabecalho(ws, 9, "Status Tributario")
-    ws.cell(row=start, column=1, value="STATUS TRIBUTARIO CONSOLIDADO - 5 MESES").font = TITLE_FONT
-    ws.merge_cells(f"A{start}:I{start}")
+    start = cabecalho(ws, ncol_trib, "Status Tributario")
+    ws.cell(row=start, column=1, value=f"STATUS TRIBUTARIO CONSOLIDADO - {n_meses} MESES").font = TITLE_FONT
+    ws.merge_cells(f"A{start}:{get_column_letter(ncol_trib)}{start}")
 
     cat_count = Counter()
     cat_volume = defaultdict(float)
@@ -1027,10 +1071,10 @@ def gerar_xlsx(todos, saldos, cache):
         cat_por_mes[d.mes][trib["categoria"]] += trib["valor_retencao"]
 
     r = start + 2
-    headers = ["Categoria", "Qtd", "Volume (R$)", "Retencao (R$)", "JAN", "FEV", "MAR", "ABR", "MAI"]
+    headers = ["Categoria", "Qtd", "Volume (R$)", "Retencao (R$)"] + meses_curto
     for c, h in enumerate(headers, start=1):
         ws.cell(row=r, column=c, value=h)
-    style_header(ws, r, 9)
+    style_header(ws, r, ncol_trib)
     r += 1
 
     CATS = ["RETENCAO_PJ", "RETENCAO_PF", "OPERACAO_CREDITO", "IOF", "JUROS",
@@ -1050,12 +1094,12 @@ def gerar_xlsx(todos, saldos, cache):
         if cat_retencao[cat] > 0:
             cret.font = Font(bold=True, color="D97706")
             total_ret_5m += cat_retencao[cat]
-        for i, mes in enumerate(["JAN/2026", "FEV/2026", "MAR/2026", "ABR/2026", "MAI/2026"], start=5):
+        for i, mes in enumerate(meses, start=5):
             val = cat_por_mes[mes].get(cat, 0)
             cm = ws.cell(row=r, column=i, value=round(val, 2) if val else "")
             if val:
                 cm.number_format = "#,##0.00"
-        for c in range(1, 10):
+        for c in range(1, ncol_trib + 1):
             ws.cell(row=r, column=c).border = THIN_BORDER
             if r % 2 == 0:
                 ws.cell(row=r, column=c).fill = ZEBRA_FILL
@@ -1065,13 +1109,15 @@ def gerar_xlsx(todos, saldos, cache):
     ws.cell(row=r, column=2, value=sum(cat_count.values())).number_format = "#,##0"
     ws.cell(row=r, column=3, value=round(sum(cat_volume.values()), 2)).number_format = "#,##0.00"
     ws.cell(row=r, column=4, value=round(total_ret_5m, 2)).number_format = "#,##0.00"
-    for i, mes in enumerate(["JAN/2026", "FEV/2026", "MAR/2026", "ABR/2026", "MAI/2026"], start=5):
+    for i, mes in enumerate(meses, start=5):
         ws.cell(row=r, column=i, value=round(sum(cat_por_mes[mes].values()), 2)).number_format = "#,##0.00"
-    for c in range(1, 10):
+    for c in range(1, ncol_trib + 1):
         ws.cell(row=r, column=c).fill = TOTAL_FILL
         ws.cell(row=r, column=c).font = TOTAL_FONT
 
-    for col, w in {1: 22, 2: 8, 3: 17, 4: 16, 5: 13, 6: 13, 7: 13, 8: 13, 9: 13}.items():
+    larguras_trib = {1: 22, 2: 8, 3: 17, 4: 16}
+    larguras_trib.update({c: 13 for c in range(5, ncol_trib + 1)})
+    for col, w in larguras_trib.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = f"A{start + 2}"
 
@@ -1148,6 +1194,7 @@ def gerar_xlsx(todos, saldos, cache):
         "cat_volume": cat_volume, "cat_retencao": cat_retencao,
         "fluxos": fluxos, "meis": meis, "pos_baixa": pos_baixa,
         "total_ret_5m": total_ret_5m,
+        "periodo_str": periodo_str, "n_meses": n_meses, "meses": meses,
     }
 
 
@@ -1170,8 +1217,8 @@ def gerar_md(stats):
         "**ORGATEC · Contabilidade · Auditoria · Compliance**",
         "",
         f"**Gerado em:** {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-        f"**Periodo:** 01/01/2026 a 14/05/2026 (4,5 meses, {n:,} transacoes)",
-        f"**Banco:** SICOOB 756 · Agencia 3333-2 · Conta 158083-3",
+        f"**Periodo:** {stats['periodo_str']} ({stats['n_meses']} meses, {n:,} transacoes)",
+        f"**CNPJ:** {EMPRESA['cnpj']}",
         "",
         "---",
         "",
@@ -1226,9 +1273,9 @@ def gerar_md(stats):
         "",
         f"| Socio | CPF | Quotas | % |",
         f"|---|---|---:|---:|",
-        f"| **{EMPRESA['socio_nome']}** | {EMPRESA['socio_cpf']} | 400.000 | **100%** |",
+        f"| **{EMPRESA['socio_nome']}** | {EMPRESA['socio_cpf']} | {EMPRESA['socio_quotas']} | — |",
         "",
-        f"- **Nascimento:** {EMPRESA['socio_nascimento']} (44 anos)",
+        f"- **Nascimento:** {EMPRESA['socio_nascimento']}",
         f"- **Endereco:** {EMPRESA['socio_endereco']}",
         "- **Funcao:** Administrador unico por prazo indeterminado",
         "",
@@ -1237,7 +1284,7 @@ def gerar_md(stats):
         "| Mes | Transacoes | Creditos (R$) | Debitos (R$) | Saldo Final |",
         "|---|---:|---:|---:|---:|",
     ]
-    for mes in ["JAN/2026", "FEV/2026", "MAR/2026", "ABR/2026", "MAI/2026"]:
+    for mes in stats["meses"]:
         s = stats["saldos"][mes]
         lines.append(f"| {mes} | {s['n']:,} | {s['cred']:,.2f} | {s['deb']:,.2f} | {s['saldo_final']:,.2f} |")
     lines.append(f"| **TOTAL** | **{n:,}** | **{cred:,.2f}** | **{deb:,.2f}** | **{saldo_fim:,.2f}** |")
@@ -1347,7 +1394,7 @@ def gerar_md(stats):
         "Os achados consolidados desta auditoria evidenciam **riscos tributarios e contabeis significativos** que demandam regularizacao imediata:",
         "",
         f"1. **Desenquadramento EPP retroativo** — empresa movimenta {vol * 12 / 4.5 / 4_800_000:.0f}x o limite anual permitido",
-        f"2. **Retencoes na fonte nao recolhidas** — R$ {stats['total_ret_5m']:,.2f} estimados em 5 meses",
+        f"2. **Retencoes na fonte nao recolhidas** — R$ {stats['total_ret_5m']:,.2f} estimados em {stats['n_meses']} meses",
         f"3. **{len(stats['meis'])} MEIs com volume acima do teto** — risco de pejotizacao",
         f"4. **{len(stats['pos_baixa'])} pagamentos pos-baixa** — R$ {total_pb:,.2f} a fornecedor baixado",
         f"5. **R$ {total_pr:,.2f} com partes relacionadas** — necessita lastro contratual documentado",
@@ -1369,7 +1416,7 @@ def gerar_html(md_text):
     css = """
 @page { size: A4 landscape; margin: 14mm 12mm 14mm 12mm;
   @bottom-right { content: "Pagina " counter(page) " de " counter(pages); font-size: 9px; color: #6B7280; }
-  @bottom-left { content: "Relatorio Integrado · LOCAR TRANSPORTE DE BOVINOS LTDA"; font-size: 9px; color: #6B7280; }
+  @bottom-left { content: "Relatorio Integrado de Auditoria — ORGATEC"; font-size: 9px; color: #6B7280; }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 10pt; color: #1a202c; line-height: 1.55; }
@@ -1394,12 +1441,12 @@ em { color: #64748B; font-size: 8.5pt; }
 hr { border: none; border-top: 1px solid #CBD5E1; margin: 16px 0; }
 """
     return f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Relatorio Integrado · LOCAR TRANSPORTE DE BOVINOS LTDA</title><style>{css}</style></head>
+<title>Relatorio Integrado · {EMPRESA.get('razao_social', '')}</title><style>{css}</style></head>
 <body>
 <div class="hd">{html_logo_inline()}<div class="hd-text">
 <h1>ORGATEC</h1>
 <div class="tag">Relatorio Integrado · Auditoria Bancaria</div>
-<div class="meta">LOCAR TRANSPORTE DE BOVINOS LTDA · CNPJ 05.509.396/0001-10 · Conta Sicoob 158083-3 · Gerado em {agora}</div>
+<div class="meta">{EMPRESA.get('razao_social', '')} · CNPJ {EMPRESA.get('cnpj', '—')} · Gerado em {agora}</div>
 </div></div>
 {body}
 </body></html>"""
@@ -1425,7 +1472,26 @@ async def gerar_pdf(html_text):
 
 
 async def main_async():
-    todos, saldos, cache = await coletar_dados()
+    global OUT_XLSX, OUT_MD, OUT_HTML, OUT_PDF
+    import argparse
+    ap = argparse.ArgumentParser(description="Laudo Integrado de Auditoria Bancaria (11 abas) — OrgConc")
+    ap.add_argument("--pasta", default=PASTA_DEFAULT, help="pasta com os arquivos .ofx")
+    ap.add_argument("--conta", default="", help="escopar a uma conta (substring do ID, ex: 158083)")
+    ap.add_argument("--empresa-cnpj", default="", help="CNPJ da entidade auditada (14 dígitos)")
+    ap.add_argument("--tag", default="laudo", help="sufixo dos arquivos de saída")
+    ap.add_argument("--enrich-all", action="store_true", help="enriquecer TODOS os CNPJs (senão top-300)")
+    args = ap.parse_args()
+
+    base = OUT_DIR / f"RELATORIO_INTEGRADO_{args.tag}"
+    OUT_XLSX = base.with_suffix(".xlsx")
+    OUT_MD = base.with_suffix(".md")
+    OUT_HTML = base.with_suffix(".html")
+    OUT_PDF = base.with_suffix(".pdf")
+
+    todos, saldos, cache = await coletar_dados(args.pasta, args.conta, args.empresa_cnpj, args.enrich_all)
+    if not todos:
+        print("Nenhuma transacao encontrada — abortando.")
+        return
     print("Gerando XLSX integrado (11 abas)...")
     stats = gerar_xlsx(todos, saldos, cache)
 
