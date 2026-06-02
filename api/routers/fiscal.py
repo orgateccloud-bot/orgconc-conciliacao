@@ -13,12 +13,13 @@ import asyncio
 import io
 import logging
 import re
+import threading
 import uuid
 import zipfile
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from api.core.config import (
     DB_DISPONIVEL,
@@ -59,6 +60,7 @@ from api.services.fiscal_persistence import (
     salvar_documentos_fiscais,
 )
 from api.services.storage import read_limited
+from api.services import laudo_forense as laudo
 
 router = APIRouter(tags=["fiscal"], prefix="/fiscal")
 log = logging.getLogger("orgconc.fiscal")
@@ -233,6 +235,81 @@ async def processar_fiscal(
         "fornecedores_classificados": len(scores_conformidade),
         "auditoria_forense": auditoria,
     })
+
+
+_LAUDO_LOCK = threading.Lock()
+
+
+@router.post("/laudo")
+@limiter.limit("3/minute")
+async def gerar_laudo(
+    request: Request,
+    empresa_cnpj: str = Form(..., description="CNPJ da entidade auditada (14 dígitos)"),
+    conta: str = Form("", description="escopar a uma conta (substring do ID, ex: 158083)"),
+    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX"),
+    user: TokenPayload = Depends(current_user),
+):
+    """Gera o Laudo Integrado de Auditoria Bancária (11 abas, XLSX) a partir de
+    extratos OFX, usando o MESMO núcleo do CLI (api.services.laudo_forense).
+
+    Usa o cache de CNPJ existente (sem rede em-request) — rode POST /fiscal/processar
+    antes para popular o enriquecimento cadastral (situação/pós-baixa).
+    """
+    if not arquivos:
+        raise HTTPException(400, "Envie ao menos 1 arquivo OFX.")
+
+    transacoes = []
+    total = 0
+    for up in arquivos:
+        conteudo = await read_limited(up, MAX_UPLOAD_BYTES)
+        total += len(conteudo)
+        if total > MAX_UPLOAD_TOTAL_BYTES:
+            raise HTTPException(413, f"Total de uploads excede {MAX_UPLOAD_TOTAL_MB} MB.")
+        if not (up.filename or "").lower().endswith(".ofx"):
+            continue
+        try:
+            transacoes.extend(await asyncio.to_thread(ler_ofx, conteudo))
+        except Exception:
+            raise HTTPException(400, f"Falha ao ler OFX: {up.filename}")
+    if not transacoes:
+        raise HTTPException(400, "Nenhum arquivo OFX válido fornecido.")
+
+    # dedup por (conta, fitid) + filtro de conta
+    vistos: set = set()
+    dedup = []
+    for t in transacoes:
+        k = (t.conta, t.fitid) if t.fitid else (t.conta, t.data, round(t.valor, 2), t.memo, t.nome)
+        if k in vistos:
+            continue
+        vistos.add(k)
+        dedup.append(t)
+    if conta:
+        dedup = [t for t in dedup if conta in (t.conta or "")]
+    if not dedup:
+        raise HTTPException(400, "Nenhuma transação para a conta informada.")
+
+    def _build():
+        from io import BytesIO
+
+        from api.matchers.cnpj_enricher import _carregar_cache
+        cache = _carregar_cache()
+        todos, saldos = laudo.montar_dados(dedup)
+        # EMPRESA é global do módulo laudo — serializa a geração para evitar race.
+        with _LAUDO_LOCK:
+            laudo.EMPRESA = laudo.construir_empresa(empresa_cnpj, cache)
+            razao = laudo.EMPRESA.get("razao_social", "laudo")
+            wb, _stats = laudo.gerar_laudo_workbook(todos, saldos, cache)
+            buf = BytesIO()
+            wb.save(buf)
+        return buf.getvalue(), razao
+
+    blob, razao = await asyncio.to_thread(_build)
+    fname = re.sub(r"[^\w]+", "_", razao).strip("_")[:40] or "laudo"
+    return Response(
+        content=blob,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.xlsx"'},
+    )
 
 
 @router.get("/conformidade/{cliente_id}")
