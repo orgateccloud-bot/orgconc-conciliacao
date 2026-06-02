@@ -442,53 +442,84 @@ def aba_documentos_fiscais(wb, nfes, ctes):
     ws.freeze_panes = f"A{start + 2}"
 
 
+# CNPJ embutido no memo bancário: aceita 'XX.XXX.XXX/XXXX-XX', 'XX.XXX.XXX XXXX-XX',
+# 'XX XXX XXX XXXX XX' e 'XXXXXXXXXXXXXX' (separadores opcionais).
+_RX_CNPJ_FLEX = re.compile(r"\b(\d{2})[.\s]?(\d{3})[.\s]?(\d{3})[/\s]?(\d{4})[-\s]?(\d{2})\b")
+
+
+def _fmt_cnpj(c: str) -> str:
+    c = re.sub(r"\D", "", c or "")
+    return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}" if len(c) == 14 else (c or "")
+
+
+def _cnpj_do_texto(texto: str) -> str:
+    """Extrai um CNPJ (14 dígitos) do texto bancário (ex.: 'Pagamento Pix 05.509.396 0001-10')."""
+    m = _RX_CNPJ_FLEX.search(texto or "")
+    return "".join(m.groups()) if m else ""
+
+
 def _conformidade_lista(nfes, ctes, transacoes, top=30):
-    """Cruza pagamentos OFX (por nome) com NF-e (emitente) e CT-e (dest) → lista
-    de fornecedores com score de conformidade. Reusado pela aba 13 e pelo MD/PDF."""
+    """Cruza pagamentos OFX com NF-e (emitente) e CT-e (dest) por fornecedor.
+
+    RECONHECE o CNPJ embutido no memo bancário e agrupa/casa por CNPJ (preciso);
+    cai para nome quando não há CNPJ. Exibe a razão social (cache) no lugar do memo
+    cru. Exclui auto-movimentação (próprio CNPJ / MESMA TIT / própria razão)."""
+    cache = _carregar_cache()
     cb = re.sub(r"\D", "", EMPRESA.get("cnpj_basico", "") or "")
     razao = _norm_nome(EMPRESA.get("razao_social", ""))
-    pag = defaultdict(lambda: {"vol": 0.0, "n": 0})
+    # NF-e indexada por CNPJ emitente (match preciso) e por nome (fallback)
+    nfe_cnpj = defaultdict(float)
+    nfe_nome = defaultdict(float)
+    for n in nfes:
+        c = re.sub(r"\D", "", n.get("emit_cnpj", "") or "")
+        if len(c) == 14:
+            nfe_cnpj[c] += n["valor"]
+        nm = _norm_nome(n.get("emit_nome"))[:60]
+        if nm:
+            nfe_nome[nm] += n["valor"]
+    cte_nome = defaultdict(float)
+    for c in ctes:
+        nm = _norm_nome(c.get("dest_nome"))[:60]
+        if nm:
+            cte_nome[nm] += c["valor"]
+    # Agrupa pagamentos por CNPJ reconhecido (senão por nome)
+    pag = defaultdict(lambda: {"vol": 0.0, "n": 0, "cnpj": "", "label": ""})
     for t in transacoes:
         if t.valor >= 0:
             continue
-        txt = ((t.nome or "") + " " + (t.memo or "")).upper()
-        # Exclui auto-movimentação / mesma titularidade (próprio CNPJ ou própria razão):
-        # são partes relacionadas (aba 8), não fornecedores — evita falso-positivo.
-        if "MESMA TIT" in txt:
+        full = (t.nome or "") + " " + (t.memo or "")
+        if "MESMA TIT" in full.upper():
             continue
-        if cb and cb in re.sub(r"\D", "", txt):
+        cnpj = _cnpj_do_texto(full)
+        if cnpj and cnpj == cb:
             continue
         nm = _norm_nome(t.nome)[:60]
         if not nm:
             continue
         if len(razao) >= 8 and razao[:20] in nm:
             continue
-        pag[nm]["vol"] += abs(t.valor)
-        pag[nm]["n"] += 1
-    nfe_n = defaultdict(lambda: {"vol": 0.0, "cnpj": ""})
-    for n in nfes:
-        nm = _norm_nome(n.get("emit_nome"))[:60]
-        if nm:
-            nfe_n[nm]["vol"] += n["valor"]
-            nfe_n[nm]["cnpj"] = n.get("emit_cnpj", "")
-    cte_n = defaultdict(float)
-    for c in ctes:
-        nm = _norm_nome(c.get("dest_nome"))[:60]
-        if nm:
-            cte_n[nm] += c["valor"]
+        key = cnpj or nm
+        d = pag[key]
+        d["vol"] += abs(t.valor)
+        d["n"] += 1
+        if cnpj and not d["cnpj"]:
+            d["cnpj"] = cnpj
+            d["label"] = cache.get(cnpj, {}).get("razao_social") or _fmt_cnpj(cnpj)
+        if not d["label"]:
+            d["label"] = nm.title()
     out = []
-    for nm, info in sorted(pag.items(), key=lambda x: -x[1]["vol"])[:top]:
-        vp = info["vol"]
-        match = None
-        for k in nfe_n:
-            if k[:30] == nm[:30] or (nm[:20] and nm[:20] in k) or (k[:20] and k[:20] in nm):
-                match = nfe_n[k]
-                break
-        vn = match["vol"] if match else 0.0
-        vc = cte_n.get(nm, 0.0)
+    for key, d in sorted(pag.items(), key=lambda x: -x[1]["vol"])[:top]:
+        vp, cnpj = d["vol"], d["cnpj"]
+        if cnpj and cnpj in nfe_cnpj:                       # match preciso por CNPJ
+            vn = nfe_cnpj[cnpj]
+        else:                                               # fallback fuzzy por nome
+            nmk = _norm_nome(d["label"])[:60]
+            vn = next((v for k, v in nfe_nome.items()
+                       if k[:30] == nmk[:30] or (nmk[:20] and nmk[:20] in k) or (k[:20] and k[:20] in nmk)), 0.0)
+        vc = cte_nome.get(_norm_nome(d["label"])[:60], 0.0)
         conf = ((vn + vc) / vp * 100) if vp else 0
         classe = "CONFORME" if conf >= 80 else "MEDIO" if conf >= 50 else "ALTO" if conf >= 20 else "CRITICO"
-        out.append({"nome": nm, "cnpj": match["cnpj"] if match else "",
+        out.append({"nome": d["label"], "cnpj": _fmt_cnpj(cnpj) if cnpj else "",
                     "vp": vp, "vn": vn, "vc": vc, "conf": conf, "classe": classe})
     return out
 
