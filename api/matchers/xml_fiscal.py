@@ -44,7 +44,8 @@ class DocumentoFiscalLido:
     valor_pis: float = 0.0
     valor_cofins: float = 0.0
     valor_iss: float = 0.0
-    cfop: str = ""
+    cfop: str = ""               # CFOPs distintos juntados por vírgula (compat)
+    cfops: list[str] = field(default_factory=list)  # CFOPs por item (det/prod/CFOP)
     natureza_operacao: str = ""
     municipio_emit: str = ""
     # True/False para NF-e/CT-e (44 díg + DV mod-11); None = não-aplicável (NFS-e).
@@ -167,6 +168,17 @@ def _achar_inf(root, *nomes: str):
     return None
 
 
+def _cfops_dos_itens(root) -> list[str]:
+    """Coleta os CFOPs distintos dos itens da NF-e (det/prod/CFOP), em ordem."""
+    cfops: list[str] = []
+    for elem in root.iter():
+        if _local(elem.tag) == "CFOP" and elem.text:
+            c = elem.text.strip()
+            if c and c not in cfops:
+                cfops.append(c)
+    return cfops
+
+
 def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     """Parser NF-e (modelo 55) ou NFC-e (modelo 65)."""
     try:
@@ -196,6 +208,7 @@ def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
 
     emit_uf = _texto(emit, "enderEmit", "UF")
     mun_emit = _texto(emit, "enderEmit", "xMun")
+    cfops = _cfops_dos_itens(inf)
 
     return DocumentoFiscalLido(
         tipo=tipo,
@@ -213,6 +226,8 @@ def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
         valor_icms=_to_float(_texto(icms_tot, "vICMS") if icms_tot is not None else ""),
         valor_pis=_to_float(_texto(icms_tot, "vPIS") if icms_tot is not None else ""),
         valor_cofins=_to_float(_texto(icms_tot, "vCOFINS") if icms_tot is not None else ""),
+        cfop=",".join(cfops),
+        cfops=cfops,
         natureza_operacao=_texto(ide, "natOp"),
         municipio_emit=mun_emit,
         chave_valida=validar_chave_acesso(chave),
@@ -263,6 +278,8 @@ def parse_cte(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
         dest_nome=_texto(dest, "xNome") if dest is not None else (_texto(rem, "xNome") if rem is not None else ""),
         valor_total=_to_float(_texto(vprest, "vTPrest") if vprest is not None else ""),
         valor_icms=_to_float(_texto(_filho(icms, "ICMS00") or _filho(icms, "ICMS20") or _filho(icms, "ICMS60") or icms, "vICMS") if icms is not None else ""),
+        cfop=_texto(ide, "CFOP"),
+        cfops=[c] if (c := _texto(ide, "CFOP")) else [],
         natureza_operacao=_texto(ide, "natOp"),
         chave_valida=validar_chave_acesso(chave),
         situacao=_situacao_do_root(root),

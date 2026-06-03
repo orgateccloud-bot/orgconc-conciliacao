@@ -43,6 +43,7 @@ from api.matchers.tributario import (
     estimar_risco_tributario_anual,
 )
 from api.matchers.xml_fiscal import (
+    extrair_xmls_zip,
     parse_lote_xmls,
 )
 from api.services.auth import TokenPayload, autorizar_cliente, current_user
@@ -61,6 +62,7 @@ from api.services.fiscal_persistence import (
 )
 from api.services.storage import read_limited
 from api.services import laudo_forense as laudo
+from api.services.laudo_notas import gerar_laudo_notas_workbook
 
 router = APIRouter(tags=["fiscal"], prefix="/fiscal")
 log = logging.getLogger("orgconc.fiscal")
@@ -318,6 +320,68 @@ async def gerar_laudo(
         content=blob,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.xlsx"'},
+    )
+
+
+@router.post("/laudo-notas")
+@limiter.limit("3/minute")
+async def gerar_laudo_notas(
+    request: Request,
+    arquivos: List[UploadFile] = File(..., description="ZIP/XMLs de NF-e/CT-e/NFS-e"),
+    user: TokenPayload = Depends(current_user),
+):
+    """Laudo de Documentos Fiscais (XLSX, 6 abas) a partir SOMENTE dos XMLs —
+    sem extrato bancário. Aceita XMLs diretos e/ou ZIPs contendo XMLs.
+
+    Geração stateless (não persiste nada); usa o cache de CNPJ existente para a
+    situação cadastral dos emitentes (sem rede em-request).
+    """
+    if not arquivos:
+        raise HTTPException(400, "Envie ao menos 1 arquivo (XML ou ZIP).")
+
+    # Coleta XMLs (diretos + expandindo ZIPs) com limites de upload.
+    xmls: list[tuple[str, bytes]] = []
+    total = 0
+    for up in arquivos:
+        conteudo = await read_limited(up, MAX_UPLOAD_BYTES)
+        total += len(conteudo)
+        if total > MAX_UPLOAD_TOTAL_BYTES:
+            raise HTTPException(413, f"Total de uploads excede {MAX_UPLOAD_TOTAL_MB} MB.")
+        nome = (up.filename or "").lower()
+        if nome.endswith(".zip"):
+            xmls.extend(extrair_xmls_zip(conteudo))
+        elif nome.endswith(".xml"):
+            xmls.append((_sanitize_filename(up.filename or "doc.xml"), conteudo))
+    if not xmls:
+        raise HTTPException(400, "Nenhum XML encontrado (direto ou via ZIP).")
+
+    def _build():
+        from io import BytesIO
+
+        from api.matchers.cnpj_enricher import _carregar_cache
+        documentos = parse_lote_xmls(xmls)
+        if not documentos:
+            return None, 0
+        cache = _carregar_cache()
+        sit_por_cnpj = {
+            cnpj: (info.get("situacao") or info.get("situacao_cadastral") or "")
+            for cnpj, info in cache.items()
+            if isinstance(info, dict)
+        }
+        wb, stats = gerar_laudo_notas_workbook(documentos, sit_por_cnpj)
+        buf = BytesIO()
+        wb.save(buf)
+        return buf.getvalue(), stats["total_documentos"]
+
+    blob, n_docs = await asyncio.to_thread(_build)
+    if not blob:
+        raise HTTPException(400, "Nenhum documento fiscal válido nos XMLs enviados.")
+
+    log.info("fiscal.laudo-notas: xmls=%d documentos=%d", len(xmls), n_docs)
+    return Response(
+        content=blob,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="laudo_notas.xlsx"'},
     )
 
 

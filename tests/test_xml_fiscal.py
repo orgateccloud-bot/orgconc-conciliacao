@@ -194,6 +194,25 @@ def test_parse_nfe_autorizada_por_default():
     assert doc.situacao == "AUTORIZADA"
 
 
+def test_parse_nfe_extrai_cfop_dos_itens():
+    """CFOP por item (det/prod/CFOP) — distintos, na ordem."""
+    xml = (
+        '<?xml version="1.0"?>'
+        '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe>'
+        '<infNFe Id="NFe' + "1" * 44 + '">'
+        "<ide><mod>55</mod><nNF>9</nNF><serie>1</serie><natOp>VENDA</natOp></ide>"
+        "<emit><CNPJ>12345678000190</CNPJ><xNome>F</xNome></emit>"
+        "<det><prod><CFOP>5102</CFOP></prod></det>"
+        "<det><prod><CFOP>5405</CFOP></prod></det>"
+        "<det><prod><CFOP>5102</CFOP></prod></det>"  # repetido -> não duplica
+        "<total><ICMSTot><vNF>100.00</vNF></ICMSTot></total>"
+        "</infNFe></NFe></nfeProc>"
+    ).encode()
+    doc = parse_nfe(xml)
+    assert doc.cfops == ["5102", "5405"]
+    assert doc.cfop == "5102,5405"
+
+
 def test_parse_nfe_cancelada_por_cstat():
     """NF-e com protocolo cStat=101 (cancelamento homologado) -> CANCELADA."""
     base = _nfe_xml(numero="500").decode()
