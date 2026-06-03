@@ -12,6 +12,7 @@ Diferenças em relação a `api/matchers/nfe.py`:
 from __future__ import annotations
 
 import io
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
@@ -46,11 +47,49 @@ class DocumentoFiscalLido:
     cfop: str = ""
     natureza_operacao: str = ""
     municipio_emit: str = ""
+    # True/False para NF-e/CT-e (44 díg + DV mod-11); None = não-aplicável (NFS-e).
+    chave_valida: Optional[bool] = None
     erros: list[str] = field(default_factory=list)
 
 
 def _local(tag: str) -> str:
     return tag.split("}")[-1]
+
+
+# Prefixos do atributo Id em NF-e/NFC-e/CT-e (ex.: "NFe3520..." → "3520...").
+_PREFIXOS_CHAVE = ("NFCe", "NFe", "CTeOS", "CTe")
+
+
+def _strip_prefixo_chave(raw: str) -> str:
+    """Remove o prefixo textual do Id, devolvendo apenas os dígitos da chave.
+
+    Correto onde o antigo `.lstrip("NFe")` falhava: lstrip remove QUALQUER
+    caractere do conjunto {N,F,e}, não o prefixo. Aqui removemos só o prefixo.
+    """
+    s = (raw or "").strip()
+    for pref in _PREFIXOS_CHAVE:
+        if s.startswith(pref):
+            return s[len(pref):]
+    return s
+
+
+def validar_chave_acesso(chave: str) -> bool:
+    """Valida chave de acesso de NF-e/CT-e: 44 dígitos + dígito verificador mod-11.
+
+    Detecta chaves estruturalmente inválidas (forjadas/corrompidas) na ingestão.
+    NÃO prova autenticidade (isso exige consulta à SEFAZ) — apenas consistência.
+    """
+    ch = re.sub(r"\D", "", chave or "")
+    if len(ch) != 44:
+        return False
+    corpo, dv = ch[:43], int(ch[43])
+    peso, soma = 2, 0
+    for d in reversed(corpo):
+        soma += int(d) * peso
+        peso = 2 if peso == 9 else peso + 1
+    resto = soma % 11
+    dv_calc = 0 if resto in (0, 1) else 11 - resto
+    return dv_calc == dv
 
 
 def _filho(elem, nome: str):
@@ -110,7 +149,7 @@ def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     modelo = _texto(ide, "mod") or "55"
     tipo = "NFC-e" if modelo == "65" else "NF-e"
 
-    chave = (inf.get("Id") or "").lstrip("NFe").lstrip("NFCe")
+    chave = _strip_prefixo_chave(inf.get("Id") or "")
     data = (_texto(ide, "dhEmi") or _texto(ide, "dEmi"))[:10]
 
     emit_uf = _texto(emit, "enderEmit", "UF")
@@ -134,6 +173,7 @@ def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
         valor_cofins=_to_float(_texto(icms_tot, "vCOFINS") if icms_tot is not None else ""),
         natureza_operacao=_texto(ide, "natOp"),
         municipio_emit=mun_emit,
+        chave_valida=validar_chave_acesso(chave),
     )
 
 
@@ -160,7 +200,7 @@ def parse_cte(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     imposto = _filho(inf, "imp")
     icms = _filho(imposto, "ICMS") if imposto is not None else None
 
-    chave = (inf.get("Id") or "").lstrip("CTe")
+    chave = _strip_prefixo_chave(inf.get("Id") or "")
     data = (_texto(ide, "dhEmi") or _texto(ide, "dEmi"))[:10]
     modelo = _texto(ide, "mod") or "57"
 
@@ -181,6 +221,7 @@ def parse_cte(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
         valor_total=_to_float(_texto(vprest, "vTPrest") if vprest is not None else ""),
         valor_icms=_to_float(_texto(_filho(icms, "ICMS00") or _filho(icms, "ICMS20") or _filho(icms, "ICMS60") or icms, "vICMS") if icms is not None else ""),
         natureza_operacao=_texto(ide, "natOp"),
+        chave_valida=validar_chave_acesso(chave),
     )
 
 

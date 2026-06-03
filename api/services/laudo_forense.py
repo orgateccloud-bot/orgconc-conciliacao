@@ -16,6 +16,9 @@ from __future__ import annotations
 import base64
 import re
 import xml.etree.ElementTree as ET
+# F-Sec: parse de XML de upload via defusedxml (anti-XXE/billion-laughs).
+# Mantém ET para ET.ParseError e tipos; só a leitura usa o parser seguro.
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 import zipfile
 from collections import Counter, defaultdict
 from datetime import date, datetime
@@ -302,7 +305,7 @@ def _texto(elem, *caminho):
 
 def parse_nfe(conteudo):
     try:
-        root = ET.fromstring(conteudo)
+        root = _safe_fromstring(conteudo)
     except ET.ParseError:
         return None
     inf = next((el for el in root.iter() if _local(el.tag) == "infNFe"), None)
@@ -322,7 +325,7 @@ def parse_nfe(conteudo):
 
 def parse_cte(conteudo):
     try:
-        root = ET.fromstring(conteudo)
+        root = _safe_fromstring(conteudo)
     except ET.ParseError:
         return None
     inf = next((el for el in root.iter() if _local(el.tag) in ("infCte", "infCTe")), None)

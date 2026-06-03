@@ -12,7 +12,33 @@ from api.matchers.xml_fiscal import (
     parse_lote_xmls,
     parse_nfe,
     parse_nfse,
+    validar_chave_acesso,
 )
+
+
+def _chave_com_dv(corpo43: str) -> str:
+    """Acrescenta o DV mod-11 correto a 43 dígitos (mesmo algoritmo da SEFAZ)."""
+    peso, soma = 2, 0
+    for d in reversed(corpo43):
+        soma += int(d) * peso
+        peso = 2 if peso == 9 else peso + 1
+    resto = soma % 11
+    dv = 0 if resto in (0, 1) else 11 - resto
+    return corpo43 + str(dv)
+
+
+def test_validar_chave_acesso_mod11():
+    valida = _chave_com_dv("1" * 43)
+    assert len(valida) == 44
+    assert validar_chave_acesso(valida) is True
+    # ignora prefixo textual e formatação
+    assert validar_chave_acesso("NFe" + valida) is True
+    # DV corrompido -> inválida
+    dv_errado = str((int(valida[-1]) + 1) % 10)
+    assert validar_chave_acesso(valida[:43] + dv_errado) is False
+    # tamanho errado -> inválida
+    assert validar_chave_acesso("123") is False
+    assert validar_chave_acesso("") is False
 
 
 # ────────────────────────────────────────────────────────────────────────
