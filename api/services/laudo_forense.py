@@ -15,10 +15,14 @@ from __future__ import annotations
 
 import base64
 import re
+import xml.etree.ElementTree as ET
+import zipfile
 from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
+# defusedxml contra XXE/billion-laughs em XMLs (NF-e/CT-e) de terceiros (bandit B314)
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -51,6 +55,8 @@ def inserir_logo_xlsx(ws, anchor: str = "A1", largura_px: int = 70, altura_px: i
         return False
 from api.matchers.cascata import classificar, ler_ofx
 from api.matchers.cnpj_enricher import _carregar_cache, enriquecer_lote
+from api.matchers.auditoria_forense import _meses_observados
+from api.matchers.regime_fiscal import TETO_SIMPLES_EPP, analisar_regime
 from api.matchers.forensics import (
     calcular_agregados,
     calcular_risk_score,
@@ -135,19 +141,20 @@ def _limite_mei_por_cnae(cnae: str) -> float:
         return LIMITE_MEI_TAC
     return LIMITE_MEI_PADRAO
 
-NAVY = "0F172A"
+NAVY = "12345E"          # títulos/cabeçalhos (paleta AuditTax/OrgAudi)
+ACCENT = "1F7FB8"        # azul de destaque (alinhado ao laudo HTML/PDF)
 HEADER_FILL = PatternFill("solid", fgColor=NAVY)
-HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
-TOTAL_FILL = PatternFill("solid", fgColor="1E3A8A")
+HEADER_FONT = Font(bold=True, color="EEF4FB", size=11)
+TOTAL_FILL = PatternFill("solid", fgColor=ACCENT)
 TOTAL_FONT = Font(bold=True, color="FFFFFF", size=11)
-ZEBRA_FILL = PatternFill("solid", fgColor="F8FAFC")
-ALERT_FILL = PatternFill("solid", fgColor="FEE2E2")
-ALERT_FILL_MEDIO = PatternFill("solid", fgColor="FEF3C7")
-INFO_FILL = PatternFill("solid", fgColor="DBEAFE")
-SUCCESS_FILL = PatternFill("solid", fgColor="DCFCE7")
+ZEBRA_FILL = PatternFill("solid", fgColor="EFF4F9")
+ALERT_FILL = PatternFill("solid", fgColor="FBE6E4")        # risco alto/crítico (vermelho suave)
+ALERT_FILL_MEDIO = PatternFill("solid", fgColor="FBF2DD")  # risco médio (âmbar)
+INFO_FILL = PatternFill("solid", fgColor="EEF6FB")         # info (azul claro)
+SUCCESS_FILL = PatternFill("solid", fgColor="E6F0E8")      # baixo (verde)
 TITLE_FONT = Font(bold=True, size=14, color=NAVY)
 SUBTITLE_FONT = Font(bold=True, size=11, color=NAVY)
-BORDER = Side(border_style="thin", color="E2E8F0")
+BORDER = Side(border_style="thin", color="D4DDE6")
 THIN_BORDER = Border(top=BORDER, left=BORDER, right=BORDER, bottom=BORDER)
 
 
@@ -182,13 +189,13 @@ def cabecalho(ws, ultima_col, secao):
     c2 = ws.cell(row=2, column=1,
         value=f"Empresa: {EMPRESA['razao_social']} | CNPJ: {EMPRESA['cnpj']} | Socio: {EMPRESA['socio_nome']} (CPF {EMPRESA['socio_cpf']})")
     c2.font = Font(bold=True, size=10, color="FFFFFF")
-    c2.fill = PatternFill("solid", fgColor="1E3A8A")
+    c2.fill = PatternFill("solid", fgColor="1F7FB8")
     c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
     ws.merge_cells(f"A2:{get_column_letter(ultima_col)}2")
 
     c3 = ws.cell(row=3, column=1,
         value=f"{EMPRESA.get('razao_social', '')} · CNPJ {EMPRESA.get('cnpj', '—')} · Secao: {secao}")
-    c3.font = Font(size=9, color="0F172A")
+    c3.font = Font(size=9, color="12345E")
     c3.fill = INFO_FILL
     c3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
     ws.merge_cells(f"A3:{get_column_letter(ultima_col)}3")
@@ -270,7 +277,290 @@ async def coletar_dados(pasta: str, conta_filtro: str, empresa_cnpj: str, enrich
 # ════════════════════════════════════════════════════════════════════════
 
 
-def gerar_laudo_workbook(todos, saldos, cache):
+# ════════════════════════════════════════════════════════════════════════
+# Documentos fiscais (NF-e / CT-e) — parsers por conteúdo + cruzamento OFX
+# ════════════════════════════════════════════════════════════════════════
+def _local(tag):
+    return tag.split("}")[-1]
+
+
+def _filho(elem, nome):
+    if elem is None:
+        return None
+    for f in elem:
+        if _local(f.tag) == nome:
+            return f
+    return None
+
+
+def _texto(elem, *caminho):
+    cur = elem
+    for nome in caminho:
+        cur = _filho(cur, nome)
+        if cur is None:
+            return ""
+    return cur.text.strip() if cur is not None and cur.text else ""
+
+
+def parse_nfe(conteudo):
+    try:
+        root = _safe_fromstring(conteudo)
+    except ET.ParseError:
+        return None
+    inf = next((el for el in root.iter() if _local(el.tag) == "infNFe"), None)
+    if inf is None:
+        return None
+    ide, emit = _filho(inf, "ide"), _filho(inf, "emit")
+    total = _filho(inf, "total")
+    icms_tot = _filho(total, "ICMSTot") if total is not None else None
+    return {
+        "chave": (inf.get("Id") or "").lstrip("NFe"),
+        "data": (_texto(ide, "dhEmi") or _texto(ide, "dEmi"))[:10],
+        "emit_cnpj": _texto(emit, "CNPJ"), "emit_nome": _texto(emit, "xNome"),
+        "valor": float(_texto(icms_tot, "vNF") or 0) if icms_tot is not None else 0.0,
+        "modelo": _texto(ide, "mod") or "55", "uf": _texto(emit, "enderEmit", "UF"),
+    }
+
+
+def parse_cte(conteudo):
+    try:
+        root = _safe_fromstring(conteudo)
+    except ET.ParseError:
+        return None
+    inf = next((el for el in root.iter() if _local(el.tag) in ("infCte", "infCTe")), None)
+    if inf is None:
+        return None
+    ide, dest = _filho(inf, "ide"), _filho(inf, "dest")
+    vprest = _filho(inf, "vPrest")
+    return {
+        "chave": (inf.get("Id") or "").lstrip("CTe"),
+        "data": (_texto(ide, "dhEmi") or _texto(ide, "dEmi"))[:10],
+        "dest_cnpj": _texto(dest, "CNPJ") if dest is not None else "",
+        "dest_nome": _texto(dest, "xNome") if dest is not None else "",
+        "valor": float(_texto(vprest, "vTPrest") or 0) if vprest is not None else 0.0,
+        "modelo": "57", "uf": _texto(ide, "UFIni"),
+    }
+
+
+def carregar_docs(pasta: str):
+    """Glob de *.zip; parse de TODO XML por conteúdo (infNFe/infCte); dedup por chave."""
+    nfes: dict[str, dict] = {}
+    ctes: dict[str, dict] = {}
+    n_xml = 0
+    for z in sorted(Path(pasta).glob("*.zip")):
+        try:
+            zf = zipfile.ZipFile(z)
+        except Exception:  # noqa: BLE001
+            continue
+        with zf:
+            for m in zf.namelist():
+                if not m.lower().endswith(".xml"):
+                    continue
+                n_xml += 1
+                try:
+                    raw = zf.read(m)
+                except Exception:  # noqa: BLE001
+                    continue
+                doc = parse_nfe(raw)
+                if doc and doc.get("chave"):
+                    nfes.setdefault(doc["chave"], doc)
+                    continue
+                cte = parse_cte(raw)
+                if cte and cte.get("chave"):
+                    ctes.setdefault(cte["chave"], cte)
+    return list(nfes.values()), list(ctes.values()), n_xml
+
+
+def _norm_nome(s: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]", " ", (s or "").upper())).strip()
+
+
+def aba_documentos_fiscais(wb, nfes, ctes):
+    ws = wb.create_sheet("12. Documentos Fiscais")
+    start = cabecalho(ws, 6, "Documentos Fiscais")
+    nfe_vol = sum(n["valor"] for n in nfes)
+    cte_vol = sum(c["valor"] for c in ctes)
+    ws.cell(row=start, column=1, value=f"DOCUMENTOS FISCAIS PROCESSADOS - {len(nfes) + len(ctes):,} XMLs").font = TITLE_FONT
+    ws.merge_cells(f"A{start}:F{start}")
+
+    def _per(docs):
+        ds = [d["data"] for d in docs if d.get("data")]
+        return f"{min(ds)} a {max(ds)}" if ds else "-"
+
+    r = start + 2
+    for c, h in enumerate(["Modelo", "Tipo", "Qtde", "Valor Total (R$)", "Periodo", "Fonte"], 1):
+        ws.cell(row=r, column=c, value=h)
+    style_header(ws, r, 6)
+    r += 1
+    for mod, tipo, qtd, val, per in [
+        ("55", "NF-e (Nota Fiscal Eletronica)", len(nfes), nfe_vol, _per(nfes)),
+        ("57", "CT-e (Conhecimento de Transporte)", len(ctes), cte_vol, _per(ctes)),
+    ]:
+        ws.cell(row=r, column=1, value=mod).font = Font(bold=True)
+        ws.cell(row=r, column=2, value=tipo)
+        ws.cell(row=r, column=3, value=qtd).number_format = "#,##0"
+        ws.cell(row=r, column=4, value=round(val, 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=5, value=per)
+        ws.cell(row=r, column=6, value="ZIPs")
+        for c in range(1, 7):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+        r += 1
+    ws.cell(row=r, column=2, value="TOTAL").font = TOTAL_FONT
+    ws.cell(row=r, column=3, value=len(nfes) + len(ctes)).number_format = "#,##0"
+    ws.cell(row=r, column=4, value=round(nfe_vol + cte_vol, 2)).number_format = "#,##0.00"
+    for c in range(1, 7):
+        ws.cell(row=r, column=c).fill = TOTAL_FILL
+        ws.cell(row=r, column=c).font = TOTAL_FONT
+    r += 3
+
+    ws.cell(row=r, column=1, value="TOP 10 EMITENTES DE NF-E (FORNECEDORES)").font = SUBTITLE_FONT
+    ws.merge_cells(f"A{r}:F{r}")
+    r += 1
+    for c, h in enumerate(["#", "Emitente", "CNPJ", "UF", "Qtd", "Valor Total"], 1):
+        ws.cell(row=r, column=c, value=h)
+    style_header(ws, r, 6)
+    r += 1
+    emit = defaultdict(lambda: {"qtd": 0, "vol": 0.0, "cnpj": "", "uf": ""})
+    for n in nfes:
+        k = (n.get("emit_nome") or "")[:50]
+        emit[k]["qtd"] += 1
+        emit[k]["vol"] += n["valor"]
+        emit[k]["cnpj"] = n.get("emit_cnpj", "")
+        emit[k]["uf"] = n.get("uf", "")
+    for i, (nome, info) in enumerate(sorted(emit.items(), key=lambda x: -x[1]["vol"])[:10], 1):
+        ws.cell(row=r, column=1, value=i)
+        ws.cell(row=r, column=2, value=nome)
+        ws.cell(row=r, column=3, value=info["cnpj"])
+        ws.cell(row=r, column=4, value=info["uf"])
+        ws.cell(row=r, column=5, value=info["qtd"]).number_format = "#,##0"
+        ws.cell(row=r, column=6, value=round(info["vol"], 2)).number_format = "#,##0.00"
+        for c in range(1, 7):
+            ws.cell(row=r, column=c).border = THIN_BORDER
+            if r % 2 == 0:
+                ws.cell(row=r, column=c).fill = ZEBRA_FILL
+        r += 1
+    for col, w in {1: 5, 2: 46, 3: 20, 4: 6, 5: 10, 6: 18}.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = f"A{start + 2}"
+
+
+# CNPJ embutido no memo bancário: aceita 'XX.XXX.XXX/XXXX-XX', 'XX.XXX.XXX XXXX-XX',
+# 'XX XXX XXX XXXX XX' e 'XXXXXXXXXXXXXX' (separadores opcionais).
+_RX_CNPJ_FLEX = re.compile(r"\b(\d{2})[.\s]?(\d{3})[.\s]?(\d{3})[/\s]?(\d{4})[-\s]?(\d{2})\b")
+
+
+def _fmt_cnpj(c: str) -> str:
+    c = re.sub(r"\D", "", c or "")
+    return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}" if len(c) == 14 else (c or "")
+
+
+def _cnpj_do_texto(texto: str) -> str:
+    """Extrai um CNPJ (14 dígitos) do texto bancário (ex.: 'Pagamento Pix 05.509.396 0001-10')."""
+    m = _RX_CNPJ_FLEX.search(texto or "")
+    return "".join(m.groups()) if m else ""
+
+
+def _conformidade_lista(nfes, ctes, transacoes, top=30):
+    """Cruza pagamentos OFX com NF-e (emitente) e CT-e (dest) por fornecedor.
+
+    RECONHECE o CNPJ embutido no memo bancário e agrupa/casa por CNPJ (preciso);
+    cai para nome quando não há CNPJ. Exibe a razão social (cache) no lugar do memo
+    cru. Exclui auto-movimentação (próprio CNPJ / MESMA TIT / própria razão)."""
+    cache = _carregar_cache()
+    cb = re.sub(r"\D", "", EMPRESA.get("cnpj_basico", "") or "")
+    razao = _norm_nome(EMPRESA.get("razao_social", ""))
+    # NF-e indexada por CNPJ emitente (match preciso) e por nome (fallback)
+    nfe_cnpj = defaultdict(float)
+    nfe_nome = defaultdict(float)
+    for n in nfes:
+        c = re.sub(r"\D", "", n.get("emit_cnpj", "") or "")
+        if len(c) == 14:
+            nfe_cnpj[c] += n["valor"]
+        nm = _norm_nome(n.get("emit_nome"))[:60]
+        if nm:
+            nfe_nome[nm] += n["valor"]
+    cte_nome = defaultdict(float)
+    for c in ctes:
+        nm = _norm_nome(c.get("dest_nome"))[:60]
+        if nm:
+            cte_nome[nm] += c["valor"]
+    # Agrupa pagamentos por CNPJ reconhecido (senão por nome)
+    pag = defaultdict(lambda: {"vol": 0.0, "n": 0, "cnpj": "", "label": ""})
+    for t in transacoes:
+        if t.valor >= 0:
+            continue
+        full = (t.nome or "") + " " + (t.memo or "")
+        if "MESMA TIT" in full.upper():
+            continue
+        cnpj = _cnpj_do_texto(full)
+        if cnpj and cnpj == cb:
+            continue
+        nm = _norm_nome(t.nome)[:60]
+        if not nm:
+            continue
+        if len(razao) >= 8 and razao[:20] in nm:
+            continue
+        key = cnpj or nm
+        d = pag[key]
+        d["vol"] += abs(t.valor)
+        d["n"] += 1
+        if cnpj and not d["cnpj"]:
+            d["cnpj"] = cnpj
+            d["label"] = cache.get(cnpj, {}).get("razao_social") or _fmt_cnpj(cnpj)
+        if not d["label"]:
+            d["label"] = nm.title()
+    out = []
+    for key, d in sorted(pag.items(), key=lambda x: -x[1]["vol"])[:top]:
+        vp, cnpj = d["vol"], d["cnpj"]
+        if cnpj and cnpj in nfe_cnpj:                       # match preciso por CNPJ
+            vn = nfe_cnpj[cnpj]
+        else:                                               # fallback fuzzy por nome
+            nmk = _norm_nome(d["label"])[:60]
+            vn = next((v for k, v in nfe_nome.items()
+                       if k[:30] == nmk[:30] or (nmk[:20] and nmk[:20] in k) or (k[:20] and k[:20] in nmk)), 0.0)
+        vc = cte_nome.get(_norm_nome(d["label"])[:60], 0.0)
+        conf = ((vn + vc) / vp * 100) if vp else 0
+        classe = "CONFORME" if conf >= 80 else "MEDIO" if conf >= 50 else "ALTO" if conf >= 20 else "CRITICO"
+        out.append({"nome": d["label"], "cnpj": _fmt_cnpj(cnpj) if cnpj else "",
+                    "vp": vp, "vn": vn, "vc": vc, "conf": conf, "classe": classe})
+    return out
+
+
+def aba_conformidade_fiscal(wb, conf):
+    ws = wb.create_sheet("13. Conformidade Fiscal")
+    start = cabecalho(ws, 8, "Conformidade Fiscal")
+    ws.cell(row=start, column=1, value="CRUZAMENTO OFX x NF-e x CT-e - SCORE POR FORNECEDOR").font = TITLE_FONT
+    ws.merge_cells(f"A{start}:H{start}")
+    r = start + 2
+    for col, h in enumerate(["#", "Fornecedor", "CNPJ", "Vol Pago OFX", "Vol NF-e", "Vol CT-e", "Conf %", "Classe"], 1):
+        ws.cell(row=r, column=col, value=h)
+    style_header(ws, r, 8)
+    r += 1
+    for i, c in enumerate(conf, 1):
+        ws.cell(row=r, column=1, value=i)
+        ws.cell(row=r, column=2, value=c["nome"][:48].title())
+        ws.cell(row=r, column=3, value=c["cnpj"])
+        ws.cell(row=r, column=4, value=round(c["vp"], 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=5, value=round(c["vn"], 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=6, value=round(c["vc"], 2)).number_format = "#,##0.00"
+        ws.cell(row=r, column=7, value=c["conf"] / 100).number_format = "0.0%"
+        cc = ws.cell(row=r, column=8, value=c["classe"])
+        if c["classe"] == "CRITICO":
+            cc.fill = ALERT_FILL
+            cc.font = Font(bold=True, color="B33A3A")
+        elif c["classe"] == "ALTO":
+            cc.fill = ALERT_FILL_MEDIO
+        elif c["classe"] == "CONFORME":
+            cc.fill = SUCCESS_FILL
+        for cx in range(1, 9):
+            ws.cell(row=r, column=cx).border = THIN_BORDER
+        r += 1
+    for col, w in {1: 4, 2: 42, 3: 18, 4: 16, 5: 16, 6: 14, 7: 10, 8: 12}.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = f"A{start + 2}"
+
+
+def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     wb = Workbook()
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -293,6 +583,11 @@ def gerar_laudo_workbook(todos, saldos, cache):
     saldo_ini_jan = _m0["saldo_final"] - (_m0["cred"] + _m0["deb"])
     saldo_fim_mai = saldos[meses[-1]]["saldo_final"] if meses else 0.0
     volume_bruto = abs(cred_total) + abs(deb_total)
+    # Anualização e múltiplo do teto via MOTOR validado (dias corridos) — laudo == motor.
+    meses_obs = _meses_observados([t for _, t, _ in todos])
+    _regime = analisar_regime(cred_total, deb_total, meses_obs, TETO_SIMPLES_EPP)
+    anualizado = _regime.volume_anualizado
+    multiplo = _regime.multiplo_do_teto
 
     # Disposicoes com classificacao forense
     todas_disps = []
@@ -359,19 +654,24 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("1", "Capa", "Indice, sumario executivo, totais", "1. Capa"),
         ("2", "Identificacao Cadastral", "Dados RFB + contrato social + quadro societario", "2. Identificacao"),
         ("3", "Resumo Executivo", "KPIs principais e evolucao mensal", "3. Resumo Executivo"),
-        ("4", "Transacoes", "7.110 lancamentos com saldo acumulado e contraparte", "4. Transacoes"),
+        ("4", "Transacoes", "Lancamentos com saldo acumulado e contraparte", "4. Transacoes"),
         ("5", "Disposicoes Forenses", "Classificacao em 27 colunas + Risk Score", "5. Disposicoes"),
         ("6", "Risk Heatmap", "Distribuicao por classe (CRITICO/ALTO/MEDIO/BAIXO)", "6. Risk Heatmap"),
         ("7", "CNPJs Enriquecidos", "Contrapartes identificadas via RFB / BrasilAPI", "7. CNPJs"),
         ("8", "Partes Relacionadas", "Auto-movimentacao (proprio CNPJ) + mesma titularidade", "8. Partes Relacionadas"),
-        ("9", "MEIs Estourando Teto", "32 fornecedores PJ acima de R$ 81k/ano", "9. MEIs Teto"),
+        ("9", "MEIs Estourando Teto", "Fornecedores PJ acima do teto MEI", "9. MEIs Teto"),
         ("10", "Status Tributario", "Categorias fiscais + retencoes estimadas", "10. Status Tributario"),
         ("11", "Pagamentos Pos-Baixa", "Transacoes a CNPJs ja baixados", "11. Pos-Baixa"),
     ]
+    if nfes or ctes:
+        indice += [
+            ("12", "Documentos Fiscais", "NF-e + CT-e processados (XMLs) + top emitentes", "12. Documentos Fiscais"),
+            ("13", "Conformidade Fiscal", "Cruzamento OFX x NF-e x CT-e por fornecedor", "13. Conformidade Fiscal"),
+        ]
     for num, sec, desc, sheet_name in indice:
         ws.cell(row=r, column=1, value=num)
         c_sec = ws.cell(row=r, column=2, value=sec)
-        c_sec.font = Font(bold=True, color="0052FF", underline="single")
+        c_sec.font = Font(bold=True, color="1F7FB8", underline="single")
         # Hyperlink para a aba correspondente
         c_sec.hyperlink = f"#'{sheet_name}'!A1"
         c_sec.style = "Hyperlink"
@@ -392,9 +692,9 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Periodo analisado", f"{periodo_str} ({n_meses} meses)"),
         ("Total de transacoes", f"{n_total:,}"),
         ("Volume bruto movimentado", f"R$ {volume_bruto:,.2f}"),
-        ("Volume anualizado projetado", f"R$ {volume_bruto * 12 / 4.5:,.2f}"),
-        ("Saldo inicial (01/01)", f"R$ {saldo_ini_jan:,.2f}"),
-        ("Saldo final (14/05)", f"R$ {saldo_fim_mai:,.2f}"),
+        ("Volume anualizado projetado", f"R$ {anualizado:,.2f}"),
+        ("Saldo inicial do periodo", f"R$ {saldo_ini_jan:,.2f}"),
+        ("Saldo final do periodo", f"R$ {saldo_fim_mai:,.2f}"),
         ("Variacao do periodo", f"R$ {saldo_fim_mai - saldo_ini_jan:,.2f}"),
         ("CNPJs identificados", f"{sum(1 for d in todas_disps if d.cnpj)}"),
         ("Alertas pos-baixa", f"{sum(1 for d in todas_disps if d.disposicao == 'ALERTA_POS_BAIXA')}"),
@@ -403,7 +703,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=1, value=k).font = Font(bold=True)
         c = ws.cell(row=r, column=2, value=v)
         if "anualizado" in k or "Volume bruto" in k:
-            c.font = Font(bold=True, color="DC2626")
+            c.font = Font(bold=True, color="B33A3A")
         ws.merge_cells(f"B{r}:F{r}")
         for col in range(1, 7):
             ws.cell(row=r, column=col).border = THIN_BORDER
@@ -422,7 +722,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
     start = cabecalho(ws, 5, "Identificacao Cadastral")
     ws.cell(row=start, column=1, value="DADOS CADASTRAIS DA EMPRESA AUDITADA").font = TITLE_FONT
     ws.merge_cells(f"A{start}:E{start}")
-    ws.cell(row=start+1, column=1, value="Fontes: Contrato Social (2a Alteracao 06/11/2024) + Cartao CNPJ RFB (07/11/2024)").font = Font(italic=True, color="64748B", size=9)
+    ws.cell(row=start+1, column=1, value="Fontes: Contrato Social + Cartao CNPJ (RFB / BrasilAPI)").font = Font(italic=True, color="64748B", size=9)
     ws.merge_cells(f"A{start+1}:E{start+1}")
 
     r = start + 3
@@ -467,7 +767,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Participacao", EMPRESA["socio_quotas"]),
         ("Data de Nascimento", EMPRESA["socio_nascimento"]),
         ("Endereco Residencial", EMPRESA["socio_endereco"]),
-        ("Funcao", "Administrador unico por prazo indeterminado"),
+        ("Funcao", "—"),
     ]
     for k, v in socio:
         ws.cell(row=r, column=1, value=k).font = Font(bold=True)
@@ -480,17 +780,31 @@ def gerar_laudo_workbook(todos, saldos, cache):
         r += 1
 
     r += 1
-    ws.cell(row=r, column=1, value="DIVERGENCIAS IDENTIFICADAS").font = Font(bold=True, size=11, color="DC2626")
+    ws.cell(row=r, column=1, value="DIVERGENCIAS IDENTIFICADAS").font = Font(bold=True, size=11, color="B33A3A")
     ws.merge_cells(f"A{r}:E{r}")
     r += 1
-    divergencias = [
-        ("[!] Porte EPP vs Movimentacao", "Limite EPP: R$ 4,8M/ano | Real: R$ 187M/ano (39x acima)"),
-        ("[!] Capital vs Giro", "Capital R$ 400k | Giro anual R$ 187M (razao 1:468)"),
-        ("[!] Desenquadramento Tributario", "Provavelmente Lucro Real seria devido"),
-        ("[!] Mudanca de Razao Social", "06/11/2024 (1 mes antes do periodo) - estreitamento de objeto"),
-    ]
+    # Divergências DATA-DRIVEN — calculadas dos dados, não hardcoded.
+    _anual = anualizado
+    _mult = _anual / 4_800_000
+    _cap = EMPRESA.get("capital_social", 0) or 0
+    divergencias = []
+    if _mult > 1:
+        divergencias.append(("[!] Porte EPP vs Movimentacao",
+                             f"Teto EPP: R$ 4.800.000/ano | Anualizado: R$ {_anual:,.2f} ({_mult:.1f}x o teto)"))
+    if _cap > 0 and _anual > 0:
+        divergencias.append(("[!] Capital vs Giro",
+                             f"Capital R$ {_cap:,.2f} | Giro anualizado R$ {_anual:,.2f} (razao 1:{_anual / _cap:.0f})"))
+    if _mult > 1:
+        divergencias.append(("[!] Regime tributario",
+                             "Volume anualizado pode exceder o sublimite Simples/EPP — verificar enquadramento"))
+    if EMPRESA.get("razao_anterior", "—") not in ("—", "", None):
+        divergencias.append(("[!] Mudanca de Razao Social", f"Anterior: {EMPRESA['razao_anterior']}"))
+    if not divergencias:
+        ws.cell(row=r, column=1, value="Nenhuma divergencia identificada nos testes deterministicos.").font = Font(italic=True, color="2F7D4F")
+        ws.merge_cells(f"A{r}:E{r}")
+        r += 1
     for k, v in divergencias:
-        ws.cell(row=r, column=1, value=k).font = Font(bold=True, color="DC2626")
+        ws.cell(row=r, column=1, value=k).font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=1).fill = ALERT_FILL
         ws.cell(row=r, column=2, value=v).fill = ALERT_FILL
         ws.merge_cells(f"B{r}:E{r}")
@@ -520,12 +834,12 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ("Volume de creditos", cred_total),
         ("Volume de debitos", deb_total),
         ("Volume bruto movimentado", volume_bruto),
-        ("Saldo inicial (01/01)", saldo_ini_jan),
-        ("Saldo final (14/05)", saldo_fim_mai),
+        ("Saldo inicial do periodo", saldo_ini_jan),
+        ("Saldo final do periodo", saldo_fim_mai),
         ("Variacao do periodo", saldo_fim_mai - saldo_ini_jan),
-        ("Volume anualizado projetado", volume_bruto * 12 / 4.5),
+        ("Volume anualizado projetado", anualizado),
         ("Limite EPP (referencia)", 4_800_000),
-        ("Multiplo do teto EPP", volume_bruto * 12 / 4.5 / 4_800_000),
+        ("Multiplo do teto EPP", multiplo),
     ]
     for k, v in kpis:
         ws.cell(row=r, column=1, value=k).font = Font(bold=True)
@@ -534,7 +848,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
             c.number_format = "#,##0.00"
         elif "Multiplo" in k:
             c.number_format = "0.0\\x"
-            c.font = Font(bold=True, color="DC2626")
+            c.font = Font(bold=True, color="B33A3A")
         for col in range(1, 3):
             ws.cell(row=r, column=col).border = THIN_BORDER
             if r % 2 == 0:
@@ -559,16 +873,16 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=1, value=mes).font = Font(bold=True)
         ws.cell(row=r, column=2, value=s["n"]).number_format = "#,##0"
         ws.cell(row=r, column=3, value=round(s["cred"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=3).font = Font(color="16A34A")
+        ws.cell(row=r, column=3).font = Font(color="2F7D4F")
         ws.cell(row=r, column=4, value=round(s["deb"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=4).font = Font(color="DC2626")
+        ws.cell(row=r, column=4).font = Font(color="B33A3A")
         fl = s["cred"] + s["deb"]
         ws.cell(row=r, column=5, value=round(fl, 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=5).font = Font(bold=True, color="DC2626" if fl < 0 else "16A34A")
+        ws.cell(row=r, column=5).font = Font(bold=True, color="B33A3A" if fl < 0 else "2F7D4F")
         ws.cell(row=r, column=6, value=round(s["saldo_final"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=6).font = Font(bold=True, color="DC2626" if s["saldo_final"] < 0 else "0F172A")
+        ws.cell(row=r, column=6).font = Font(bold=True, color="B33A3A" if s["saldo_final"] < 0 else "12345E")
         ws.cell(row=r, column=7, value=round(var, 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=7).font = Font(color="DC2626" if var < 0 else "16A34A")
+        ws.cell(row=r, column=7).font = Font(color="B33A3A" if var < 0 else "2F7D4F")
         for c in range(1, 8):
             ws.cell(row=r, column=c).border = THIN_BORDER
             if r % 2 == 0:
@@ -619,15 +933,15 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=4, value=t.tipo)
         cv = ws.cell(row=r, column=5, value=round(t.valor, 2))
         cv.number_format = "#,##0.00"
-        cv.font = Font(color=("DC2626" if t.valor < 0 else "16A34A"))
+        cv.font = Font(color=("B33A3A" if t.valor < 0 else "2F7D4F"))
         ws.cell(row=r, column=6, value=t.memo or "")
         ws.cell(row=r, column=7, value=t.nome or "")
         cc = ws.cell(row=r, column=8, value=d.contraparte or "")
         if d.disposicao == "ALERTA_POS_BAIXA":
-            cc.font = Font(bold=True, color="DC2626")
+            cc.font = Font(bold=True, color="B33A3A")
         cs = ws.cell(row=r, column=9, value=round(saldo_corrente, 2))
         cs.number_format = "#,##0.00"
-        cs.font = Font(bold=True, color=("DC2626" if saldo_corrente < 0 else "0F172A"))
+        cs.font = Font(bold=True, color=("B33A3A" if saldo_corrente < 0 else "12345E"))
         for c in range(1, 10):
             ws.cell(row=r, column=c).border = THIN_BORDER
             if d.disposicao == "ALERTA_POS_BAIXA":
@@ -695,7 +1009,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=2, value=t.tipo)
         cv = ws.cell(row=r, column=3, value=round(t.valor, 2))
         cv.number_format = "#,##0.00"
-        cv.font = Font(color=("DC2626" if t.valor < 0 else "16A34A"), bold=is_alerta or is_critico)
+        cv.font = Font(color=("B33A3A" if t.valor < 0 else "2F7D4F"), bold=is_alerta or is_critico)
         ws.cell(row=r, column=4, value=t.memo or "")
         ws.cell(row=r, column=5, value=t.nome or "")
         ws.cell(row=r, column=6, value=t.fitid or "").font = Font(name="Consolas", size=9, color="64748B")
@@ -774,10 +1088,10 @@ def gerar_laudo_workbook(todos, saldos, cache):
     r += 1
 
     cores = {
-        "CRITICO": ("DC2626", "FEE2E2", "Auditoria imediata - investigar"),
+        "CRITICO": ("B33A3A", "FEE2E2", "Auditoria imediata - investigar"),
         "ALTO":    ("D97706", "FEF3C7", "Revisao prioritaria"),
-        "MEDIO":   ("0052FF", "DBEAFE", "Conferir em lote"),
-        "BAIXO":   ("16A34A", "DCFCE7", "Auto-aprovar apos confirmacao"),
+        "MEDIO":   ("1F7FB8", "DBEAFE", "Conferir em lote"),
+        "BAIXO":   ("2F7D4F", "DCFCE7", "Auto-aprovar apos confirmacao"),
     }
     total_qtd = sum(v[0] for v in classe_counts.values())
     total_vol = sum(v[1] for v in classe_counts.values())
@@ -836,7 +1150,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=2, value=info.get("razao_social", "(nao enriquecido)"))
         c_sit = ws.cell(row=r, column=3, value=info.get("situacao", ""))
         if is_baixada:
-            c_sit.font = Font(bold=True, color="DC2626")
+            c_sit.font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=4, value=info.get("data_situacao", ""))
         ws.cell(row=r, column=5, value=info.get("uf", ""))
         ws.cell(row=r, column=6, value=info.get("municipio", ""))
@@ -897,9 +1211,9 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=1, value=nome)
         ws.cell(row=r, column=2, value=dados["n"]).number_format = "#,##0"
         ws.cell(row=r, column=3, value=round(dados["cred"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=3).font = Font(color="16A34A")
+        ws.cell(row=r, column=3).font = Font(color="2F7D4F")
         ws.cell(row=r, column=4, value=round(dados["deb"], 2)).number_format = "#,##0.00"
-        ws.cell(row=r, column=4).font = Font(color="DC2626")
+        ws.cell(row=r, column=4).font = Font(color="B33A3A")
         ws.cell(row=r, column=5, value=round(vol, 2)).number_format = "#,##0.00"
         ws.cell(row=r, column=5).font = Font(bold=True)
         for c in range(1, 6):
@@ -945,15 +1259,15 @@ def gerar_laudo_workbook(todos, saldos, cache):
     for cnpj, dd in por_cnpj_mei.items():
         info = cache.get(cnpj, {})
         cnae = info.get("cnae_principal", "")
-        anualizado = dd["deb"] * 12 / 4.5
+        anualizado_mei = dd["deb"] * 12 / max(meses_obs, 1)
         teto = _limite_mei_por_cnae(cnae)
         eh_tac = teto == LIMITE_MEI_TAC
-        excesso = anualizado - teto if anualizado > teto else 0.0
+        excesso = anualizado_mei - teto if anualizado_mei > teto else 0.0
         item = {
             "cnpj": cnpj, "razao": info.get("razao_social", ""),
             "cnae": cnae, "cnae_desc": info.get("cnae_descricao", ""),
             "uf": info.get("uf", ""), "n": dd["n"],
-            "deb_5m": dd["deb"], "anualizado": anualizado,
+            "deb_5m": dd["deb"], "anualizado": anualizado_mei,
             "teto": teto, "excesso": excesso, "eh_tac": eh_tac,
         }
         if eh_tac and excesso > 0:
@@ -994,14 +1308,14 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=2, value=teto)
         ws.cell(row=r, column=3, value=total).number_format = "#,##0"
         ws.cell(row=r, column=4, value=dentro).number_format = "#,##0"
-        ws.cell(row=r, column=4).font = Font(color="16A34A", bold=True)
+        ws.cell(row=r, column=4).font = Font(color="2F7D4F", bold=True)
         ws.cell(row=r, column=5, value=acima).number_format = "#,##0"
         if acima > 0:
-            ws.cell(row=r, column=5).font = Font(color="DC2626", bold=True)
+            ws.cell(row=r, column=5).font = Font(color="B33A3A", bold=True)
         c_status = ws.cell(row=r, column=6, value=status)
         if status == "OK":
             c_status.fill = SUCCESS_FILL
-            c_status.font = Font(bold=True, color="16A34A")
+            c_status.font = Font(bold=True, color="2F7D4F")
         elif status == "ATENCAO":
             c_status.fill = ALERT_FILL_MEDIO
             c_status.font = Font(bold=True, color="D97706")
@@ -1034,7 +1348,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
     total_excesso = 0.0
 
     if not todos_estourados:
-        ws.cell(row=r, column=1, value="(nenhum MEI excede o teto legal correspondente)").font = Font(italic=True, color="16A34A")
+        ws.cell(row=r, column=1, value="(nenhum MEI excede o teto legal correspondente)").font = Font(italic=True, color="2F7D4F")
     else:
         for i, (m, tipo) in enumerate(todos_estourados, start=1):
             cnpj_fmt = f"{m['cnpj'][:2]}.{m['cnpj'][2:5]}.{m['cnpj'][5:8]}/{m['cnpj'][8:12]}-{m['cnpj'][12:14]}"
@@ -1049,10 +1363,10 @@ def gerar_laudo_workbook(todos, saldos, cache):
             ws.cell(row=r, column=8, value=round(m["deb_5m"], 2)).number_format = "#,##0.00"
             c9 = ws.cell(row=r, column=9, value=round(m["anualizado"], 2))
             c9.number_format = "#,##0.00"
-            c9.font = Font(bold=True, color="DC2626")
+            c9.font = Font(bold=True, color="B33A3A")
             c10 = ws.cell(row=r, column=10, value=round(m["excesso"], 2))
             c10.number_format = "#,##0.00"
-            c10.font = Font(bold=True, color="DC2626")
+            c10.font = Font(bold=True, color="B33A3A")
             for c in range(1, 11):
                 ws.cell(row=r, column=c).border = THIN_BORDER
                 if m["excesso"] > 100_000:
@@ -1112,7 +1426,7 @@ def gerar_laudo_workbook(todos, saldos, cache):
         if qtd == 0:
             continue
         c1 = ws.cell(row=r, column=1, value=cat)
-        c1.font = Font(bold=True, color="DC2626" if cat.startswith("RETENCAO") else "0F172A")
+        c1.font = Font(bold=True, color="B33A3A" if cat.startswith("RETENCAO") else "12345E")
         ws.cell(row=r, column=2, value=qtd).number_format = "#,##0"
         ws.cell(row=r, column=3, value=round(cat_volume[cat], 2)).number_format = "#,##0.00"
         cret = ws.cell(row=r, column=4, value=round(cat_retencao[cat], 2))
@@ -1187,10 +1501,10 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.cell(row=r, column=3, value=p["t"].data)
         cv = ws.cell(row=r, column=4, value=round(p["t"].valor, 2))
         cv.number_format = "#,##0.00"
-        cv.font = Font(bold=True, color="DC2626")
+        cv.font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=5, value=f"{cnpj_fmt} - {razao}")
-        ws.cell(row=r, column=6, value=p["info"].get("data_situacao", "")).font = Font(bold=True, color="DC2626")
-        ws.cell(row=r, column=7, value=p["dias"]).font = Font(bold=True, color="DC2626")
+        ws.cell(row=r, column=6, value=p["info"].get("data_situacao", "")).font = Font(bold=True, color="B33A3A")
+        ws.cell(row=r, column=7, value=p["dias"]).font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=7).number_format = "#,##0"
         for c in range(1, 8):
             ws.cell(row=r, column=c).border = THIN_BORDER
@@ -1208,7 +1522,24 @@ def gerar_laudo_workbook(todos, saldos, cache):
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = f"A{start + 4}"
 
+    # Abas fiscais (12, 13) — só quando há documentos NF-e/CT-e
+    fiscal = None
+    if nfes or ctes:
+        aba_documentos_fiscais(wb, nfes or [], ctes or [])
+        _cb = re.sub(r"\D", "", EMPRESA.get("cnpj_basico", "") or "")
+        nfes_receb = [n for n in (nfes or []) if re.sub(r"\D", "", n.get("emit_cnpj", "")) != _cb]
+        conf = _conformidade_lista(nfes_receb, ctes or [], [t for _, t, _ in todos])
+        aba_conformidade_fiscal(wb, conf)
+        fiscal = {
+            "n_nfe": len(nfes or []), "n_cte": len(ctes or []),
+            "vol_nfe": round(sum(n["valor"] for n in (nfes or [])), 2),
+            "vol_cte": round(sum(c["valor"] for c in (ctes or [])), 2),
+            "criticos": [c for c in conf if c["classe"] in ("CRITICO", "ALTO")][:10],
+        }
+
     return wb, {
+        "fiscal": fiscal,
+        "anualizado": anualizado, "multiplo": multiplo, "meses_obs": meses_obs,
         "n_total": n_total, "volume_bruto": volume_bruto,
         "cred_total": cred_total, "deb_total": deb_total,
         "saldo_ini": saldo_ini_jan, "saldo_fim": saldo_fim_mai,
@@ -1245,7 +1576,7 @@ def gerar_md(stats):
         "",
         "---",
         "",
-        "## 1. Capa e Sumario Executivo",
+        "## 1. Sumario Executivo",
         "",
         "| Indicador | Valor |",
         "|---|---:|",
@@ -1253,14 +1584,14 @@ def gerar_md(stats):
         f"| Volume de creditos | R$ {cred:,.2f} |",
         f"| Volume de debitos | R$ {deb:,.2f} |",
         f"| Volume bruto movimentado | **R$ {vol:,.2f}** |",
-        f"| Saldo inicial (01/01) | R$ {saldo_ini:,.2f} |",
-        f"| Saldo final (14/05) | R$ {saldo_fim:,.2f} |",
+        f"| Saldo inicial do periodo | R$ {saldo_ini:,.2f} |",
+        f"| Saldo final do periodo | R$ {saldo_fim:,.2f} |",
         f"| Variacao do periodo | R$ {saldo_fim - saldo_ini:,.2f} |",
-        f"| **Volume anualizado projetado** | **R$ {vol * 12 / 4.5:,.2f}** |",
+        f"| **Volume anualizado projetado** | **R$ {stats['anualizado']:,.2f}** |",
         "| Limite EPP (referencia) | R$ 4.800.000,00 |",
-        f"| **Multiplo do teto EPP** | **{vol * 12 / 4.5 / 4_800_000:.1f}x** |",
+        f"| **Multiplo do teto EPP** | **{stats['multiplo']:.1f}x** |",
         f"| Alertas pos-baixa | {len(stats['pos_baixa'])} |",
-        f"| Retencao estimada (5m) | R$ {stats['total_ret_5m']:,.2f} |",
+        f"| Retencao estimada no periodo | R$ {stats['total_ret_5m']:,.2f} |",
         "",
         "## 2. Identificacao Cadastral",
         "",
@@ -1357,12 +1688,12 @@ def gerar_md(stats):
         f"### Casos acima do teto correspondente ({len(stats['meis'])} fornecedores)",
         "",
     ]
+    total_exc = 0.0
     if stats["meis"]:
         lines += [
             "| # | CNPJ | Razao Social | CNAE | Anualizado | Excesso |",
             "|---|---|---|---|---:|---:|",
         ]
-        total_exc = 0.0
         for i, m in enumerate(stats["meis"][:15], start=1):
             fmt = f"{m['cnpj'][:2]}.{m['cnpj'][2:5]}.{m['cnpj'][5:8]}/{m['cnpj'][8:12]}-{m['cnpj'][12:14]}"
             cnae_desc = m.get("cnae_desc", "") or m.get("cnae", "")
@@ -1410,68 +1741,150 @@ def gerar_md(stats):
     lines.append(f"| | | **R$ {total_pb:,.2f}** | TOTAL | | |")
 
     # Conclusao
-    lines += [
-        "",
-        "## 9. Conclusao",
-        "",
-        "Os achados consolidados desta auditoria evidenciam **riscos tributarios e contabeis significativos** que demandam regularizacao imediata:",
-        "",
-        f"1. **Desenquadramento EPP retroativo** — empresa movimenta {vol * 12 / 4.5 / 4_800_000:.0f}x o limite anual permitido",
-        f"2. **Retencoes na fonte nao recolhidas** — R$ {stats['total_ret_5m']:,.2f} estimados em {stats['n_meses']} meses",
-        f"3. **{len(stats['meis'])} MEIs com volume acima do teto** — risco de pejotizacao",
-        f"4. **{len(stats['pos_baixa'])} pagamentos pos-baixa** — R$ {total_pb:,.2f} a fornecedor baixado",
-        f"5. **R$ {total_pr:,.2f} com partes relacionadas** — necessita lastro contratual documentado",
-        "",
-        "Recomenda-se acionamento das medidas formais descritas na **Carta de Constatacao** (documento anexo).",
-        "",
-        "---",
-        "",
-        "*Documento gerado pelo OrgConc/OrgNeural2 v0.5.0 - Sistema integrado de auditoria bancaria.*",
-    ]
+    # Conclusao DATA-DRIVEN — só afirma achados que existem (honesto p/ caso limpo/modelo).
+    mult = stats.get("multiplo", 0.0)
+    achados = []
+    if mult > 1:
+        achados.append(f"**Regime x teto** — volume anualizado ≈ **{mult:.1f}x** o teto EPP (R$ 4,8M); "
+                       "indicador de porte/incompatibilidade a verificar")
+    if stats["total_ret_5m"] > 0:
+        achados.append(f"**Retencoes estimadas na fonte** — R$ {stats['total_ret_5m']:,.2f} em "
+                       f"{stats['n_meses']} meses (PIS/COFINS/CSLL/IRRF sobre pagamentos a PJ de servico)")
+    if stats["meis"]:
+        achados.append(f"**{len(stats['meis'])} fornecedores PJ acima do teto MEI** — risco de pejotizacao")
+    if stats["pos_baixa"]:
+        achados.append(f"**{len(stats['pos_baixa'])} pagamentos pos-baixa** — R$ {total_pb:,.2f} a CNPJ ja baixado")
+    if total_pr > 0:
+        achados.append(f"**R$ {total_pr:,.2f} com partes relacionadas** — necessita lastro contratual")
+    fisc = stats.get("fiscal")
+    if fisc:
+        lines += ["", "## Conformidade Fiscal (OFX x NF-e x CT-e)", "",
+                  f"**Documentos:** {fisc['n_nfe']:,} NF-e (R$ {fisc['vol_nfe']:,.2f}) + "
+                  f"{fisc['n_cte']:,} CT-e (R$ {fisc['vol_cte']:,.2f}).", ""]
+        if fisc["criticos"]:
+            lines += ["Fornecedores com **gap de conformidade** (pago sem cobertura fiscal proporcional):", "",
+                      "| Fornecedor | Pago (OFX) | NF-e+CT-e | Conf % | Classe |", "|---|---:|---:|---:|:--:|"]
+            for c in fisc["criticos"]:
+                lines.append(f"| {c['nome'][:34].title()} | R$ {c['vp']:,.2f} | "
+                             f"R$ {c['vn'] + c['vc']:,.2f} | {c['conf']:.0f}% | {c['classe']} |")
+        else:
+            lines.append("Sem fornecedores em faixa critica de conformidade no recorte.")
+
+    lines += ["", "## 9. Conclusao", ""]
+    if achados:
+        lines.append("Os testes deterministicos aplicados apontam os seguintes **pontos de atencao**, que "
+                     "demandam verificacao documental e, se confirmados, regularizacao:")
+        lines.append("")
+        lines += [f"{i}. {a}" for i, a in enumerate(achados, 1)]
+        lines += ["", "Recomenda-se a verificacao dos itens acima e, quando aplicavel, o acionamento das "
+                  "medidas formais cabiveis (ex.: denuncia espontanea — CTN art. 138)."]
+    else:
+        lines.append("Nos testes deterministicos aplicados a este recorte **nao foram identificados achados "
+                     "materiais** (regime compativel com o teto, sem pagamentos pos-baixa, sem retencoes "
+                     "estimadas e sem MEIs acima do teto). Ver ressalvas de escopo e enriquecimento cadastral.")
+    lines += ["", "---", "",
+              "*Documento gerado pelo OrgConc — Sistema OrgAudi. Indicadores deterministicos; "
+              "NAO constituem conclusao de auditoria sem verificacao documental.*"]
 
     return "\n".join(lines), {"total_pr": total_pr, "total_exc": total_exc, "total_pb": total_pb}
 
 
-def gerar_html(md_text):
+def gerar_html(md_text, periodo=""):
     import markdown as mdlib
     body = mdlib.markdown(md_text, extensions=["tables", "fenced_code"])
+    # A capa já carrega título/empresa/período — remove o cabeçalho redundante do MD
+    # (tudo antes da primeira seção "## N.") para o conteúdo começar direto nas seções.
+    if "<h2" in body:
+        body = body[body.index("<h2"):]
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    razao = EMPRESA.get("razao_social", "") or "—"
+    cnpj = EMPRESA.get("cnpj", "—")
     css = """
-@page { size: A4 landscape; margin: 14mm 12mm 14mm 12mm;
-  @bottom-right { content: "Pagina " counter(page) " de " counter(pages); font-size: 9px; color: #6B7280; }
-  @bottom-left { content: "Relatorio Integrado de Auditoria — ORGATEC"; font-size: 9px; color: #6B7280; }
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
+@page { size: A4 landscape; margin: 14mm 14mm 16mm 14mm;
+  @bottom-center { content: "ORGATEC · Sistema OrgAudi · Auditoria Bancária Forense   —   página " counter(page) " de " counter(pages); font-family: 'Source Sans 3', sans-serif; font-size: 8pt; color: #8a93a0; }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 10pt; color: #1a202c; line-height: 1.55; }
-.hd { background: linear-gradient(135deg, #0F172A, #0B1B3D 45%, #0052FF); color: #fff;
-      padding: 24px 32px; border-radius: 4px; margin-bottom: 24px; display: flex; align-items: center; gap: 22px; }
-.hd-text { flex: 1; }
-.hd h1 { font-size: 22pt; font-family: 'DejaVu Serif', Georgia, serif; margin-bottom: 4px; letter-spacing: 1px; }
-.hd .tag { font-size: 10pt; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.18em; }
-.hd .meta { font-size: 9pt; opacity: 0.85; margin-top: 8px; }
-h1 { font-size: 14pt; color: #0F172A; margin: 28px 0 10px; padding-bottom: 8px; border-bottom: 2px solid #0052FF; font-family: 'DejaVu Serif', Georgia, serif; }
-h2 { font-size: 12pt; color: #0F172A; margin: 22px 0 8px; padding: 8px 14px; background: linear-gradient(90deg, #F0F7FF, transparent); border-left: 4px solid #0052FF; }
-h3 { font-size: 10.5pt; color: #0052FF; margin: 14px 0 6px; font-weight: 700; }
-p { margin-bottom: 6px; text-align: justify; }
-table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 9pt; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-th { background: linear-gradient(180deg, #0F172A, #1E3A8A); color: #fff; padding: 6px 10px; text-align: left; font-weight: 600; }
-td { padding: 5px 10px; border-bottom: 1px solid #E2E8F0; }
-tr:nth-child(even) td { background: #F8FAFC; }
-strong { color: #0F172A; font-weight: 700; }
+body { font-family: 'Source Sans 3', 'Segoe UI', Arial, sans-serif; font-size: 10pt; color: #1b2733; line-height: 1.55; }
+
+/* ---------- CAPA (altura cabe na pág. landscape margeada; sem @page:first p/ Chromium) ---------- */
+.capa { height: 176mm; padding: 14mm 24mm; display: flex; flex-direction: column;
+  justify-content: space-between; page-break-after: always; position: relative; color: #2a3a4a;
+  background:
+    radial-gradient(ellipse 60% 45% at 12% 8%, rgba(120,198,233,0.42), transparent 60%),
+    radial-gradient(ellipse 55% 42% at 90% 16%, rgba(142,182,224,0.40), transparent 63%),
+    linear-gradient(180deg, #d3e6f3 0%, #e2eef6 32%, #eef5fa 56%, #f8fbfc 78%, #ffffff 100%); }
+.capa::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 5mm;
+  background: linear-gradient(90deg, #1f7fb8 0%, #38c4e6 52%, #7fe0ec 100%); }
+.capa-brand { display: flex; align-items: center; }
+.capa-brand img { width: 52px !important; height: 52px !important; margin-right: 14px !important; filter: drop-shadow(0 1mm 2mm rgba(40,100,150,0.22)); }
+.capa-wm .nome { font-size: 22pt; font-weight: 700; letter-spacing: 0.20em; color: #12345e; line-height: 1; }
+.capa-wm .desc { font-size: 8pt; letter-spacing: 0.26em; text-transform: uppercase; color: #5a82a8; margin-top: 2mm; }
+.capa-sub { font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase; color: #7593af; margin-top: 7mm; }
+.capa-mid { display: flex; flex-direction: column; }
+.capa-titulo { font-family: 'Playfair Display', Georgia, serif; font-size: 34pt; font-weight: 700; line-height: 1.14; color: #12345e; }
+.capa-rule { width: 42mm; height: 2.4pt; margin: 8mm 0; background: linear-gradient(90deg, #1f7fb8, #38c4e6, #8fe6ee); }
+.capa-objeto { font-size: 11.5pt; color: #3f5468; max-width: 170mm; }
+.capa-selo { margin-top: 8mm; display: inline-block; align-self: flex-start; border: 0.7pt solid #1f7fb8; color: #1f7fb8; font-size: 7.6pt; letter-spacing: 0.14em; text-transform: uppercase; padding: 2mm 4mm; }
+.capa-meta { border-top: 0.5pt solid #c4d4e2; padding-top: 5mm; display: flex; gap: 20mm; font-size: 8.6pt; color: #65778a; }
+.capa-meta strong { color: #12345e; font-weight: 600; display: block; font-size: 9.4pt; margin-bottom: 1mm; }
+
+/* ---------- CONTEÚDO ---------- */
+.conteudo { padding-top: 2mm; }
+h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 15pt; color: #12345e; margin: 22px 0 8px; padding-bottom: 5px; border-bottom: 1.4pt solid #12345e; page-break-after: avoid; }
+h1::after { content: ""; display: block; height: 2px; width: 60px; margin-top: 5px; background: linear-gradient(90deg, #1f7fb8, #38c4e6, #8fe6ee); }
+h2 { font-family: 'Playfair Display', Georgia, serif; font-size: 12.5pt; color: #12345e; margin: 18px 0 6px; padding: 3px 0 3px 10px; border-left: 3pt solid #1f7fb8; page-break-after: avoid; }
+h3 { font-size: 10.5pt; color: #1f7fb8; margin: 12px 0 5px; font-weight: 700; }
+p { margin-bottom: 6px; }
+table { width: 100%; border-collapse: collapse; margin: 6px 0 14px; font-size: 8.8pt; border: 0.6pt solid #d4dde6; page-break-inside: avoid; }
+th { background: #12345e; color: #eef4fb; padding: 5px 9px; text-align: left; font-weight: 600; font-size: 8.4pt; }
+td { padding: 4px 9px; border: 0.5pt solid #d4dde6; vertical-align: top; }
+tr:nth-child(even) td { background: #eff4f9; }
+strong { color: #12345e; font-weight: 600; }
 ul, ol { padding-left: 22px; margin-bottom: 8px; }
 li { margin-bottom: 3px; }
-em { color: #64748B; font-size: 8.5pt; }
-hr { border: none; border-top: 1px solid #CBD5E1; margin: 16px 0; }
+em { color: #65778a; font-size: 8.6pt; }
+hr { border: none; border-top: 0.5pt solid #c4d4e2; margin: 14px 0; }
+blockquote { border-left: 3pt solid #1f7fb8; background: #eef6fb; padding: 3mm 4mm; margin: 4mm 0; color: #364a5e; font-size: 9.6pt; }
+
+/* ---------- ASSINATURA ---------- */
+.assinatura { margin-top: 14mm; page-break-inside: avoid; }
+.assinatura .linha { border-top: 0.6pt solid #12345e; width: 86mm; margin-bottom: 1.4mm; }
+.assinatura .nome { font-weight: 600; color: #12345e; }
+.assinatura .cargo { font-size: 8.6pt; color: #51616f; }
 """
+    capa = f"""<section class="capa">
+  <div>
+    <div class="capa-brand">{html_logo_inline()}<div class="capa-wm">
+      <div class="nome">ORGATEC</div><div class="desc">Contabilidade e Auditoria</div></div></div>
+    <div class="capa-sub">Sistema OrgAudi · Auditoria Bancária Forense</div>
+  </div>
+  <div class="capa-mid">
+    <div class="capa-titulo">Laudo de Auditoria<br>Bancária Forense</div>
+    <div class="capa-rule"></div>
+    <div class="capa-objeto">{razao} — análise forense de extratos bancários (OFX): regime × teto,
+      retenções na fonte, tipologias (smurfing, carrossel, pós-baixa) e cruzamento cadastral RFB/BrasilAPI.</div>
+    <div class="capa-selo">Parecer técnico · assessoria · caráter indicativo</div>
+  </div>
+  <div class="capa-meta">
+    <div><strong>Entidade auditada</strong>{razao}<br>CNPJ {cnpj}</div>
+    <div><strong>Período</strong>{periodo or '—'}</div>
+    <div><strong>Emissão</strong>{agora}</div>
+  </div>
+</section>"""
+    assinatura = """<div class="assinatura">
+  <div class="linha"></div>
+  <div class="nome">ORGATEC — Contabilidade e Auditoria</div>
+  <div class="cargo">Sistema OrgAudi · Auditoria Bancária Forense assistida</div>
+</div>"""
     return f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Relatorio Integrado · {EMPRESA.get('razao_social', '')}</title><style>{css}</style></head>
+<title>Laudo de Auditoria · {razao}</title><style>{css}</style></head>
 <body>
-<div class="hd">{html_logo_inline()}<div class="hd-text">
-<h1>ORGATEC</h1>
-<div class="tag">Relatorio Integrado · Auditoria Bancaria</div>
-<div class="meta">{EMPRESA.get('razao_social', '')} · CNPJ {EMPRESA.get('cnpj', '—')} · Gerado em {agora}</div>
-</div></div>
+{capa}
+<section class="conteudo">
 {body}
+{assinatura}
+</section>
 </body></html>"""
 
 

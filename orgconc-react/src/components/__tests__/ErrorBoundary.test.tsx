@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-function Bomba({ explode }: { explode: boolean }): JSX.Element {
+function Bomba({ explode }: { explode: boolean }) {
   if (explode) throw new Error("kaboom");
   return <span>tudo bem</span>;
 }

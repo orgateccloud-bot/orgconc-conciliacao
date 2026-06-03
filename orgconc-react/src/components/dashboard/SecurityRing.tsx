@@ -1,6 +1,5 @@
 import { ShieldCheck } from "lucide-react";
 import type { TrustScore } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 interface Props {
   data: TrustScore | null;
@@ -85,6 +84,3 @@ function corPorScore(score: number): string {
   if (score >= 50) return "#f59e0b"; // amber
   return "#dc2626"; // vermelho
 }
-
-// alias para uso opcional
-export const _ringCx = cn;

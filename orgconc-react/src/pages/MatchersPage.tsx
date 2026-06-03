@@ -7,7 +7,6 @@ import {
   type MatchersResponse,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -18,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { HeroCard } from "@/components/HeroCard";
 import { toast } from "sonner";
-import { Upload, FileText, X, Network, CheckCircle2, AlertTriangle, Hash } from "lucide-react";
+import { FileText, X, Network, CheckCircle2, AlertTriangle, Hash } from "lucide-react";
 import { cn, formatBytes } from "@/lib/utils";
 
 const DISP_COLOR: Record<string, string> = {

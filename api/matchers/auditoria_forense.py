@@ -184,11 +184,14 @@ def construir_cadastro(transacoes, cache: dict | None = None) -> dict:
     return cadastro
 
 
-async def enriquecer_cadastro(transacoes, db=None, limite: int | None = None) -> int:
+async def enriquecer_cadastro(transacoes, db=None, limite: int | None = None, enrich_all: bool = False) -> int:
     """Job de background: enriquece (BrasilAPI → RFB local) os CNPJs ainda não
     cacheados e popula o cache. A próxima análise pega pós-baixa/MEI via cache.
 
-    `limite=None` usa CNPJ_ENRICH_LIMITE (env var, default 300).
+    `limite=None` usa CNPJ_ENRICH_LIMITE (env var, default 300). `enrich_all=True`
+    ignora o limite e enriquece TODOS os faltantes — necessário para pós-baixa
+    FIEL quando há mais CNPJs que o limite (ex.: 600+ no LOCAR), pois o corte top-N
+    deixa CNPJs baixados de fora e zera a pós-baixa. Espelha o `--enrich-all` do CLI.
     Quando `db=None` e DB está disponível, cria sessão própria para acesso
     ao fallback RFB local (schema cnpj.*).
     """
@@ -197,7 +200,9 @@ async def enriquecer_cadastro(transacoes, db=None, limite: int | None = None) ->
 
     _limite = limite if limite is not None else _cfg.CNPJ_ENRICH_LIMITE
     cache = cnpj_enricher._carregar_cache()
-    faltantes = [c for c in cnpjs_das_transacoes(transacoes) if c not in cache][:_limite]
+    faltantes = [c for c in cnpjs_das_transacoes(transacoes) if c not in cache]
+    if not enrich_all:
+        faltantes = faltantes[:_limite]
     if not faltantes:
         return 0
 

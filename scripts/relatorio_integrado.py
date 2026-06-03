@@ -37,8 +37,12 @@ async def main_async() -> None:
         print("Nenhuma transacao encontrada — abortando.")
         return
 
-    print("Gerando XLSX (11 abas)...")
-    wb, stats = L.gerar_laudo_workbook(todos, saldos, cache)
+    print("Carregando documentos fiscais (NF-e / CT-e)...")
+    nfes, ctes, n_xml = L.carregar_docs(args.pasta)
+    print(f"  {n_xml:,} XMLs -> {len(nfes):,} NF-e + {len(ctes):,} CT-e")
+
+    print(f"Gerando XLSX ({13 if (nfes or ctes) else 11} abas)...")
+    wb, stats = L.gerar_laudo_workbook(todos, saldos, cache, nfes, ctes)
     out_xlsx = base.with_suffix(".xlsx")
     wb.save(str(out_xlsx))
     print(f"  XLSX: {out_xlsx}")
@@ -46,7 +50,7 @@ async def main_async() -> None:
     print("Gerando MD / HTML / PDF...")
     md, _ = L.gerar_md(stats)
     base.with_suffix(".md").write_text(md, encoding="utf-8")
-    html = L.gerar_html(md)
+    html = L.gerar_html(md, stats.get("periodo_str", ""))
     base.with_suffix(".html").write_text(html, encoding="utf-8")
     print(f"  MD/HTML: {base.with_suffix('.md')}")
     if await L.gerar_pdf(html, base.with_suffix(".pdf")):

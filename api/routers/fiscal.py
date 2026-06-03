@@ -31,6 +31,7 @@ from api.core.config import (
 from api.core.rate_limit import limiter
 from api.matchers.auditoria_forense import (
     analisar_auditoria,
+    cnpjs_das_transacoes,
     construir_cadastro,
     enriquecer_cadastro,
     resumo_para_dict,
@@ -149,6 +150,7 @@ async def processar_fiscal(
     background: BackgroundTasks,
     cliente_id: str = Form(..., description="UUID do cliente"),
     arquivos: List[UploadFile] = File(..., description="ZIP/OFX/XMLs de NF-e + CT-e + (opcional OFX)"),
+    enrich_all: bool = Form(False, description="enriquecer TODOS os CNPJs (pós-baixa fiel) em vez do top-N"),
     user: TokenPayload = Depends(current_user),
 ):
     """Processa lote de documentos fiscais + (opcional) OFX para cruzamento.
@@ -257,7 +259,7 @@ async def processar_fiscal(
     if transacoes:
         cadastro = construir_cadastro(transacoes)
         auditoria = resumo_para_dict(analisar_auditoria(transacoes, cadastro=cadastro))
-        background.add_task(enriquecer_cadastro, transacoes)
+        background.add_task(enriquecer_cadastro, transacoes, enrich_all=enrich_all)
 
     return JSONResponse({
         "cliente_id": cliente_id,
@@ -273,21 +275,14 @@ async def processar_fiscal(
 _LAUDO_LOCK = threading.Lock()
 
 
-@router.post("/laudo")
-@limiter.limit("3/minute")
-async def gerar_laudo(
-    request: Request,
-    empresa_cnpj: str = Form(..., description="CNPJ da entidade auditada (14 dígitos)"),
-    conta: str = Form("", description="escopar a uma conta (substring do ID, ex: 158083)"),
-    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX"),
-    user: TokenPayload = Depends(current_user),
-):
-    """Gera o Laudo Integrado de Auditoria Bancária (11 abas, XLSX) a partir de
-    extratos OFX, usando o MESMO núcleo do CLI (api.services.laudo_forense).
+def _t_data_str(t) -> str:
+    d = getattr(t, "data", "") or ""
+    return d if isinstance(d, str) else d.isoformat()
 
-    Usa o cache de CNPJ existente (sem rede em-request) — rode POST /fiscal/processar
-    antes para popular o enriquecimento cadastral (situação/pós-baixa).
-    """
+
+async def _ler_dedup_ofx(arquivos: List[UploadFile], conta: str) -> list:
+    """Lê 1+ OFX, deduplica por (conta, fitid) e filtra por conta. Compartilhado
+    por POST /fiscal/laudo (XLSX) e POST /fiscal/laudo/resumo (JSON)."""
     if not arquivos:
         raise HTTPException(400, "Envie ao menos 1 arquivo OFX.")
 
@@ -320,6 +315,25 @@ async def gerar_laudo(
         dedup = [t for t in dedup if conta in (t.conta or "")]
     if not dedup:
         raise HTTPException(400, "Nenhuma transação para a conta informada.")
+    return dedup
+
+
+@router.post("/laudo")
+@limiter.limit("3/minute")
+async def gerar_laudo(
+    request: Request,
+    empresa_cnpj: str = Form(..., description="CNPJ da entidade auditada (14 dígitos)"),
+    conta: str = Form("", description="escopar a uma conta (substring do ID, ex: 158083)"),
+    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX"),
+    user: TokenPayload = Depends(current_user),
+):
+    """Gera o Laudo Integrado de Auditoria Bancária (11 abas, XLSX) a partir de
+    extratos OFX, usando o MESMO núcleo do CLI (api.services.laudo_forense).
+
+    Usa o cache de CNPJ existente (sem rede em-request) — rode POST /fiscal/processar
+    antes para popular o enriquecimento cadastral (situação/pós-baixa).
+    """
+    dedup = await _ler_dedup_ofx(arquivos, conta)
 
     def _build():
         from io import BytesIO
@@ -343,6 +357,59 @@ async def gerar_laudo(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.xlsx"'},
     )
+
+
+@router.post("/laudo/resumo")
+@limiter.limit("6/minute")
+async def laudo_resumo(
+    request: Request,
+    background: BackgroundTasks,
+    empresa_cnpj: str = Form(..., description="CNPJ da entidade auditada (14 dígitos)"),
+    conta: str = Form("", description="escopar a uma conta (substring do ID, ex: 158083)"),
+    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX"),
+    user: TokenPayload = Depends(current_user),
+):
+    """Resumo forense JSON (regime×teto + heatmap + sinais + top disposições) dos
+    MESMOS OFX do laudo. Alimenta a aba 'Auditoria Forense' do frontend; o XLSX
+    completo de 11 abas vem de POST /fiscal/laudo.
+
+    Determinístico e sem rede em-request: usa o cache de CNPJ para situação/porte
+    (pós-baixa, MEI-teto). CNPJs ainda não cacheados disparam enriquecimento COMPLETO
+    em background (enrich_all) — a próxima análise vem com pós-baixa fiel. O campo
+    `enriquecimento_pendente` informa quantos faltam para a UI sugerir re-análise.
+    """
+    dedup = await _ler_dedup_ofx(arquivos, conta)
+
+    def _analisar():
+        from api.matchers.cnpj_enricher import _carregar_cache
+        cache = _carregar_cache()
+        cadastro = construir_cadastro(dedup, cache)
+        resumo_aud = resumo_para_dict(analisar_auditoria(dedup, cadastro=cadastro))
+        empresa = laudo.construir_empresa(empresa_cnpj, cache)
+        faltantes = [c for c in cnpjs_das_transacoes(dedup) if c not in cache]
+        return resumo_aud, empresa, faltantes
+
+    resumo_aud, empresa, faltantes = await asyncio.to_thread(_analisar)
+    # CNPJs não cacheados → enriquece TODOS em background (pós-baixa fiel na próxima).
+    if faltantes:
+        background.add_task(enriquecer_cadastro, dedup, enrich_all=True)
+    datas = sorted(_t_data_str(t)[:10] for t in dedup if _t_data_str(t))
+    return JSONResponse({
+        "empresa": {
+            "cnpj": empresa.get("cnpj", empresa_cnpj),
+            "razao_social": empresa.get("razao_social", "—"),
+            "porte": empresa.get("porte_declarado", "—"),
+            "situacao": empresa.get("situacao", "—"),
+            "cnae": empresa.get("cnae_principal", "—"),
+        },
+        "conta": conta or None,
+        "periodo": {
+            "inicio": datas[0] if datas else None,
+            "fim": datas[-1] if datas else None,
+        },
+        "enriquecimento_pendente": len(faltantes),
+        **resumo_aud,
+    })
 
 
 @router.get("/conformidade/{cliente_id}")
