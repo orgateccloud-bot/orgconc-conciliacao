@@ -116,9 +116,10 @@ async def apurar(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
     modo = config.CALCULADORA_MODO
     if modo == "stub":
         return _apurar_stub(inp)
-    # Fase 1: traduzir IC-02 → payload SERPRO e chamar via httpx (mesma API
-    # hospedada/offline); achatar objetos[].tribCalc.IBSCBS de volta ao IC-02.
+    if modo in ("hospedada", "offline"):
+        # Import local evita ciclo (serpro_client importa payload_hash_de daqui).
+        from api.services.serpro_client import apurar_via_serpro
+        return await apurar_via_serpro(inp)
     raise NotImplementedError(
-        f"CALCULADORA_MODO='{modo}' requer integração SERPRO (Fase 1). "
-        "Use CALCULADORA_MODO=stub no ambiente atual."
+        f"CALCULADORA_MODO='{modo}' desconhecido. Use 'stub', 'hospedada' ou 'offline'."
     )

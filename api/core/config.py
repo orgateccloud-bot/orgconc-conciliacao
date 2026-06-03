@@ -190,6 +190,11 @@ CNPJ_ENRICH_TIMEOUT_S: float = float(os.environ.get("CNPJ_ENRICH_TIMEOUT_S", "10
 CALCULADORA_MODO: str = os.environ.get("CALCULADORA_MODO", "stub").strip().lower()
 CALCULADORA_BASE_URL: str = os.environ.get("CALCULADORA_BASE_URL", "").strip()
 CALCULADORA_TIMEOUT_S: float = float(os.environ.get("CALCULADORA_TIMEOUT_S", "15"))
+# Autenticação no motor SERPRO (Fase 1). mTLS: caminhos do par cert/key (PEM);
+# API key: header de autorização. Todos opcionais (vazios no MODO stub).
+CALCULADORA_CERT: str = os.environ.get("CALCULADORA_CERT", "").strip()
+CALCULADORA_KEY: str = os.environ.get("CALCULADORA_KEY", "").strip()
+CALCULADORA_API_KEY: str = os.environ.get("CALCULADORA_API_KEY", "").strip()
 # Gate de proveniência (IC-02 §4): versão da base de regras + ambiente.
 CBS_IBS_VERSAO_BASE: str = os.environ.get("CBS_IBS_VERSAO_BASE", "V0033").strip()
 CBS_IBS_AMBIENTE: str = os.environ.get("CBS_IBS_AMBIENTE", "PILOTO").strip().upper()

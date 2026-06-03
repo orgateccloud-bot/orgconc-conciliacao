@@ -84,9 +84,16 @@ def test_input_exige_xml_ou_itens():
 
 @pytest.mark.asyncio
 async def test_modo_nao_stub_exige_serpro(monkeypatch):
+    """Modo hospedada/offline requer o motor SERPRO configurado (Fase 1).
+
+    Antes a Fase 1 não existia (NotImplementedError); agora o dispatch chama o
+    cliente, que sem CALCULADORA_BASE_URL levanta CalculadoraIndisponivel.
+    """
     from api.core import config
     from api.schemas_cbs_ibs import OperacaoFiscalInput
     from api.services import calculadora_cbs_ibs
+    from api.services.serpro_client import CalculadoraIndisponivel
     monkeypatch.setattr(config, "CALCULADORA_MODO", "hospedada")
-    with pytest.raises(NotImplementedError):
+    monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "")
+    with pytest.raises(CalculadoraIndisponivel):
         await calculadora_cbs_ibs.apurar(OperacaoFiscalInput(**REQ))

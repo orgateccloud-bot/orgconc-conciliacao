@@ -1,11 +1,11 @@
 -r requirements-prod.txt
 
-# test runner + http client p/ TestClient
+# test runner (httpx vem de requirements-prod — usado pelo TestClient do
+# Starlette e pelo cliente da Calculadora CBS/IBS)
 pytest==9.0.3
 pytest-cov==7.1.0
 pytest-asyncio==1.3.0
 pytest-mock==3.15.1
-httpx==0.28.1
 # teste de contrato IC-02 (valida payloads CBS/IBS contra os JSON Schemas).
 # Faixa (não pin exato): o semgrep — também em dev — exige jsonschema recente;
 # pinar 4.23.0 forçava backtracking e build do sdist do semgrep no CI.
