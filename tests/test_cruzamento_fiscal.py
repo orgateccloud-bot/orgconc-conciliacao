@@ -45,10 +45,37 @@ def test_match_casado_por_cnpj_e_valor():
 
 def test_match_valor_divergente():
     docs = [_doc(valor=1500.0)]
-    txs = [_tx(valor=-1499.50)]  # diferente do limite tolerancia
+    txs = [_tx(valor=-1000.0)]  # 33% abaixo: fora da tolerância de juros (2%)
     r = cruzar(docs, txs)
     statuses = [x.status for x in r]
     assert "VALOR_DIVERGENTE" in statuses
+
+
+def test_tolerancia_juros_casa_pequena_diferenca():
+    """Diferença pequena (juros/multa) dentro de 2% casa como CASADO."""
+    docs = [_doc(valor=1500.0)]
+    txs = [_tx(valor=-1499.50)]  # 0,03% -> dentro da tolerância
+    r = cruzar(docs, txs)
+    assert [x.status for x in r] == ["CASADO"]
+
+
+def test_match_1_para_N_pagamento_agregado():
+    """Um pagamento quita a soma de dois documentos do mesmo CNPJ."""
+    docs = [_doc(chave="a" * 44, valor=600.0), _doc(chave="b" * 44, valor=400.0)]
+    txs = [_tx(valor=-1000.0)]
+    r = cruzar(docs, txs)
+    casados = [x for x in r if x.status == "CASADO"]
+    assert len(casados) == 2  # ambos documentos casados com o pagamento agregado
+    assert all(x.status != "SEM_PAGAMENTO" for x in r)
+
+
+def test_match_N_para_1_parcelamento():
+    """Dois pagamentos quitam um documento (parcelamento)."""
+    docs = [_doc(valor=1000.0)]
+    txs = [_tx(valor=-500.0, data="2026-04-15"), _tx(valor=-500.0, data="2026-04-25")]
+    r = cruzar(docs, txs)
+    assert any(x.status == "CASADO" for x in r)
+    assert all(x.status != "SEM_NF" for x in r)
 
 
 def test_sem_pagamento_para_documento_emitido():

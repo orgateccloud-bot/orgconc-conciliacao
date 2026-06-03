@@ -189,6 +189,42 @@ def test_parse_nfe_estrutura_irreconhecida():
     assert doc is None
 
 
+def test_parse_nfe_autorizada_por_default():
+    doc = parse_nfe(_nfe_xml(numero="123"))
+    assert doc.situacao == "AUTORIZADA"
+
+
+def test_parse_nfe_cancelada_por_cstat():
+    """NF-e com protocolo cStat=101 (cancelamento homologado) -> CANCELADA."""
+    base = _nfe_xml(numero="500").decode()
+    prot = "<protNFe><infProt><cStat>101</cStat></infProt></protNFe>"
+    xml = base.replace("</nfeProc>", prot + "</nfeProc>").encode()
+    doc = parse_nfe(xml)
+    assert doc.situacao == "CANCELADA"
+
+
+def test_parse_nfe_denegada_por_cstat():
+    base = _nfe_xml(numero="501").decode()
+    prot = "<protNFe><infProt><cStat>302</cStat></infProt></protNFe>"
+    xml = base.replace("</nfeProc>", prot + "</nfeProc>").encode()
+    assert parse_nfe(xml).situacao == "DENEGADA"
+
+
+def test_lote_evento_de_cancelamento_marca_documento():
+    """XML de evento (tpEvento 110111) marca o documento de mesma chave como CANCELADA."""
+    chave = _chave_com_dv("3" * 43)
+    nfe = _nfe_xml(numero="600", chave=chave)
+    evento = (
+        '<?xml version="1.0"?>'
+        '<procEventoNFe xmlns="http://www.portalfiscal.inf.br/nfe">'
+        f"<evento><infEvento><tpEvento>110111</tpEvento><chNFe>{chave}</chNFe>"
+        "</infEvento></evento></procEventoNFe>"
+    ).encode()
+    docs = parse_lote_xmls([("nfe.xml", nfe), ("evento.xml", evento)])
+    assert len(docs) == 1  # o evento não vira documento
+    assert docs[0].situacao == "CANCELADA"
+
+
 # ────────────────────────────────────────────────────────────────────────
 # parse_cte
 # ────────────────────────────────────────────────────────────────────────

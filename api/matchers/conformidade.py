@@ -138,10 +138,14 @@ def calcular_conformidade_fornecedor(
         if isinstance(d, date):
             pag_por_cnpj[cnpj]["datas"].append(d)
 
-    # Agrega NF-es por CNPJ emitente
+    # Agrega NF-es por CNPJ emitente. Documentos CANCELADA/DENEGADA não têm
+    # validade fiscal — não contam como cobertura (senão inflam volume_nf e
+    # mascaram o gap real).
     nfe_por_cnpj: dict[str, dict] = defaultdict(lambda: {"vol": 0.0, "n": 0, "n_ctes": 0, "nome": ""})
     for d in documentos:
         if not d.emit_cnpj:
+            continue
+        if getattr(d, "situacao", "AUTORIZADA") in ("CANCELADA", "DENEGADA"):
             continue
         nfe_por_cnpj[d.emit_cnpj]["vol"] += d.valor_total
         nfe_por_cnpj[d.emit_cnpj]["n"] += 1
