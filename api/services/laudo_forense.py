@@ -21,6 +21,8 @@ from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
+# defusedxml contra XXE/billion-laughs em XMLs (NF-e/CT-e) de terceiros (bandit B314)
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -302,7 +304,7 @@ def _texto(elem, *caminho):
 
 def parse_nfe(conteudo):
     try:
-        root = ET.fromstring(conteudo)
+        root = _safe_fromstring(conteudo)
     except ET.ParseError:
         return None
     inf = next((el for el in root.iter() if _local(el.tag) == "infNFe"), None)
@@ -322,7 +324,7 @@ def parse_nfe(conteudo):
 
 def parse_cte(conteudo):
     try:
-        root = ET.fromstring(conteudo)
+        root = _safe_fromstring(conteudo)
     except ET.ParseError:
         return None
     inf = next((el for el in root.iter() if _local(el.tag) in ("infCte", "infCTe")), None)
