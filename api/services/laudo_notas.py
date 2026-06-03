@@ -35,7 +35,7 @@ _THIN = Border(*[Side(style="thin", color="E2E8F0")] * 4)
 _MONEY = "#,##0.00"
 
 ABAS_NOTAS = [
-    "1. Resumo", "2. Por Fornecedor", "3. Natureza CFOP",
+    "1. Capa", "2. Por Fornecedor", "3. Natureza CFOP",
     "4. Por Dia", "5. Notas", "6. Alertas",
 ]
 
@@ -82,11 +82,12 @@ def gerar_laudo_notas_workbook(
     # Estilo padrão ORGATEC (mesmo do laudo forense) — import lazy p/ não pesar o load.
     from api.services.laudo_forense import (
         ALERT_FILL, ALERT_FILL_MEDIO, SUBTITLE_FONT, ZEBRA_FILL,
-        cabecalho_padrao, style_header,
+        aba_capa, cabecalho_padrao, style_header,
     )
 
     periodo_str = (f"{datas[0]} a {datas[-1]}") if datas else "-"
-    linha2 = f"Documentos Fiscais · {periodo_str} · {len(docs)} documentos · {_money(total)}"
+    linha2 = f"Base documental fiscal · Periodo {periodo_str} · {len(docs)} documentos"
+    n_alertas_tot = len(invalidas) + len(canceladas) + len(nao_ativos)
 
     def _cab(ws, ncols, secao):
         return cabecalho_padrao(ws, ncols, titulo="Laudo de Documentos Fiscais",
@@ -99,39 +100,32 @@ def gerar_laudo_notas_workbook(
 
     wb = Workbook()
 
-    # ── Aba 1: Resumo ────────────────────────────────────────────────────
-    ws = wb.active
-    ws.title = "1. Resumo"
-    r0 = _cab(ws, 2, "Indicadores principais")
-    style_header(ws, r0, 2)
-    ws.cell(row=r0, column=1, value="Indicador")
-    ws.cell(row=r0, column=2, value="Valor")
-    kpis = [
-        ("Total de documentos", len(docs)),
-        ("Periodo", periodo_str),
-        ("Fornecedores (emitentes) distintos", len({d.emit_cnpj for d in docs if d.emit_cnpj})),
-        ("Volume total documentado", total),
-        ("ICMS total", icms), ("PIS total", pis),
-        ("COFINS total", cofins), ("ISS total", iss),
-        ("Autorizadas", por_situacao.get("AUTORIZADA", 0)),
-        ("Canceladas", por_situacao.get("CANCELADA", 0)),
-        ("Denegadas", por_situacao.get("DENEGADA", 0)),
-        ("[!] Chaves invalidas (mod-11)", len(invalidas)),
-        ("[!] Emitentes nao-ativos (cadastro)", len(nao_ativos)),
-    ]
-    r = r0 + 1
-    for k, v in kpis:
-        ws.cell(row=r, column=1, value=k).font = _BOLD
-        cell = ws.cell(row=r, column=2, value=v)
-        if isinstance(v, (int, float)) and ("Volume" in k or "total" in k.lower()):
-            cell.number_format = _MONEY
-        if k.startswith("[!]") and isinstance(v, int) and v > 0:
-            ws.cell(row=r, column=1).fill = ALERT_FILL
-            ws.cell(row=r, column=2).fill = ALERT_FILL
-        for c in range(1, 3):
-            ws.cell(row=r, column=c).border = _THIN
-        r += 1
-    _larguras(ws, {"A": 40, "B": 24})
+    # ── Aba 1: Capa (índice + sumário executivo) ─────────────────────────
+    aba_capa(
+        wb,
+        titulo_relatorio="Laudo de Documentos Fiscais",
+        linha2=linha2,
+        subtitulo="Sistema OrgConc · Auditoria Fiscal",
+        objeto="Análise da base documental (NF-e/CT-e/NFS-e): volume por fornecedor, natureza de "
+               "operação, CFOP, situação cadastral e alertas.",
+        secoes=[
+            ("2", "Por Fornecedor", "Emitentes por volume + situacao cadastral", "2. Por Fornecedor"),
+            ("3", "Natureza / CFOP", "Distribuicao por natureza de operacao e CFOP", "3. Natureza CFOP"),
+            ("4", "Por Dia", "Distribuicao temporal", "4. Por Dia"),
+            ("5", "Notas", "Detalhe documento-a-documento", "5. Notas"),
+            ("6", "Alertas", "Chaves invalidas, canceladas, emitentes nao-ativos", "6. Alertas"),
+        ],
+        sumario=[
+            ("Periodo analisado", periodo_str),
+            ("Total de documentos", f"{len(docs):,}"),
+            ("Volume total documentado", _money(total)),
+            ("ICMS total", _money(icms)),
+            ("Fornecedores distintos", str(len({d.emit_cnpj for d in docs if d.emit_cnpj}))),
+            ("Canceladas / denegadas", str(por_situacao.get("CANCELADA", 0) + por_situacao.get("DENEGADA", 0))),
+            ("Chaves invalidas (mod-11)", str(len(invalidas))),
+            ("Alertas no total", str(n_alertas_tot)),
+        ],
+    )
 
     # ── Aba 2: Por Fornecedor ────────────────────────────────────────────
     ws = wb.create_sheet("2. Por Fornecedor")

@@ -233,6 +233,68 @@ def cabecalho_padrao(ws, ultima_col, *, titulo, linha2="", secao="", com_logo=Tr
     return 5
 
 
+def aba_capa(wb, *, titulo_relatorio, linha2, objeto, secoes, sumario, subtitulo="Sistema OrgConc"):
+    """Cria a primeira aba 'Capa' no padrão do laudo forense (reutilizável):
+    cabeçalho + título + data + ÍNDICE DE SEÇÕES (hyperlinks) + SUMÁRIO EXECUTIVO.
+
+    secoes: list[(num, nome, descricao, sheet_name)] — links para as demais abas.
+    sumario: list[(rotulo, valor)] — KPIs principais.
+    Usa a aba ativa (renomeia para '1. Capa'); demais abas são criadas pelo caller.
+    """
+    ws = wb.active
+    ws.title = "1. Capa"
+    start = cabecalho_padrao(ws, 6, titulo=titulo_relatorio, linha2=linha2, secao=subtitulo)
+
+    ws.cell(row=start, column=1, value=titulo_relatorio.upper()).font = TITLE_FONT
+    ws.merge_cells(f"A{start}:F{start}")
+    ws.cell(row=start + 1, column=1, value=objeto).font = Font(size=9, color="51616F")
+    ws.merge_cells(f"A{start + 1}:F{start + 1}")
+    ws.cell(row=start + 2, column=1,
+            value="Gerado em " + datetime.now().strftime("%d/%m/%Y %H:%M")).font = Font(size=9, italic=True, color="65778A")
+
+    r = start + 4
+    ws.cell(row=r, column=1, value="INDICE DE SECOES").font = SUBTITLE_FONT
+    ws.merge_cells(f"A{r}:F{r}")
+    r += 1
+    ws.cell(row=r, column=1, value="#")
+    ws.cell(row=r, column=2, value="Secao")
+    ws.cell(row=r, column=3, value="Conteudo")
+    style_header(ws, r, 3)
+    ws.merge_cells(f"C{r}:F{r}")
+    r += 1
+    for num, nome, desc, sheet in secoes:
+        ws.cell(row=r, column=1, value=num)
+        c = ws.cell(row=r, column=2, value=nome)
+        c.font = Font(bold=True, color="1F7FB8", underline="single")
+        c.hyperlink = f"#'{sheet}'!A1"
+        c.style = "Hyperlink"
+        ws.cell(row=r, column=3, value=desc)
+        ws.merge_cells(f"C{r}:F{r}")
+        for cc in range(1, 7):
+            ws.cell(row=r, column=cc).border = THIN_BORDER
+            if r % 2 == 0:
+                ws.cell(row=r, column=cc).fill = ZEBRA_FILL
+        r += 1
+
+    r += 2
+    ws.cell(row=r, column=1, value="SUMARIO EXECUTIVO").font = SUBTITLE_FONT
+    ws.merge_cells(f"A{r}:F{r}")
+    r += 1
+    for rotulo, valor in sumario:
+        ws.cell(row=r, column=1, value=rotulo).font = Font(bold=True)
+        cv = ws.cell(row=r, column=2, value=valor)
+        cv.alignment = Alignment(horizontal="left")
+        ws.merge_cells(f"B{r}:F{r}")
+        for cc in range(1, 7):
+            ws.cell(row=r, column=cc).border = THIN_BORDER
+        r += 1
+
+    ws.column_dimensions["A"].width = 16
+    for col in "BCDEF":
+        ws.column_dimensions[col].width = 22
+    return ws
+
+
 # ════════════════════════════════════════════════════════════════════════
 # Coleta de dados (carrega todos os 5 OFXs)
 # ════════════════════════════════════════════════════════════════════════
