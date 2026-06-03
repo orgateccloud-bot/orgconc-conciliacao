@@ -1,0 +1,19 @@
+{
+  "documento_id": "550e8400-e29b-41d4-a716-446655440000",
+  "chave": "52260512345678000190550010000000110000000017",
+  "uf": "GO",
+  "municipio_ibge": "5208707",
+  "data_fato_gerador": "2026-05-29",
+  "itens": [
+    {
+      "numero": 1,
+      "ncm": null,
+      "nbs": null,
+      "cst": "000",
+      "cClassTrib": "000001",
+      "base_calculo": 200.00,
+      "quantidade": 1,
+      "unidade": "UN"
+    }
+  ]
+}
