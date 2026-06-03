@@ -243,15 +243,21 @@ async def listar_conformidade(
     return list((await db.execute(stmt)).scalars().all())
 
 
-async def salvar_apuracao(db: AsyncSession, apuracao: ApuracaoCBSIBS) -> uuid.UUID:
+async def salvar_apuracao(
+    db: AsyncSession, apuracao: ApuracaoCBSIBS, org_id: Optional[uuid.UUID] = None
+) -> uuid.UUID:
     """Persiste uma apuração CBS/IBS (contrato IC-02 §3.2 → colunas planas).
 
     Os grupos gIBSUF/gIBSMun/gCBS/gIS viram colunas aliquota_*/valor_*; a memória
     de cálculo por esfera vai para `memoria_calculo` (JSONB). Retorna o id da linha.
+
+    `org_id` é o tenant (firma) para RLS por organização — opcional enquanto o
+    auth não popula org por usuário (ver db/rls/README.md).
     """
     row_id = uuid.uuid4()
     row = ApuracaoCBSIBSRow(
         id=row_id,
+        org_id=org_id,
         documento_id=uuid.UUID(apuracao.documento_id),
         versao_base=apuracao.versao_base,
         ambiente=apuracao.ambiente,
