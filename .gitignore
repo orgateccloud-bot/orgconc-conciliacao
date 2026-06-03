@@ -69,3 +69,9 @@ sim_resposta.json
 .obsidian/
 60-TEMPLATES/
 CEREBRO_OBSIDIAN_GUIA_COMPLETO.md
+
+# Cobertura de testes (gerado)
+orgconc-react/coverage/
+coverage/
+.coverage
+htmlcov/
