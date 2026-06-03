@@ -9,6 +9,10 @@ então a RLS se aplica de verdade. Cobre os 3 modos essenciais:
   3. escrita cruzada — A não grava cliente como B (WITH CHECK)
 
 Tenant = org_id (a firma contábil). Pulado sem DATABASE_URL (Postgres real).
+
+Nota: clientes.org_id é FK → orgs, então as orgs são criadas no setup. E o
+INSERT é flushado logo após cada set_config (o SET LOCAL vale por transação;
+adiar até o commit faria o WITH CHECK usar a org errada).
 """
 import os
 import uuid
@@ -20,7 +24,7 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from api.db.models import Base, Cliente
+from api.db.models import Base, Cliente, Org
 
 _RAW = os.environ.get("DATABASE_URL", "").strip()
 pytestmark = pytest.mark.skipif(not _RAW, reason="RLS exige DATABASE_URL (Postgres real)")
@@ -48,7 +52,6 @@ async def app_maker():
     owner = create_async_engine(_url("postgresql+asyncpg"))
     async with owner.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    await owner.dispose()
 
     conn = await asyncpg.connect(_url("postgresql"))
     try:
@@ -57,6 +60,14 @@ async def app_maker():
         await conn.execute("TRUNCATE public.clientes CASCADE")
     finally:
         await conn.close()
+
+    # Orgs precisam existir (FK clientes.org_id → orgs). Criadas como owner (orgs
+    # não tem RLS); idempotente entre testes.
+    async with async_sessionmaker(owner, expire_on_commit=False)() as s, s.begin():
+        for oid, nome in ((ORG_A, "Org A"), (ORG_B, "Org B")):
+            if await s.get(Org, uuid.UUID(oid)) is None:
+                s.add(Org(id=uuid.UUID(oid), nome=nome))
+    await owner.dispose()
 
     # Sessões como app_orgconc (NOBYPASSRLS → a RLS se aplica de verdade).
     engine = create_async_engine(_url("postgresql+asyncpg", "app_orgconc", _APP_PW))
@@ -69,6 +80,7 @@ async def app_maker():
 async def _criar_cliente(s, org_id: str, nome: str) -> None:
     await s.execute(text("SELECT set_config('app.org_id', :o, true)"), {"o": org_id})
     s.add(Cliente(org_id=uuid.UUID(org_id), nome=nome))
+    await s.flush()  # INSERT agora, com o set_config corrente (não no commit)
 
 
 @pytest.mark.asyncio
@@ -101,3 +113,4 @@ async def test_with_check_bloqueia_cliente_cruzado(app_maker):
         async with app_maker() as s, s.begin():
             await s.execute(text("SELECT set_config('app.org_id', :o, true)"), {"o": ORG_A})
             s.add(Cliente(org_id=uuid.UUID(ORG_B), nome="Intruso"))
+            await s.flush()  # dispara o INSERT → WITH CHECK barra a org cruzada
