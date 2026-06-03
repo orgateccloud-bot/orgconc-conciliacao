@@ -204,6 +204,35 @@ def cabecalho(ws, ultima_col, secao):
     return 5
 
 
+def cabecalho_padrao(ws, ultima_col, *, titulo, linha2="", secao="", com_logo=True):
+    """Cabeçalho XLSX padrão ORGATEC reutilizável por qualquer laudo (não depende
+    de EMPRESA global). 3 linhas: banda navy (título + logo), banda azul (linha2),
+    banda info (seção). Retorna a primeira linha de conteúdo (5)."""
+    c1 = ws.cell(row=1, column=1, value="    ORGATEC · " + titulo)
+    c1.font = Font(bold=True, size=14, color="FFFFFF")
+    c1.fill = PatternFill("solid", fgColor=NAVY)
+    c1.alignment = Alignment(horizontal="center", vertical="center", indent=2)
+    ws.merge_cells(f"A1:{get_column_letter(ultima_col)}1")
+    ws.row_dimensions[1].height = 60
+    if ws.column_dimensions["A"].width is None or ws.column_dimensions["A"].width < 12:
+        ws.column_dimensions["A"].width = 12
+    if com_logo:
+        inserir_logo_xlsx(ws, "A1", largura_px=60, altura_px=60)
+    if linha2:
+        c2 = ws.cell(row=2, column=1, value=linha2)
+        c2.font = Font(bold=True, size=10, color="FFFFFF")
+        c2.fill = PatternFill("solid", fgColor="1F7FB8")
+        c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        ws.merge_cells(f"A2:{get_column_letter(ultima_col)}2")
+    if secao:
+        c3 = ws.cell(row=3, column=1, value=secao)
+        c3.font = Font(size=9, color="12345E")
+        c3.fill = INFO_FILL
+        c3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        ws.merge_cells(f"A3:{get_column_letter(ultima_col)}3")
+    return 5
+
+
 # ════════════════════════════════════════════════════════════════════════
 # Coleta de dados (carrega todos os 5 OFXs)
 # ════════════════════════════════════════════════════════════════════════

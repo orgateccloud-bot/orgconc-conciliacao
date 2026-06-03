@@ -79,16 +79,36 @@ def gerar_laudo_notas_workbook(
     nao_ativos = [d for d in docs if _situacao_nao_ativa(sit_cad(d.emit_cnpj))]
     datas = sorted(d.data_emissao for d in docs if d.data_emissao)
 
+    # Estilo padrão ORGATEC (mesmo do laudo forense) — import lazy p/ não pesar o load.
+    from api.services.laudo_forense import (
+        ALERT_FILL, ALERT_FILL_MEDIO, SUBTITLE_FONT, ZEBRA_FILL,
+        cabecalho_padrao, style_header,
+    )
+
+    periodo_str = (f"{datas[0]} a {datas[-1]}") if datas else "-"
+    linha2 = f"Documentos Fiscais · {periodo_str} · {len(docs)} documentos · {_money(total)}"
+
+    def _cab(ws, ncols, secao):
+        return cabecalho_padrao(ws, ncols, titulo="Laudo de Documentos Fiscais",
+                                linha2=linha2, secao=secao)
+
+    def _zebra(ws, row, ncols):
+        if row % 2 == 0:
+            for c in range(1, ncols + 1):
+                ws.cell(row=row, column=c).fill = ZEBRA_FILL
+
     wb = Workbook()
 
     # ── Aba 1: Resumo ────────────────────────────────────────────────────
     ws = wb.active
     ws.title = "1. Resumo"
-    ws["A1"] = "ORGATEC · Laudo de Documentos Fiscais (NF-e/CT-e/NFS-e)"
-    ws["A1"].font = _TITULO
+    r0 = _cab(ws, 2, "Indicadores principais")
+    style_header(ws, r0, 2)
+    ws.cell(row=r0, column=1, value="Indicador")
+    ws.cell(row=r0, column=2, value="Valor")
     kpis = [
         ("Total de documentos", len(docs)),
-        ("Periodo", f"{datas[0]} a {datas[-1]}" if datas else "-"),
+        ("Periodo", periodo_str),
         ("Fornecedores (emitentes) distintos", len({d.emit_cnpj for d in docs if d.emit_cnpj})),
         ("Volume total documentado", total),
         ("ICMS total", icms), ("PIS total", pis),
@@ -99,17 +119,19 @@ def gerar_laudo_notas_workbook(
         ("[!] Chaves invalidas (mod-11)", len(invalidas)),
         ("[!] Emitentes nao-ativos (cadastro)", len(nao_ativos)),
     ]
-    r = 3
+    r = r0 + 1
     for k, v in kpis:
         ws.cell(row=r, column=1, value=k).font = _BOLD
         cell = ws.cell(row=r, column=2, value=v)
         if isinstance(v, (int, float)) and ("Volume" in k or "total" in k.lower()):
             cell.number_format = _MONEY
         if k.startswith("[!]") and isinstance(v, int) and v > 0:
-            ws.cell(row=r, column=1).fill = _RED
-            ws.cell(row=r, column=2).fill = _RED
+            ws.cell(row=r, column=1).fill = ALERT_FILL
+            ws.cell(row=r, column=2).fill = ALERT_FILL
+        for c in range(1, 3):
+            ws.cell(row=r, column=c).border = _THIN
         r += 1
-    _larguras(ws, {"A": 40, "B": 22})
+    _larguras(ws, {"A": 40, "B": 24})
 
     # ── Aba 2: Por Fornecedor ────────────────────────────────────────────
     ws = wb.create_sheet("2. Por Fornecedor")
@@ -120,8 +142,12 @@ def gerar_laudo_notas_workbook(
         a["vol"] += d.valor_total
         a["icms"] += d.valor_icms
         a["nome"] = d.emit_nome or a["nome"]
-    _hdr(ws, 1, ["CNPJ", "Razao Social", "Qtd", "Volume (R$)", "ICMS (R$)", "Situacao Cadastral"])
-    r = 2
+    r0 = _cab(ws, 6, "Fornecedores por volume + situacao cadastral")
+    cols = ["CNPJ", "Razao Social", "Qtd", "Volume (R$)", "ICMS (R$)", "Situacao Cadastral"]
+    for c, t in enumerate(cols, 1):
+        ws.cell(row=r0, column=c, value=t)
+    style_header(ws, r0, 6)
+    r = r0 + 1
     for cnpj, a in sorted(agg.items(), key=lambda kv: -kv[1]["vol"]):
         sc = sit_cad(cnpj)
         ws.cell(row=r, column=1, value=cnpj)
@@ -130,12 +156,13 @@ def gerar_laudo_notas_workbook(
         ws.cell(row=r, column=4, value=round(a["vol"], 2)).number_format = _MONEY
         ws.cell(row=r, column=5, value=round(a["icms"], 2)).number_format = _MONEY
         ws.cell(row=r, column=6, value=sc or "(sem cadastro)")
+        _zebra(ws, r, 6)
         if _situacao_nao_ativa(sc):
             for col in range(1, 7):
-                ws.cell(row=r, column=col).fill = _AMBER
+                ws.cell(row=r, column=col).fill = ALERT_FILL_MEDIO
         r += 1
     _larguras(ws, {"A": 18, "B": 42, "C": 8, "D": 16, "E": 14, "F": 20})
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = ws.cell(row=r0 + 1, column=1).coordinate
 
     # ── Aba 3: Natureza de Operacao + CFOP ───────────────────────────────
     ws = wb.create_sheet("3. Natureza CFOP")
@@ -144,23 +171,28 @@ def gerar_laudo_notas_workbook(
         key = (d.natureza_operacao or "(nao informado)").upper()[:60]
         nat[key]["n"] += 1
         nat[key]["vol"] += d.valor_total
-    _hdr(ws, 1, ["Natureza de Operacao", "Qtd", "Volume (R$)", "% Volume"])
-    r = 2
+    r0 = _cab(ws, 4, "Distribuicao por natureza de operacao e CFOP")
+    for c, t in enumerate(["Natureza de Operacao", "Qtd", "Volume (R$)", "% Volume"], 1):
+        ws.cell(row=r0, column=c, value=t)
+    style_header(ws, r0, 4)
+    r = r0 + 1
     for k, a in sorted(nat.items(), key=lambda kv: -kv[1]["vol"]):
         ws.cell(row=r, column=1, value=k)
         ws.cell(row=r, column=2, value=a["n"])
         ws.cell(row=r, column=3, value=round(a["vol"], 2)).number_format = _MONEY
         ws.cell(row=r, column=4, value=round(a["vol"] / total * 100, 1) if total else 0).number_format = "0.0"
+        _zebra(ws, r, 4)
         r += 1
-    # CFOP por-item (distinto por documento)
     cfop_count: Counter = Counter()
     for d in docs:
         for c in (d.cfops or ([d.cfop] if d.cfop else [])):
             cfop_count[c] += 1
     r += 2
-    ws.cell(row=r, column=1, value="DISTRIBUICAO POR CFOP (itens)").font = _BOLD
+    ws.cell(row=r, column=1, value="DISTRIBUICAO POR CFOP (itens)").font = SUBTITLE_FONT
     r += 1
-    _hdr(ws, r, ["CFOP", "Qtd documentos", "", ""])
+    for c, t in enumerate(["CFOP", "Qtd documentos"], 1):
+        ws.cell(row=r, column=c, value=t)
+    style_header(ws, r, 2)
     r += 1
     for cfop, n in cfop_count.most_common():
         ws.cell(row=r, column=1, value=cfop)
@@ -175,20 +207,28 @@ def gerar_laudo_notas_workbook(
         k = d.data_emissao or "-"
         dia[k]["n"] += 1
         dia[k]["vol"] += d.valor_total
-    _hdr(ws, 1, ["Data", "Qtd", "Volume (R$)"])
-    r = 2
+    r0 = _cab(ws, 3, "Distribuicao temporal")
+    for c, t in enumerate(["Data", "Qtd", "Volume (R$)"], 1):
+        ws.cell(row=r0, column=c, value=t)
+    style_header(ws, r0, 3)
+    r = r0 + 1
     for k in sorted(dia):
         ws.cell(row=r, column=1, value=k)
         ws.cell(row=r, column=2, value=dia[k]["n"])
         ws.cell(row=r, column=3, value=round(dia[k]["vol"], 2)).number_format = _MONEY
+        _zebra(ws, r, 3)
         r += 1
     _larguras(ws, {"A": 14, "B": 10, "C": 16})
 
     # ── Aba 5: Notas (detalhe) ───────────────────────────────────────────
     ws = wb.create_sheet("5. Notas")
-    _hdr(ws, 1, ["Chave", "Tipo", "Num", "Serie", "Data", "Emit CNPJ", "Emit Nome",
-                 "Valor", "ICMS", "PIS", "COFINS", "CFOP", "Situacao", "Chave OK"])
-    r = 2
+    r0 = _cab(ws, 14, "Detalhe documento-a-documento")
+    cols = ["Chave", "Tipo", "Num", "Serie", "Data", "Emit CNPJ", "Emit Nome",
+            "Valor", "ICMS", "PIS", "COFINS", "CFOP", "Situacao", "Chave OK"]
+    for c, t in enumerate(cols, 1):
+        ws.cell(row=r0, column=c, value=t)
+    style_header(ws, r0, 14)
+    r = r0 + 1
     for d in sorted(docs, key=lambda d: (d.data_emissao, d.emit_nome or "")):
         chave_ok = "OK" if d.chave_valida else ("X" if d.chave_valida is False else "-")
         vals = [d.chave, d.tipo, d.numero, d.serie, d.data_emissao, d.emit_cnpj,
@@ -200,18 +240,21 @@ def gerar_laudo_notas_workbook(
                 cell.number_format = _MONEY
         if d.chave_valida is False or d.situacao in ("CANCELADA", "DENEGADA"):
             for c in range(1, 15):
-                ws.cell(row=r, column=c).fill = _RED
+                ws.cell(row=r, column=c).fill = ALERT_FILL
+        else:
+            _zebra(ws, r, 14)
         r += 1
     _larguras(ws, dict(zip("ABCDEFGHIJKLMN",
               [46, 7, 8, 6, 12, 16, 32, 14, 12, 10, 12, 12, 12, 9])))
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = ws.cell(row=r0 + 1, column=1).coordinate
 
     # ── Aba 6: Alertas ───────────────────────────────────────────────────
     ws = wb.create_sheet("6. Alertas")
-    ws["A1"] = "ALERTAS — documentos que exigem atencao"
-    ws["A1"].font = _TITULO
-    _hdr(ws, 3, ["Tipo Alerta", "Chave", "Emitente", "Valor (R$)", "Detalhe"])
-    r = 4
+    r0 = _cab(ws, 5, "Documentos que exigem atencao")
+    for c, t in enumerate(["Tipo Alerta", "Chave", "Emitente", "Valor (R$)", "Detalhe"], 1):
+        ws.cell(row=r0, column=c, value=t)
+    style_header(ws, r0, 5)
+    r = r0 + 1
 
     def _linha_alerta(tipo, d, detalhe, fill):
         nonlocal r
@@ -225,13 +268,13 @@ def gerar_laudo_notas_workbook(
         r += 1
 
     for d in invalidas:
-        _linha_alerta("CHAVE INVALIDA", d, "DV mod-11 nao confere", _RED)
+        _linha_alerta("CHAVE INVALIDA", d, "DV mod-11 nao confere", ALERT_FILL)
     for d in canceladas:
-        _linha_alerta(d.situacao, d, "documento sem validade fiscal", _RED)
+        _linha_alerta(d.situacao, d, "documento sem validade fiscal", ALERT_FILL)
     for d in nao_ativos:
-        _linha_alerta("EMITENTE NAO-ATIVO", d, sit_cad(d.emit_cnpj), _AMBER)
-    if r == 4:
-        ws.cell(row=4, column=1,
+        _linha_alerta("EMITENTE NAO-ATIVO", d, sit_cad(d.emit_cnpj), ALERT_FILL_MEDIO)
+    if r == r0 + 1:
+        ws.cell(row=r, column=1,
                 value="Nenhum alerta — todas as notas validas, ativas e nao-canceladas.").font = _BOLD
     _larguras(ws, {"A": 20, "B": 46, "C": 32, "D": 14, "E": 30})
 
