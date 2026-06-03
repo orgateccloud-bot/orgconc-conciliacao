@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4.2.2
 
       - name: Setup Python 3.12
-        uses: actions/setup-python@v5.6.0
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@v4.2.2
 
       - name: Setup Python 3.12
-        uses: actions/setup-python@v5.6.0
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -118,7 +118,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python 3.12
-        uses: actions/setup-python@v5.6.0
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -217,7 +217,7 @@ jobs:
         working-directory: orgconc-react
         run: npm run build
       - name: Configurar Python (backend p/ E2E)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Instalar deps de sistema (weasyprint)
