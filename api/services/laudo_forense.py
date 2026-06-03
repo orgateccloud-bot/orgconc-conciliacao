@@ -1906,19 +1906,36 @@ blockquote { border-left: 3pt solid #1f7fb8; background: #eef6fb; padding: 3mm 4
 </body></html>"""
 
 
-async def gerar_pdf(html_text, out_pdf):
-    try:
-        from playwright.async_api import async_playwright
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
+async def html_para_pdf_bytes(html_text, landscape=True):
+    """Renderiza HTML em PDF (Playwright/chromium) e retorna os bytes.
+
+    Motor unificado de PDF do projeto — funciona cross-platform (só precisa do
+    chromium), ao contrário do WeasyPrint que exige libs GTK nativas. Retorna
+    None em falha (chamador decide o fallback / erro HTTP).
+    """
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        try:
             page = await browser.new_page()
             await page.set_content(html_text, wait_until="load")
-            await page.pdf(
-                path=str(out_pdf), format="A4", landscape=True,
+            return await page.pdf(
+                format="A4", landscape=landscape,
                 margin={"top": "14mm", "right": "12mm", "bottom": "14mm", "left": "12mm"},
                 print_background=True,
             )
+        finally:
             await browser.close()
+
+
+async def gerar_pdf(html_text, out_pdf):
+    """Escreve o PDF em `out_pdf` (compat: CLI/laudo). Usa html_para_pdf_bytes."""
+    try:
+        blob = await html_para_pdf_bytes(html_text, landscape=True)
+        if not blob:
+            return False
+        with open(out_pdf, "wb") as fh:
+            fh.write(blob)
         return True
     except Exception as exc:  # noqa: BLE001
         print(f"PDF failed: {exc}")

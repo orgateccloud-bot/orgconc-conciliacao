@@ -11,7 +11,11 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from api.matchers.xml_fiscal import DocumentoFiscalLido
-from api.services.laudo_notas import ABAS_NOTAS, gerar_laudo_notas_workbook
+from api.services.laudo_notas import (
+    ABAS_NOTAS,
+    gerar_laudo_notas_html,
+    gerar_laudo_notas_workbook,
+)
 
 client = TestClient(app)
 
@@ -58,6 +62,22 @@ def test_workbook_sem_situacao_nao_quebra():
     assert wb.sheetnames == ABAS_NOTAS
 
 
+def test_html_tem_estrutura_e_stats():
+    docs = [_doc(chave="a" * 44, valor=1000.0), _doc(chave="b" * 44, valor=500.0, emit_cnpj="98765432000110")]
+    html, stats = gerar_laudo_notas_html(docs)
+    assert html.startswith("<!DOCTYPE html>")
+    assert "Laudo de Documentos Fiscais" in html
+    assert "Top Fornecedores" in html and "Natureza de Operacao" in html and "Alertas" in html
+    assert stats["total_documentos"] == 2 and stats["volume_total"] == 1500.0
+
+
+def test_html_escapa_nome_emitente():
+    docs = [_doc(nome="<script>alert(1)</script> LTDA")]
+    html, _ = gerar_laudo_notas_html(docs)
+    assert "<script>alert(1)" not in html
+    assert "&lt;script&gt;" in html
+
+
 # ── Endpoint ────────────────────────────────────────────────────────────────
 
 def _nfe_xml(numero="1", valor="1500.00", chave="3" * 44):
@@ -94,3 +114,17 @@ def test_endpoint_laudo_notas_sem_arquivo_retorna_422():
     # File(...) é obrigatório -> FastAPI valida o corpo
     r = client.post("/fiscal/laudo-notas")
     assert r.status_code == 422
+
+
+def test_endpoint_laudo_notas_formato_html():
+    files = [("arquivos", ("nota.xml", _nfe_xml(), "application/xml"))]
+    r = client.post("/fiscal/laudo-notas?formato=html", files=files)
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("text/html")
+    assert "Laudo de Documentos Fiscais" in r.text
+
+
+def test_endpoint_laudo_notas_formato_invalido_400():
+    files = [("arquivos", ("nota.xml", _nfe_xml(), "application/xml"))]
+    r = client.post("/fiscal/laudo-notas?formato=docx", files=files)
+    assert r.status_code == 400
