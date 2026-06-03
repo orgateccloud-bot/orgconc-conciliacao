@@ -66,8 +66,10 @@ def test_html_tem_estrutura_e_stats():
     docs = [_doc(chave="a" * 44, valor=1000.0), _doc(chave="b" * 44, valor=500.0, emit_cnpj="98765432000110")]
     html, stats = gerar_laudo_notas_html(docs)
     assert html.startswith("<!DOCTYPE html>")
-    assert "Laudo de Documentos Fiscais" in html
+    assert "Documentos Fiscais" in html
     assert "Top Fornecedores" in html and "Natureza de Operacao" in html and "Alertas" in html
+    # visual do laudo forense (capa + fontes)
+    assert "capa" in html and "Playfair Display" in html
     assert stats["total_documentos"] == 2 and stats["volume_total"] == 1500.0
 
 
@@ -121,7 +123,7 @@ def test_endpoint_laudo_notas_formato_html():
     r = client.post("/fiscal/laudo-notas?formato=html", files=files)
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("text/html")
-    assert "Laudo de Documentos Fiscais" in r.text
+    assert "Documentos Fiscais" in r.text
 
 
 def test_endpoint_laudo_notas_formato_invalido_400():

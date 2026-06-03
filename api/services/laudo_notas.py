@@ -257,11 +257,20 @@ def _money(x: float) -> str:
     return "R$ " + format(x or 0.0, ",.2f")
 
 
+def _mdcell(s) -> str:
+    """Escapa uma célula de tabela Markdown (markdown deixa HTML cru passar)."""
+    return _html.escape(str(s)).replace("|", "/").replace("\n", " ")
+
+
 def gerar_laudo_notas_html(
     documentos: Iterable[DocumentoFiscalLido],
     situacao_por_cnpj: Optional[dict[str, str]] = None,
 ) -> tuple[str, dict]:
-    """Versão HTML do laudo de notas (mesmos números do XLSX). Retorna (html, stats)."""
+    """Versão HTML do laudo de notas, no MESMO visual do laudo forense
+    (capa + CSS Playfair/Source Sans + assinatura). Gera o conteúdo em Markdown
+    e envelopa via laudo_forense.gerar_html. Retorna (html, stats)."""
+    from api.services.laudo_forense import gerar_html  # evita import pesado no load
+
     docs = [d for d in documentos if d.chave]
     sit_map = situacao_por_cnpj or {}
 
@@ -270,14 +279,14 @@ def gerar_laudo_notas_html(
 
     total = sum(d.valor_total for d in docs)
     icms = sum(d.valor_icms for d in docs)
-    pis = sum(d.valor_pis for d in docs)
-    cofins = sum(d.valor_cofins for d in docs)
     por_situacao = Counter(d.situacao for d in docs)
     invalidas = [d for d in docs if d.chave_valida is False]
     canceladas = [d for d in docs if d.situacao in ("CANCELADA", "DENEGADA")]
     nao_ativos = [d for d in docs if _situacao_nao_ativa(sit_cad(d.emit_cnpj))]
     datas = sorted(d.data_emissao for d in docs if d.data_emissao)
     tipos = Counter(d.tipo for d in docs)
+    n_alertas = len(invalidas) + len(canceladas) + len(nao_ativos)
+    periodo = (datas[0] + " a " + datas[-1]) if datas else "-"
 
     agg: dict[str, dict] = defaultdict(lambda: {"n": 0, "vol": 0.0, "nome": ""})
     for d in docs:
@@ -299,104 +308,75 @@ def gerar_laudo_notas_html(
         for c in (d.cfops or ([d.cfop] if d.cfop else [])):
             cfop_count[c] += 1
 
-    e = _html.escape
-    periodo = (datas[0] + " a " + datas[-1]) if datas else "-"
-    n_alertas = len(invalidas) + len(canceladas) + len(nao_ativos)
-
-    css = """
-@page{size:A4;margin:14mm}
-*{box-sizing:border-box}
-body{font-family:'Segoe UI',Arial,sans-serif;color:#1b2733;font-size:10pt;margin:0;line-height:1.5}
-.hd{background:#0F172A;color:#fff;padding:20px 28px}
-.hd h1{margin:0;font-size:19pt}
-.hd .sub{opacity:.85;font-size:8.5pt;text-transform:uppercase;letter-spacing:.14em;margin-top:5px}
-.kpi{display:inline-block;margin:10px 22px 10px 0}
-.kpi b{display:block;font-size:16pt;color:#0F172A}
-.kpibox{padding:14px 28px}
-.alert{background:#FDE2E2;color:#9B1C1C}
-.ok{background:#DCFCE7;color:#166534}
-.badge{display:inline-block;padding:3px 12px;border-radius:12px;font-size:9pt;font-weight:600}
-h2{font-size:12.5pt;color:#12345e;margin:20px 28px 6px;padding:3px 0 3px 10px;border-left:3px solid #1f7fb8}
-table{width:calc(100% - 56px);margin:8px 28px;border-collapse:collapse;font-size:9pt}
-th{background:#0F172A;color:#fff;padding:7px 9px;text-align:left}
-td{padding:6px 9px;border-bottom:1px solid #E2E8F0}
-td.n{text-align:right}
-tr.crit td{background:#FDE2E2}
-.foot{margin:18px 28px;font-size:8pt;color:#64748b;border-top:1px solid #E2E8F0;padding-top:8px}
-"""
-
-    def linhas_forn():
-        out = []
-        for cnpj, a in top_forn:
-            sc = sit_cad(cnpj)
-            cls = " class='crit'" if _situacao_nao_ativa(sc) else ""
-            out.append(
-                "<tr" + cls + "><td>" + e(cnpj) + "</td><td>" + e((a["nome"] or "")[:38])
-                + "</td><td class='n'>" + str(a["n"]) + "</td><td class='n'>" + _money(a["vol"])
-                + "</td><td>" + e(sc or "(sem cadastro)") + "</td></tr>")
-        return "".join(out)
-
-    def linhas_nat():
-        return "".join(
-            "<tr><td>" + e(k) + "</td><td class='n'>" + str(a["n"]) + "</td><td class='n'>"
-            + _money(a["vol"]) + "</td><td class='n'>"
-            + format((a["vol"] / total * 100) if total else 0, ".1f") + "%</td></tr>"
-            for k, a in top_nat)
-
-    def linhas_cfop():
-        return "".join(
-            "<tr><td>" + e(c) + "</td><td class='n'>" + str(n) + "</td></tr>"
-            for c, n in cfop_count.most_common(12))
-
-    def bloco_alertas():
-        if n_alertas == 0:
-            return ("<p style='margin:8px 28px' class='badge ok'>Nenhum alerta — "
-                    "todas as notas validas, ativas e nao-canceladas.</p>")
-        linhas = []
+    # ---- corpo em Markdown (envelopado pelo template do forense) ----
+    L = []
+    L.append("## 1. Resumo Executivo")
+    L.append("")
+    L.append("| Indicador | Valor |")
+    L.append("|---|---:|")
+    L.append("| Documentos fiscais | " + format(len(docs), ",") + " |")
+    L.append("| Tipos | " + _mdcell(", ".join(t + " " + str(n) for t, n in tipos.items())) + " |")
+    L.append("| Volume documentado | " + _money(total) + " |")
+    L.append("| ICMS | " + _money(icms) + " |")
+    L.append("| Fornecedores | " + str(len({d.emit_cnpj for d in docs if d.emit_cnpj})) + " |")
+    L.append("| Canceladas/denegadas | " + str(por_situacao.get("CANCELADA", 0) + por_situacao.get("DENEGADA", 0)) + " |")
+    L.append("| Chaves invalidas (mod-11) | " + str(len(invalidas)) + " |")
+    L.append("| **Alertas** | **" + str(n_alertas) + "** |")
+    L.append("")
+    L.append("## 2. Top Fornecedores (por volume)")
+    L.append("")
+    L.append("| CNPJ | Razao Social | Qtd | Volume | Situacao |")
+    L.append("|---|---|---:|---:|---|")
+    for cnpj, a in top_forn:
+        L.append("| " + _mdcell(cnpj) + " | " + _mdcell((a["nome"] or "")[:38]) + " | " + str(a["n"])
+                 + " | " + _money(a["vol"]) + " | " + _mdcell(sit_cad(cnpj) or "(sem cadastro)") + " |")
+    L.append("")
+    L.append("## 3. Natureza de Operacao")
+    L.append("")
+    L.append("| Natureza | Qtd | Volume | % |")
+    L.append("|---|---:|---:|---:|")
+    for k, a in top_nat:
+        pct = (a["vol"] / total * 100) if total else 0
+        L.append("| " + _mdcell(k) + " | " + str(a["n"]) + " | " + _money(a["vol"]) + " | "
+                 + format(pct, ".1f") + "% |")
+    L.append("")
+    L.append("## 4. Distribuicao por CFOP")
+    L.append("")
+    L.append("| CFOP | Qtd documentos |")
+    L.append("|---|---:|")
+    for c, n in cfop_count.most_common(12):
+        L.append("| " + _mdcell(c) + " | " + str(n) + " |")
+    L.append("")
+    L.append("## 5. Alertas")
+    L.append("")
+    if n_alertas == 0:
+        L.append("*Nenhum alerta — todas as notas validas, ativas e nao-canceladas.*")
+    else:
+        L.append("| Alerta | Chave | Emitente | Valor |")
+        L.append("|---|---|---|---:|")
         for d in invalidas[:50]:
-            linhas.append("<tr class='crit'><td>CHAVE INVALIDA</td><td>" + e(d.chave)
-                          + "</td><td>" + e((d.emit_nome or "")[:30]) + "</td><td class='n'>"
-                          + _money(d.valor_total) + "</td></tr>")
+            L.append("| CHAVE INVALIDA | " + _mdcell(d.chave) + " | " + _mdcell((d.emit_nome or "")[:30])
+                     + " | " + _money(d.valor_total) + " |")
         for d in canceladas[:50]:
-            linhas.append("<tr class='crit'><td>" + e(d.situacao) + "</td><td>" + e(d.chave)
-                          + "</td><td>" + e((d.emit_nome or "")[:30]) + "</td><td class='n'>"
-                          + _money(d.valor_total) + "</td></tr>")
+            L.append("| " + _mdcell(d.situacao) + " | " + _mdcell(d.chave) + " | "
+                     + _mdcell((d.emit_nome or "")[:30]) + " | " + _money(d.valor_total) + " |")
         for d in nao_ativos[:50]:
-            linhas.append("<tr><td>EMITENTE NAO-ATIVO</td><td>" + e(d.chave)
-                          + "</td><td>" + e((d.emit_nome or "")[:30]) + "</td><td class='n'>"
-                          + _money(d.valor_total) + "</td></tr>")
-        return ("<table><tr><th>Alerta</th><th>Chave</th><th>Emitente</th><th>Valor</th></tr>"
-                + "".join(linhas) + "</table>")
+            L.append("| EMITENTE NAO-ATIVO | " + _mdcell(d.chave) + " | " + _mdcell((d.emit_nome or "")[:30])
+                     + " | " + _money(d.valor_total) + " |")
+    L.append("")
+    L.append("---")
+    L.append("*Validacao de chave estrutural (mod-11) — nao prova autenticidade (exige SEFAZ). "
+             "Documentos cancelados/denegados excluidos da cobertura. Detalhe documento-a-documento no XLSX.*")
+    md = "\n".join(L)
 
-    html = (
-        "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='utf-8'><style>" + css + "</style></head><body>"
-        "<div class='hd'><h1>Laudo de Documentos Fiscais</h1>"
-        "<div class='sub'>ORGATEC &middot; Contabilidade &middot; Auditoria &middot; Compliance</div>"
-        "<div style='margin-top:7px'>Periodo " + e(periodo) + " &middot; "
-        + str(len(docs)) + " documentos</div></div>"
-        "<div class='kpibox'>"
-        "<div class='kpi'><b>" + format(len(docs), ",") + "</b>documentos ("
-        + ", ".join(t + " " + str(n) for t, n in tipos.items()) + ")</div>"
-        "<div class='kpi'><b>" + _money(total) + "</b>volume documentado</div>"
-        "<div class='kpi'><b>" + str(len({d.emit_cnpj for d in docs if d.emit_cnpj})) + "</b>fornecedores</div>"
-        "<div class='kpi'><b>" + _money(icms) + "</b>ICMS</div>"
-        "<div class='kpi'><b>" + str(por_situacao.get("CANCELADA", 0) + por_situacao.get("DENEGADA", 0))
-        + "</b>canceladas/denegadas</div>"
-        "<div class='kpi'><span class='badge " + ("alert" if n_alertas else "ok") + "'>"
-        + str(n_alertas) + " alertas</span></div>"
-        "</div>"
-        "<h2>Top Fornecedores (por volume)</h2>"
-        "<table><tr><th>CNPJ</th><th>Razao Social</th><th>Qtd</th><th>Volume</th>"
-        "<th>Situacao Cadastral</th></tr>" + linhas_forn() + "</table>"
-        "<h2>Natureza de Operacao</h2>"
-        "<table><tr><th>Natureza</th><th>Qtd</th><th>Volume</th><th>%</th></tr>" + linhas_nat() + "</table>"
-        "<h2>Distribuicao por CFOP</h2>"
-        "<table><tr><th>CFOP</th><th>Qtd documentos</th></tr>" + linhas_cfop() + "</table>"
-        "<h2>Alertas</h2>" + bloco_alertas()
-        + "<div class='foot'>Validacao de chave estrutural (mod-11) — nao prova autenticidade "
-        "(exige SEFAZ). Documentos cancelados/denegados excluidos da cobertura. "
-        "Detalhe documento-a-documento disponivel no formato XLSX.</div>"
-        "</body></html>"
+    html = gerar_html(
+        md, periodo=periodo,
+        titulo="Laudo de<br>Documentos Fiscais",
+        subtitulo="Sistema OrgConc · Auditoria Fiscal",
+        objeto="Análise da base documental (NF-e/CT-e/NFS-e): volume por fornecedor, natureza de "
+               "operação, CFOP, situação cadastral e alertas (chaves inválidas, canceladas, emitentes não-ativos).",
+        razao="Base documental fiscal",
+        cnpj="—",
     )
 
     stats = {

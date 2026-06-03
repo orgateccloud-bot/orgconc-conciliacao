@@ -1807,7 +1807,10 @@ def gerar_md(stats):
     return "\n".join(lines), {"total_pr": total_pr, "total_exc": total_exc, "total_pb": total_pb}
 
 
-def gerar_html(md_text, periodo=""):
+def gerar_html(md_text, periodo="", titulo=None, objeto=None, razao=None, cnpj=None, subtitulo=None):
+    """Envelopa um corpo Markdown no template visual padrão dos laudos ORGATEC
+    (capa + CSS Playfair/Source Sans + assinatura). Reutilizável por outros
+    laudos (notas, fiscal) para visual idêntico — basta passar titulo/objeto."""
     import markdown as mdlib
     body = mdlib.markdown(md_text, extensions=["tables", "fenced_code"])
     # A capa já carrega título/empresa/período — remove o cabeçalho redundante do MD
@@ -1815,8 +1818,14 @@ def gerar_html(md_text, periodo=""):
     if "<h2" in body:
         body = body[body.index("<h2"):]
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-    razao = EMPRESA.get("razao_social", "") or "—"
-    cnpj = EMPRESA.get("cnpj", "—")
+    razao = razao or (EMPRESA.get("razao_social", "") or "—")
+    cnpj = cnpj or EMPRESA.get("cnpj", "—")
+    titulo = titulo or "Laudo de Auditoria<br>Bancária Forense"
+    subtitulo = subtitulo or "Sistema OrgAudi · Auditoria Bancária Forense"
+    objeto = objeto or (
+        razao + " — análise forense de extratos bancários (OFX): regime × teto, "
+        "retenções na fonte, tipologias (smurfing, carrossel, pós-baixa) e cruzamento cadastral RFB/BrasilAPI."
+    )
     css = """
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
 @page { size: A4 landscape; margin: 14mm 14mm 16mm 14mm;
@@ -1875,13 +1884,12 @@ blockquote { border-left: 3pt solid #1f7fb8; background: #eef6fb; padding: 3mm 4
   <div>
     <div class="capa-brand">{html_logo_inline()}<div class="capa-wm">
       <div class="nome">ORGATEC</div><div class="desc">Contabilidade e Auditoria</div></div></div>
-    <div class="capa-sub">Sistema OrgAudi · Auditoria Bancária Forense</div>
+    <div class="capa-sub">{subtitulo}</div>
   </div>
   <div class="capa-mid">
-    <div class="capa-titulo">Laudo de Auditoria<br>Bancária Forense</div>
+    <div class="capa-titulo">{titulo}</div>
     <div class="capa-rule"></div>
-    <div class="capa-objeto">{razao} — análise forense de extratos bancários (OFX): regime × teto,
-      retenções na fonte, tipologias (smurfing, carrossel, pós-baixa) e cruzamento cadastral RFB/BrasilAPI.</div>
+    <div class="capa-objeto">{objeto}</div>
     <div class="capa-selo">Parecer técnico · assessoria · caráter indicativo</div>
   </div>
   <div class="capa-meta">
