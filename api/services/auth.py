@@ -203,13 +203,21 @@ def autorizar_cliente(
 ) -> None:
     """Verifica se o usuario tem acesso ao cliente solicitado.
 
-    Roles privilegiados (admin, auditor, anonymous) acessam qualquer cliente.
+    Roles privilegiados (admin, auditor, service) acessam qualquer cliente.
     User so acessa o proprio cliente_id; token sem cliente_id (legado) passa.
+
+    'anonymous' NAO e privilegiado: so existe em dev/staging sem auth
+    (current_user nunca o emite em producao). Em producao, por defesa em
+    profundidade, anonymous e explicitamente negado para recursos com dono.
     """
-    if user.role in ("admin", "auditor", "anonymous"):
+    if user.role in ("admin", "auditor", "service"):
         return
+    if user.role == "anonymous":
+        if _IS_PROD:
+            raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
+        return  # dev/staging: conveniencia de acesso sem token
     if not user.cliente_id:
-        return
+        return  # token legado sem cliente_id (compat)
     if user.cliente_id == cliente_id:
         return
     raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
