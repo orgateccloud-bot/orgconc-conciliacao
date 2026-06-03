@@ -685,6 +685,18 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
                 ws.cell(row=r, column=c).fill = ZEBRA_FILL
         r += 1
 
+    # Volume liquido = bruto menos transferencias internas (auto-movimentacao
+    # por proprio CNPJ + mesma titularidade entre contas proprias), que NAO
+    # representam movimentacao economica real. Mesma deteccao da aba 8.
+    _cnpj_basico = EMPRESA.get("cnpj_basico", "")
+    vol_transf_interna = 0.0
+    for _d in todas_disps:
+        _txt = ((_d.transacao.nome or "") + " " + (_d.transacao.memo or "")).upper()
+        if (_cnpj_basico and (_d.cnpj == _cnpj_basico or _cnpj_basico in re.sub(r"\D", "", _txt))) \
+           or "MESMA TIT" in _txt or "MESMA TITULAR" in _txt:
+            vol_transf_interna += abs(_d.transacao.valor)
+    volume_liquido = volume_bruto - vol_transf_interna
+
     # Sumario rapido
     r += 2
     ws.cell(row=r, column=1, value="SUMARIO EXECUTIVO").font = SUBTITLE_FONT
@@ -694,6 +706,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         ("Periodo analisado", f"{periodo_str} ({n_meses} meses)"),
         ("Total de transacoes", f"{n_total:,}"),
         ("Volume bruto movimentado", f"R$ {volume_bruto:,.2f}"),
+        ("Volume liquido (excl. transf. internas)", f"R$ {volume_liquido:,.2f}"),
         ("Volume anualizado projetado", f"R$ {anualizado:,.2f}"),
         ("Saldo inicial do periodo", f"R$ {saldo_ini_jan:,.2f}"),
         ("Saldo final do periodo", f"R$ {saldo_fim_mai:,.2f}"),
@@ -836,6 +849,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         ("Volume de creditos", cred_total),
         ("Volume de debitos", deb_total),
         ("Volume bruto movimentado", volume_bruto),
+        ("Volume liquido (excl. transf. internas)", volume_liquido),
         ("Saldo inicial do periodo", saldo_ini_jan),
         ("Saldo final do periodo", saldo_fim_mai),
         ("Variacao do periodo", saldo_fim_mai - saldo_ini_jan),
@@ -1543,6 +1557,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         "fiscal": fiscal,
         "anualizado": anualizado, "multiplo": multiplo, "meses_obs": meses_obs,
         "n_total": n_total, "volume_bruto": volume_bruto,
+        "volume_liquido": volume_liquido, "vol_transf_interna": vol_transf_interna,
         "cred_total": cred_total, "deb_total": deb_total,
         "saldo_ini": saldo_ini_jan, "saldo_fim": saldo_fim_mai,
         "saldos": saldos, "todas_disps": todas_disps,
@@ -1586,6 +1601,7 @@ def gerar_md(stats):
         f"| Volume de creditos | R$ {cred:,.2f} |",
         f"| Volume de debitos | R$ {deb:,.2f} |",
         f"| Volume bruto movimentado | **R$ {vol:,.2f}** |",
+        f"| Volume liquido (excl. transf. internas) | **R$ {stats.get('volume_liquido', vol):,.2f}** |",
         f"| Saldo inicial do periodo | R$ {saldo_ini:,.2f} |",
         f"| Saldo final do periodo | R$ {saldo_fim:,.2f} |",
         f"| Variacao do periodo | R$ {saldo_fim - saldo_ini:,.2f} |",
