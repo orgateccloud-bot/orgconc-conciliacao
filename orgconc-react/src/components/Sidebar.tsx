@@ -4,6 +4,7 @@ import {
   Users, FileText, LayoutDashboard, LineChart, Settings,
   Upload, AlertTriangle, ShieldCheck, Lock, Activity,
   Network, Receipt, FileSignature, ScrollText, FileWarning, Calculator,
+  FileBarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ const OPERACAO_ITEMS: SidebarItem[] = [
 ];
 
 const FISCAL_ITEMS: SidebarItem[] = [
+  { id: "laudo",               label: "Laudo Integrado",  icon: FileBarChart2 },
   { id: "conformidade-fiscal", label: "Conformidade",     icon: ScrollText },
   { id: "gaps-fiscais",        label: "Gaps Fiscais",     icon: FileWarning },
   { id: "risco-tributario",    label: "Risco Tributário", icon: Calculator },
@@ -67,6 +69,7 @@ export function SidebarNavContent({
       "dashboard","conciliacao","upload","matchers","guias","contratos",
       "clientes","anomalias","relatorios","configuracoes",
       "conformidade-fiscal","gaps-fiscais","risco-tributario","cartas-fiscais",
+      "laudo",
     ];
     if (routableIds.includes(id)) navigate(`/${id}`);
     onNavigate?.();
