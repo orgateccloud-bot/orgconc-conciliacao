@@ -19,13 +19,10 @@ const ACTION_ICONE: Record<string, { Icon: typeof Activity; cor: string }> = {
 export function AuditTimeline({ data }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  if (!data) {
+  if (data === null) {
     return (
-      <div className="rounded-3xl border glass p-6">
-        <Header total={0} integra={true} />
-        <p className="text-xs text-muted-foreground mt-3">
-          Trilha de auditoria indisponível (backend offline).
-        </p>
+      <div className="flex items-center justify-center h-24 text-sm text-muted-foreground">
+        Auditoria indisponível
       </div>
     );
   }

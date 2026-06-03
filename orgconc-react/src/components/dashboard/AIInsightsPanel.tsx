@@ -57,7 +57,7 @@ export function AIInsightsPanel({ data, loading, onRefresh }: Props) {
 }
 
 function InsightCard({ insight }: { insight: AiInsight }) {
-  const meta = TIPO_ICONE[insight.tipo];
+  const meta = TIPO_ICONE[insight.tipo] ?? TIPO_ICONE['info'] ?? Object.values(TIPO_ICONE)[0];
   const Icon = meta.Icon;
 
   return (

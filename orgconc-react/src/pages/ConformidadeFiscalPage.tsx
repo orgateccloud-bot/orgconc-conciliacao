@@ -21,22 +21,8 @@ import {
 import { HeroCard } from "@/components/HeroCard";
 import { toast } from "sonner";
 import { FileText, Upload, ShieldCheck, AlertOctagon, TrendingDown, FileWarning } from "lucide-react";
-import { cn, formatBytes } from "@/lib/utils";
-
-const CLASSE_COLOR: Record<string, string> = {
-  BAIXO: "bg-green-100 text-green-700 border-green-200",
-  MEDIO: "bg-blue-100 text-blue-700 border-blue-200",
-  ALTO: "bg-orange-100 text-orange-700 border-orange-200",
-  CRITICO: "bg-red-100 text-red-700 border-red-200",
-};
-
-function formatBRL(v: number): string {
-  return v.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 2,
-  });
-}
+import { cn, formatBytes, formatBRL } from "@/lib/utils";
+import { corBadge } from "@/lib/risco-cores";
 
 export function ConformidadeFiscalPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -299,7 +285,7 @@ export function ConformidadeFiscalPage() {
                     <td className="py-2 px-2">
                       <span className={cn(
                         "inline-block px-2 py-0.5 rounded text-xs font-semibold border",
-                        CLASSE_COLOR[f.risco_classe] ?? "",
+                        corBadge(f.risco_classe),
                       )}>
                         {f.risco_classe}
                       </span>

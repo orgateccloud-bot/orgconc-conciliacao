@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   BrowserRouter,
   Routes,
@@ -31,6 +32,10 @@ const ConformidadeFiscalPage = lazy(() => import("@/pages/ConformidadeFiscalPage
 const GapsFiscaisPage   = lazy(() => import("@/pages/GapsFiscaisPage").then(m => ({ default: m.GapsFiscaisPage })));
 const RiscoTributarioPage = lazy(() => import("@/pages/RiscoTributarioPage").then(m => ({ default: m.RiscoTributarioPage })));
 const CartasFiscaisPage = lazy(() => import("@/pages/CartasFiscaisPage").then(m => ({ default: m.CartasFiscaisPage })));
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 60000, retry: 1 } },
+});
 
 const TITULOS: Record<string, string> = {
   dashboard:     "Dashboard",
@@ -77,7 +82,7 @@ function DashboardLayout() {
       const clientes = Array.isArray(clts) ? clts.length : 0;
       setSidebarCounts({ anomalias, clientes });
     });
-  }, []);
+  }, [location.pathname]);
 
   const secao = location.pathname.replace(/^\//, "");
   const title = TITULOS[secao] ?? "OrgConc";
@@ -120,6 +125,7 @@ function DashboardLayout() {
 
 export default function App() {
   return (
+    <QueryClientProvider client={queryClient}>
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter basename="/app">
@@ -149,5 +155,6 @@ export default function App() {
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>
+    </QueryClientProvider>
   );
 }

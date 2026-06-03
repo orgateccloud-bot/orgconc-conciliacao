@@ -377,6 +377,58 @@ class ConformidadeFornecedor(Base):
     atualizado_em:            Mapped[datetime]   = mapped_column(TIMESTAMPTZ, default=_now)
 
 
+class ApuracaoCBSIBS(Base):
+    """Apuração CBS/IBS/IS devolvida pela Calculadora (serviço OrgFiscal, sobre a
+    API oficial do SERPRO/RFB) para um documento fiscal. Contrato: IC-02.
+
+    Granularidade: uma apuração por (documento_id, versao_base) — índice único;
+    gravação idempotente (upsert ao re-apurar). O cálculo NÃO é feito aqui
+    (fronteira IC-02 §1.3): esta tabela apenas PERSISTE o resultado. Espelha a
+    Migration 013 (apuracao_cbs_ibs).
+    """
+    __tablename__ = "apuracao_cbs_ibs"
+    __table_args__ = (
+        Index("ix_apuracao_cbsibs_doc_versao", "documento_id", "versao_base", unique=True),
+        Index("ix_apuracao_cbsibs_cliente_doc", "cliente_id", "documento_id"),
+        Index("ix_apuracao_cbsibs_cliente_ambiente", "cliente_id", "ambiente"),
+    )
+
+    id:                 Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    cliente_id:         Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    documento_id:       Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), ForeignKey("documento_fiscal.id", ondelete="CASCADE"), nullable=False)
+
+    # Gate de proveniência (IC-02 §4) — obrigatórios
+    versao_base:        Mapped[str]         = mapped_column(String(20), nullable=False)   # ex.: "V0033"
+    ambiente:           Mapped[str]         = mapped_column(String(10), nullable=False)   # PILOTO | PRODUCAO
+    motor_versao:       Mapped[str | None]  = mapped_column(String(40))                   # ex.: "CalculadorTributo v1.1.0"
+
+    # Contexto da operação
+    uf:                 Mapped[str | None]  = mapped_column(String(2))
+    municipio_ibge:     Mapped[str | None]  = mapped_column(String(7))
+    data_fato_gerador:  Mapped[date | None] = mapped_column(Date)
+    base_calculo_total: Mapped[float]       = mapped_column(Numeric(15, 2), default=0)
+
+    # Decomposição por esfera (IC-02 §3.2). Alíquotas em %, conforme API (pIBSUF etc.)
+    aliquota_ibs_uf:    Mapped[float | None] = mapped_column(Numeric(9, 6))
+    valor_ibs_uf:       Mapped[float]        = mapped_column(Numeric(15, 2), default=0)
+    aliquota_ibs_mun:   Mapped[float | None] = mapped_column(Numeric(9, 6))
+    valor_ibs_mun:      Mapped[float]        = mapped_column(Numeric(15, 2), default=0)
+    aliquota_cbs:       Mapped[float | None] = mapped_column(Numeric(9, 6))
+    valor_cbs:          Mapped[float]        = mapped_column(Numeric(15, 2), default=0)
+    aliquota_is:        Mapped[float | None] = mapped_column(Numeric(9, 6))
+    valor_is:           Mapped[float]        = mapped_column(Numeric(15, 2), default=0)
+    v_tot_trib:         Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False, default=0)
+
+    # Rastreabilidade (IC-02 §5)
+    fundamentacao_legal: Mapped[str | None]  = mapped_column(Text)
+    memoria_calculo:     Mapped[dict | None] = mapped_column(JSONB)   # {gIBSUF, gIBSMun, gCBS, gIS: texto}
+    itens:               Mapped[list | None] = mapped_column(JSONB)   # detalhe por item (ncm/cst/cClassTrib/base/valores)
+    payload_hash:        Mapped[str | None]  = mapped_column(String(64))
+
+    obtido_em:          Mapped[datetime]    = mapped_column(TIMESTAMPTZ, default=_now)
+    criado_em:          Mapped[datetime]    = mapped_column(TIMESTAMPTZ, default=_now)
+
+
 class RefreshToken(Base):
     """Refresh tokens opacos (sha256) para rotação de sessão. NUNCA são JWT.
 

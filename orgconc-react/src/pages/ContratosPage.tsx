@@ -18,14 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatBRLNum } from "@/lib/utils";
 import { toast } from "sonner";
 import { FileSignature, Search } from "lucide-react";
 
 const PERIODICIDADES = ["mensal", "bimestral", "trimestral", "semestral", "anual"];
-
-function formatBRL(v: number): string {
-  return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export function ContratosPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -65,10 +62,13 @@ export function ContratosPage() {
     }
     setBusy(true);
     try {
+      const limpo = valor.replace(/[^0-9,]/g, "");
+      const valorNum = Number(limpo.replace(",", "."));
+      if (isNaN(valorNum) || valorNum <= 0) { toast.error("Valor inválido"); return; }
       await criarContrato({
         cliente_id: clienteId,
         descricao,
-        valor: Number(valor.replace(",", ".")),
+        valor: valorNum,
         periodicidade,
         padrao_memo: padraoMemo || null,
         conta_contabil: contaContabil || null,
@@ -182,7 +182,7 @@ export function ContratosPage() {
                 <tr key={c.id} className="border-t hover:bg-muted/30">
                   <td className="p-3 font-medium">{c.descricao}</td>
                   <td className="p-3 text-xs">{nomePorId[c.cliente_id] ?? c.cliente_id.slice(0, 8)}</td>
-                  <td className="p-3 text-right font-mono">{formatBRL(c.valor)}</td>
+                  <td className="p-3 text-right font-mono">{formatBRLNum(c.valor)}</td>
                   <td className="p-3 text-xs">{c.periodicidade ?? "—"}</td>
                   <td className="p-3 text-xs font-mono">{c.padrao_memo ?? "—"}</td>
                   <td className="p-3 text-xs font-mono">{c.conta_contabil ?? "—"}</td>

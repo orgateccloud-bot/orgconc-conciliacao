@@ -27,7 +27,7 @@ export function TrustGrid({ data }: Props) {
         icon={Activity}
         accent="purple"
         title="Trilha de auditoria"
-        meta={`${ciclos} eventos · hash chain ativa · ${taxaDeteccao}% taxa detecção`}
+        meta={`${ciclos} conciliações · hash chain ativa · ${taxaDeteccao}% taxa detecção`}
       />
     </div>
   );

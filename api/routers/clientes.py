@@ -73,7 +73,13 @@ async def criar_cliente(
 
 @router.get("")
 @limiter.limit("30/minute")
-async def listar_clientes(request: Request, apenas_ativos: bool = True):
+async def listar_clientes(
+    request: Request,
+    apenas_ativos: bool = True,
+    user: TokenPayload = Depends(current_user),
+):
+    if user.role not in ("admin", "service", "auditor"):
+        raise HTTPException(403, "Listagem de clientes restrita a administradores")
     if not DB_DISPONIVEL or SessionLocal is None:
         raise HTTPException(503, "Banco de dados nao configurado")
     async with SessionLocal() as db:

@@ -15,23 +15,9 @@ import {
 } from "@/components/ui/select";
 import { HeroCard } from "@/components/HeroCard";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, formatBRL } from "@/lib/utils";
+import { corBadge, CLASSE_COLOR_BAR } from "@/lib/risco-cores";
 import { Calculator, AlertTriangle, Scale } from "lucide-react";
-
-const CLASSE_COLOR: Record<string, string> = {
-  BAIXO: "bg-green-500",
-  MEDIO: "bg-blue-500",
-  ALTO: "bg-orange-500",
-  CRITICO: "bg-red-500",
-};
-
-function formatBRL(v: number): string {
-  return v.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 2,
-  });
-}
 
 export function RiscoTributarioPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -50,11 +36,18 @@ export function RiscoTributarioPage() {
       setRisco(null);
       return;
     }
-    fiscalRiscoTributario(clienteId)
-      .then(setRisco)
-      .catch((err) =>
-        toast.error(err instanceof Error ? err.message : "Falha ao carregar risco"),
-      );
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fiscalRiscoTributario(clienteId);
+        if (!cancelled) setRisco(r);
+      } catch (e) {
+        if (!cancelled)
+          toast.error(e instanceof Error ? e.message : "Falha ao carregar risco");
+      }
+    };
+    load();
+    return () => { cancelled = true; };
   }, [clienteId]);
 
   const totalClasse = risco
@@ -150,7 +143,7 @@ export function RiscoTributarioPage() {
                     </div>
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                       <div
-                        className={cn("h-full transition-all", CLASSE_COLOR[classe])}
+                        className={cn("h-full transition-all", CLASSE_COLOR_BAR[classe])}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -188,7 +181,7 @@ export function RiscoTributarioPage() {
                         <td className="py-2 px-2">
                           <span className={cn(
                             "inline-block px-2 py-0.5 rounded text-xs font-semibold text-white",
-                            CLASSE_COLOR[f.classe] ?? "",
+                            corBadge(f.classe),
                           )}>
                             {f.classe}
                           </span>
@@ -238,6 +231,9 @@ export function RiscoTributarioPage() {
                 <div className="text-xs text-muted-foreground mt-1">
                   Base × 34% (IRPJ 25% + CSLL 9%)
                 </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  * Baseado em Lucro Real (IRPJ+CSLL 34%). Simples Nacional: ~6-33%; Lucro Presumido: ~15-24%.
+                </p>
               </div>
             </div>
           </section>

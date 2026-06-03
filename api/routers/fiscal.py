@@ -156,6 +156,15 @@ async def processar_fiscal(
     async with SessionLocal() as db:
         chave_para_id = await salvar_documentos_fiscais(db, cid, documentos)
 
+        # TODO(IC-02 / OrgFiscal): apuração CBS/IBS por documento (Reforma Tributária).
+        # Quando o serviço da Calculadora existir, para cada documento persistido:
+        #   from api.services.calculadora_cbs_ibs import apurar_documento, ORGFISCAL_DISPONIVEL
+        #   from api.services.fiscal_persistence import salvar_apuracao
+        #   if ORGFISCAL_DISPONIVEL:
+        #       ap = await apurar_documento(documento_id=doc_id, xml_path=<path>)
+        #       await salvar_apuracao(db, cid, doc_id, ap)  # idempotente por (documento_id, versao_base)
+        # Persistir SEMPRE com versao_base + ambiente (gate IC-02 §4); em PILOTO, propagar a ressalva.
+
         # Cruzamento (opcional, se OFX fornecido)
         transacoes = []
         cruzamentos = []

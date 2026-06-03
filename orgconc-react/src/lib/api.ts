@@ -175,9 +175,21 @@ export interface Cliente {
   ativo?: boolean;
 }
 
+let _clientesCache: unknown[] | null = null;
+let _clientesCacheAt = 0;
+const CLIENTES_TTL_MS = 60_000;
+
 export async function listarClientes() {
-  return apiFetch<Cliente[]>("/clientes");
+  if (_clientesCache !== null && (performance.now() - _clientesCacheAt) < CLIENTES_TTL_MS) {
+    return _clientesCache as Cliente[];
+  }
+  const result = await apiFetch<Cliente[]>("/clientes");
+  _clientesCache = result;
+  _clientesCacheAt = performance.now();
+  return result;
 }
+
+export function invalidarCacheClientes(): void { _clientesCache = null; _clientesCacheAt = 0; }
 
 export async function criarCliente(data: Partial<Cliente>) {
   return apiFetch<Cliente>("/clientes", { method: "POST", body: JSON.stringify(data) });

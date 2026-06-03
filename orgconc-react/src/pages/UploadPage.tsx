@@ -89,6 +89,7 @@ export function UploadPage() {
       toast.success(
         `Conciliação concluída — ${data.anomalias.length} anomalia(s)`
       );
+      try { sessionStorage.setItem('orgconc.last_resultado', JSON.stringify(data)) } catch { /* quota */ }
       navigate("/conciliacao", { state: { resultado: data } });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro na conciliação");

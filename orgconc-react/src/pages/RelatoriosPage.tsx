@@ -96,7 +96,12 @@ export function RelatoriosPage() {
   }, [allRows]);
 
   const trendData = useMemo(() => {
-    return allRows.slice(-10).map((r) => ({
+    const sorted = [...allRows].sort((a, b) => {
+      const ta = a.criado_em ? +new Date(a.criado_em) : 0;
+      const tb = b.criado_em ? +new Date(b.criado_em) : 0;
+      return ta - tb;
+    });
+    return sorted.slice(-10).map((r) => ({
       data: new Date(r.criado_em).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
       anomalias: r.total_anomalias,
     }));

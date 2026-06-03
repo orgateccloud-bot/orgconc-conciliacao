@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   conciliarMatchers,
   listarClientes,
@@ -19,7 +19,7 @@ import {
 import { HeroCard } from "@/components/HeroCard";
 import { toast } from "sonner";
 import { Upload, FileText, X, Network, CheckCircle2, AlertTriangle, Hash } from "lucide-react";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn, formatBytes, formatBRL } from "@/lib/utils";
 
 const DISP_COLOR: Record<string, string> = {
   RESOLVIDO_CADASTRO:    "bg-blue-100 text-blue-700 border-blue-200",
@@ -41,10 +41,6 @@ const EXT_CX: Record<string, string> = {
   xml: "bg-orange-100 text-orange-700",
   zip: "bg-purple-100 text-purple-700",
 };
-
-function formatBRL(v: number): string {
-  return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export function MatchersPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -102,9 +98,9 @@ export function MatchersPage() {
     }
   }
 
-  const disposicoesFiltradas = (resultado?.disposicoes ?? []).filter((d) =>
-    filtroPendentes ? d.disposicao.startsWith("PENDENTE_") || d.disposicao === "NAO_ENCONTRADO" : true
-  );
+  const disposicoesFiltradas = useMemo(() =>
+    resultado?.disposicoes?.filter(d => !filtroPendentes || d.disposicao === 'PENDENTE_REVISAO') ?? [],
+  [resultado, filtroPendentes]);
 
   return (
     <div className="space-y-8">

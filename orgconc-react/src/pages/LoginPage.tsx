@@ -42,14 +42,19 @@ export function LoginPage() {
     setBusy(true);
     try {
       await login(email, senha);
-      localStorage.setItem(LAST_LOGIN_KEY, new Date().toISOString());
-      toast.success("Sessão iniciada");
-      navigate("/conciliacao");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha no login");
-    } finally {
       setBusy(false);
+      return;
     }
+    try {
+      localStorage.setItem(LAST_LOGIN_KEY, new Date().toISOString());
+    } catch {
+      // modo privado ou storage cheio — ignorar
+    }
+    toast.success("Sessão iniciada");
+    setBusy(false);
+    navigate("/conciliacao");
   }
 
   return (

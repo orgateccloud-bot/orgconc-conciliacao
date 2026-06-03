@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
 from api.db import audit_events as crud_audit
-from api.services.auth import current_user
+from api.services.auth import TokenPayload, current_user
 from api.services.logging_estruturado import mask_pii
 
 router = APIRouter(prefix="/activity", tags=["activity"], dependencies=[Depends(current_user)])
@@ -32,11 +32,16 @@ _SEVERIDADES = {
 async def feed(
     request: Request,
     limit: int = Query(10, ge=1, le=50),
+    user: TokenPayload = Depends(current_user),
 ):
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
+    # Admin/auditor/service veem todos os eventos; demais veem apenas os próprios
+    email_filtro = None
+    if user.role not in ("admin", "service", "auditor", "anonymous"):
+        email_filtro = user.email
     async with SessionLocal() as db:
-        eventos = await crud_audit.listar_eventos(db, limit=limit)
+        eventos = await crud_audit.listar_eventos(db, limit=limit, actor_email=email_filtro)
     return [
         {
             "id": str(ev.id),

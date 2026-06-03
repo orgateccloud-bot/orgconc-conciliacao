@@ -6,10 +6,10 @@ interface Badge {
 }
 
 const BADGES: Badge[] = [
-  { sigla: "LGPD",    descricao: "Conformidade com a Lei Geral de Proteção de Dados (Lei 13.709/18)" },
-  { sigla: "SOC 2",   descricao: "Controles de segurança, disponibilidade e confidencialidade" },
-  { sigla: "PCI-DSS", descricao: "Padrão de segurança de dados da indústria de cartões" },
-  { sigla: "BACEN",   descricao: "Aderente a diretrizes do Banco Central do Brasil" },
+  { sigla: "LGPD",                        descricao: "Conformidade com a Lei Geral de Proteção de Dados (Lei 13.709/18)" },
+  { sigla: "SOC 2 (controles em andamento)", descricao: "Controles de segurança em implementação — certificação SOC 2 ainda não emitida" },
+  { sigla: "PCI-DSS (não processa cartões)", descricao: "Padrão PCI-DSS não aplicável — a plataforma não armazena nem processa dados de cartão de pagamento" },
+  { sigla: "BACEN (não é IF autorizada)",    descricao: "Não é Instituição Financeira autorizada pelo Banco Central do Brasil — ferramenta de análise documental" },
 ];
 
 export function ComplianceBadges() {

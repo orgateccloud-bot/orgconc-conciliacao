@@ -13,6 +13,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
+    ApuracaoCBSIBS,
     ConformidadeFornecedor,
     CruzamentoFiscal,
     DocumentoFiscal,
@@ -238,4 +239,50 @@ async def listar_conformidade(
         validas = [c for c, o in ordem.items() if o >= min_ord]
         stmt = stmt.where(ConformidadeFornecedor.risco_classe.in_(validas))
     stmt = stmt.order_by(ConformidadeFornecedor.risco_tributario_anual.desc())
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def salvar_apuracao(
+    db: AsyncSession,
+    cliente_id: uuid.UUID,
+    documento_id: uuid.UUID,
+    payload: dict,
+) -> ApuracaoCBSIBS:
+    """Upsert da apuração CBS/IBS por (documento_id, versao_base) — idempotente (IC-02 §3/§4).
+
+    `payload` deve conter ao menos `versao_base` e `ambiente`; demais campos
+    (valores/alíquotas por esfera, v_tot_trib, memoria_calculo, itens, etc.) são
+    opcionais. O cálculo é responsabilidade da Calculadora (fronteira IC-02 §1.3);
+    esta função apenas persiste o resultado já apurado.
+    """
+    versao_base = payload.get("versao_base")
+    stmt = select(ApuracaoCBSIBS).where(
+        ApuracaoCBSIBS.documento_id == documento_id,
+        ApuracaoCBSIBS.versao_base == versao_base,
+    )
+    existing = (await db.execute(stmt)).scalar_one_or_none()
+    if existing:
+        for k, v in payload.items():
+            if hasattr(existing, k):
+                setattr(existing, k, v)
+        existing.obtido_em = datetime.now(timezone.utc)
+        await db.flush()
+        return existing
+
+    novo = ApuracaoCBSIBS(cliente_id=cliente_id, documento_id=documento_id, **payload)
+    db.add(novo)
+    await db.flush()
+    return novo
+
+
+async def listar_apuracao(
+    db: AsyncSession,
+    cliente_id: uuid.UUID,
+    documento_id: Optional[uuid.UUID] = None,
+    limit: int = 500,
+) -> list[ApuracaoCBSIBS]:
+    stmt = select(ApuracaoCBSIBS).where(ApuracaoCBSIBS.cliente_id == cliente_id)
+    if documento_id:
+        stmt = stmt.where(ApuracaoCBSIBS.documento_id == documento_id)
+    stmt = stmt.order_by(ApuracaoCBSIBS.obtido_em.desc()).limit(limit)
     return list((await db.execute(stmt)).scalars().all())

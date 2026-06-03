@@ -4,6 +4,7 @@ import {
   atualizarCliente,
   listarClientes,
   listarConciliacoesDoCliente,
+  invalidarCacheClientes,
   type Cliente,
   type ConciliacaoMeta,
 } from "@/lib/api";
@@ -114,6 +115,7 @@ export function ClientesPage() {
         telefone: telefone || undefined,
         plano,
       });
+      invalidarCacheClientes();
       toast.success("Cliente cadastrado");
       setNome(""); setCnpj(""); setEmail(""); setTelefone(""); setPlano("basico");
       await carregar();

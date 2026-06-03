@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { HeroCard } from "@/components/HeroCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 import { Download, CheckCircle2, ChevronDown, ChevronUp, Hash, AlertTriangle, Activity, Upload as UploadIcon } from "lucide-react";
 import { cn, formatBytes } from "@/lib/utils";
 import { MODO_CX, MODO_LABEL } from "@/lib/constants";
@@ -34,9 +35,12 @@ export function ConciliacaoPage() {
   const navigate = useNavigate();
   const [expandido, setExpandido] = useState(false);
 
-  // Recebe o resultado vindo do UploadPage via router state
-  const resultado: ConciliacaoResponse | null =
-    (location.state as { resultado?: ConciliacaoResponse })?.resultado ?? null;
+  // Recebe o resultado vindo do UploadPage via router state, com fallback para sessionStorage
+  const resultadoInicial = (location.state as { resultado?: ConciliacaoResponse })?.resultado ?? (() => {
+    try { const s = sessionStorage.getItem('orgconc.last_resultado'); return s ? JSON.parse(s) : null }
+    catch { return null }
+  })()
+  const resultado: ConciliacaoResponse | null = resultadoInicial;
 
   if (!resultado) {
     return (
@@ -131,7 +135,7 @@ export function ConciliacaoPage() {
                   expandido ? "" : "max-h-[40vh] overflow-y-auto"
                 )}
               >
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{resultado.relatorio_md}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>{resultado.relatorio_md}</ReactMarkdown>
               </article>
               {/* gradiente de fade quando recolhido */}
               {!expandido && (

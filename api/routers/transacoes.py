@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
 from api.db import metrics as crud_metrics
-from api.services.auth import current_user
+from api.services.auth import TokenPayload, current_user
 
 router = APIRouter(prefix="/transacoes", tags=["transacoes"], dependencies=[Depends(current_user)])
 
@@ -31,9 +31,18 @@ def _serializar(t) -> dict:
 async def listar_recentes(
     request: Request,
     limit: int = Query(10, ge=1, le=100),
+    user: TokenPayload = Depends(current_user),
 ):
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
+    # Usuários não-privilegiados só enxergam transações do próprio tenant
+    tenant_id = None
+    if user.role not in ("admin", "service", "auditor", "anonymous") and user.cliente_id:
+        import uuid as _uuid
+        try:
+            tenant_id = _uuid.UUID(user.cliente_id)
+        except ValueError:
+            pass
     async with SessionLocal() as db:
-        rows = await crud_metrics.listar_transacoes_recentes(db, limit=limit)
+        rows = await crud_metrics.listar_transacoes_recentes(db, limit=limit, cliente_id=tenant_id)
     return [_serializar(t) for t in rows]

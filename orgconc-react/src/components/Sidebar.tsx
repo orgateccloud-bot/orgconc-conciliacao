@@ -55,9 +55,9 @@ export function SidebarNavContent({
   const operacaoWithBadges = OPERACAO_ITEMS.map((item) => ({
     ...item,
     badge:
-      item.label === "Clientes" && clientes > 0
+      item.id === "clientes" && clientes > 0
         ? clientes
-        : item.label === "Anomalias" && anomalias > 0
+        : item.id === "anomalias" && anomalias > 0
         ? anomalias
         : undefined,
   }));
@@ -65,7 +65,7 @@ export function SidebarNavContent({
   function go(id: string) {
     const routableIds = [
       "dashboard","conciliacao","upload","matchers","guias","contratos",
-      "clientes","relatorios","configuracoes",
+      "clientes","anomalias","relatorios","configuracoes",
       "conformidade-fiscal","gaps-fiscais","risco-tributario","cartas-fiscais",
     ];
     if (routableIds.includes(id)) navigate(`/${id}`);
