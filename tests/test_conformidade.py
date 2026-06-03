@@ -78,28 +78,31 @@ def test_flag_mei_com_cte_nao_dispara():
     assert "MEI_SEM_CTE" not in flags
 
 
-def test_flag_parte_relacionada_heuristica_locar():
+def test_flag_parte_relacionada_nome_empresa_do_socio():
+    """Fornecedor cujo nome carrega o nome de um sócio do cliente."""
     flags = _detectar_flags(
-        nome="LOCAR LOCADORA E TRANSPORTES", cnae="", volume_pago=100,
+        nome="JOAO SILVA LOCADORA E TRANSPORTES", cnae="", volume_pago=100,
         volume_nf=100, is_mei=False, n_ctes=0,
+        nomes_socios=["Joao Silva"],
     )
     assert "PARTE_RELACIONADA" in flags
 
 
 def test_flag_parte_relacionada_por_socio():
     flags = _detectar_flags(
-        nome="RENATO COSTA TRANSPORTES", cnae="", volume_pago=100,
+        nome="MARIA SOUZA TRANSPORTES", cnae="", volume_pago=100,
         volume_nf=100, is_mei=False, n_ctes=0,
-        nomes_socios=["Renato Costa"],
+        nomes_socios=["Maria Souza"],
     )
     assert "PARTE_RELACIONADA" in flags
 
 
-def test_locar_bovinos_nao_dispara_parte_relacionada():
-    """A própria empresa auditada (LOCAR BOVINOS) não deve cair em parte relacionada."""
+def test_sem_socio_correspondente_nao_dispara_parte_relacionada():
+    """Sem sócio conhecido casando o nome, não há parte relacionada (data-driven)."""
     flags = _detectar_flags(
-        nome="LOCAR TRANSPORTE DE BOVINOS LTDA", cnae="", volume_pago=100,
+        nome="TRANSPORTADORA EXEMPLO LTDA", cnae="", volume_pago=100,
         volume_nf=100, is_mei=False, n_ctes=0,
+        nomes_socios=["Joao Silva"],
     )
     assert "PARTE_RELACIONADA" not in flags
 

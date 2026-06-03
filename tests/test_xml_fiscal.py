@@ -66,8 +66,8 @@ def _nfe_xml(numero="123", valor="1500.00", chave=None, modelo="55") -> bytes:
         <enderEmit><UF>GO</UF><xMun>Goiania</xMun></enderEmit>
       </emit>
       <dest>
-        <CNPJ>05509396000110</CNPJ>
-        <xNome>LOCAR</xNome>
+        <CNPJ>99888777000166</CNPJ>
+        <xNome>EMPRESA EXEMPLO</xNome>
       </dest>
       <total>
         <ICMSTot>
@@ -99,8 +99,8 @@ def _cte_xml(numero="999", valor="2500.00", chave=None) -> bytes:
         <UFIni>GO</UFIni>
       </ide>
       <emit>
-        <CNPJ>05509396000110</CNPJ>
-        <xNome>LOCAR TRANSPORTE</xNome>
+        <CNPJ>99888777000166</CNPJ>
+        <xNome>TRANSPORTADORA EXEMPLO</xNome>
         <enderEmit><UF>GO</UF></enderEmit>
       </emit>
       <rem>
@@ -135,7 +135,7 @@ def _nfse_xml(numero="42", valor="800.00") -> bytes:
       </PrestadorServico>
       <TomadorServico>
         <IdentificacaoTomador>
-          <CpfCnpj><Cnpj>05509396000110</Cnpj></CpfCnpj>
+          <CpfCnpj><Cnpj>99888777000166</Cnpj></CpfCnpj>
         </IdentificacaoTomador>
         <RazaoSocial>Tomador</RazaoSocial>
       </TomadorServico>
@@ -166,7 +166,7 @@ def test_parse_nfe_basico():
     assert doc.numero == "123"
     assert doc.valor_total == 1500.0
     assert doc.emit_cnpj == "12345678000190"
-    assert doc.dest_cnpj == "05509396000110"
+    assert doc.dest_cnpj == "99888777000166"
     assert doc.emit_uf == "GO"
     assert doc.valor_pis == 24.75
     assert doc.valor_cofins == 114.0
@@ -201,7 +201,7 @@ def test_parse_cte_basico():
     assert doc.modelo == "57"
     assert doc.numero == "999"
     assert doc.valor_total == 2500.0
-    assert doc.emit_cnpj == "05509396000110"
+    assert doc.emit_cnpj == "99888777000166"
 
 
 def test_parse_cte_xml_invalido():

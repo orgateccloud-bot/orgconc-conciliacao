@@ -14,6 +14,7 @@ Nucleo reutilizavel pela API em api/services/laudo_forense.py (Fase 2).
 from __future__ import annotations
 
 import base64
+import os
 import re
 import xml.etree.ElementTree as ET
 # F-Sec: parse de XML de upload via defusedxml (anti-XXE/billion-laughs).
@@ -81,8 +82,8 @@ ENRICH_LIMITE_PADRAO = 300
 
 EMPRESA: dict = {}  # preenchido por construir_empresa()
 
-PASTA_DEFAULT = r"C:\Users\Veloso\Desktop\locar"
-OUT_DIR = Path(r"C:\Users\Veloso\Downloads")
+PASTA_DEFAULT = os.environ.get("ORGCONC_OFX_DIR", "")
+OUT_DIR = Path(os.environ.get("ORGCONC_OUT_DIR", "."))
 # O serviço NÃO faz I/O de arquivo nem mantém estado de saída — o chamador (CLI/API)
 # salva o Workbook retornado por gerar_laudo_workbook().
 
@@ -456,7 +457,7 @@ def _fmt_cnpj(c: str) -> str:
 
 
 def _cnpj_do_texto(texto: str) -> str:
-    """Extrai um CNPJ (14 dígitos) do texto bancário (ex.: 'Pagamento Pix 05.509.396 0001-10')."""
+    """Extrai um CNPJ (14 dígitos) do texto bancário (ex.: 'Pagamento Pix 12.345.678 0001-90')."""
     m = _RX_CNPJ_FLEX.search(texto or "")
     return "".join(m.groups()) if m else ""
 

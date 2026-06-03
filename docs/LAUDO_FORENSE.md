@@ -26,16 +26,16 @@ api/services/laudo_forense.py   ← NÚCLEO reusável (sem I/O de arquivo, sem d
 ```bash
 python scripts/relatorio_integrado.py \
     --pasta C:\caminho\com\ofx \
-    --conta 158083 \
-    --empresa-cnpj 05509396000110 \
+    --conta 123456 \
+    --empresa-cnpj 12345678000190 \
     --tag meu_laudo \
     --enrich-all
 ```
 
 | Flag | Default | Descrição |
 |---|---|---|
-| `--pasta` | (Desktop\locar) | pasta com os `.ofx` |
-| `--conta` | "" (todas) | escopa a uma conta (substring do ID, ex: `158083`) |
+| `--pasta` | `$ORGCONC_OFX_DIR` | pasta com os `.ofx` |
+| `--conta` | "" (todas) | escopa a uma conta (substring do ID da conta no OFX) |
 | `--empresa-cnpj` | "" | CNPJ da entidade auditada (14 dígitos) — preenche a aba Identificação via cache |
 | `--tag` | `laudo` | sufixo dos arquivos em `Downloads\RELATORIO_INTEGRADO_<tag>.{xlsx,md,html,pdf}` |
 | `--enrich-all` | off | enriquece TODOS os CNPJs nativos (senão top-300) |
@@ -61,9 +61,9 @@ A geração é **serializada por lock** (a aba Identificação usa um estado de 
 
 ## Validação
 
-Reproduz o laudo-verdade LOCAR (`RELATORIO_INTEGRADO_LOCAR_v3_novo.xlsx`) **ao centavo**:
-conta 158083-3, 7.110 transações, heatmap CRÍTICO=18/ALTO=59, pós-baixa 17 / R$ 35.626,89.
-Smoke test em `tests/test_laudo_forense.py`.
+A corretude do motor é travada por um **golden test** com dados sintéticos
+(reprodução determinística do laudo ao centavo). Smoke + golden em
+`tests/test_laudo_forense.py`.
 
 ## Privacidade
 

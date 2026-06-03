@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -17,14 +18,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api.services import laudo_forense as L  # noqa: E402
 
-PASTA_DEFAULT = r"C:\Users\Veloso\Desktop\locar"
-OUT_DIR = Path(r"C:\Users\Veloso\Downloads")
+PASTA_DEFAULT = os.environ.get("ORGCONC_OFX_DIR", "")
+OUT_DIR = Path(os.environ.get("ORGCONC_OUT_DIR", "."))
 
 
 async def main_async() -> None:
     ap = argparse.ArgumentParser(description="Laudo Integrado de Auditoria Bancaria (11 abas) — OrgConc")
     ap.add_argument("--pasta", default=PASTA_DEFAULT, help="pasta com os arquivos .ofx")
-    ap.add_argument("--conta", default="", help="escopar a uma conta (substring do ID, ex: 158083)")
+    ap.add_argument("--conta", default="", help="escopar a uma conta (substring do ID da conta no OFX)")
     ap.add_argument("--empresa-cnpj", default="", help="CNPJ da entidade auditada (14 dígitos)")
     ap.add_argument("--tag", default="laudo", help="sufixo dos arquivos de saída")
     ap.add_argument("--enrich-all", action="store_true", help="enriquecer TODOS os CNPJs (senão top-300)")

@@ -71,7 +71,7 @@ _TRANSACOES_EXEMPLO = [
     _t("TARIFA COBRANCA", "", 4.40, "X116221"),
     _t("DARF PAGAMENTO", "DARF PARCELAMENTO DIFAL", 1234.56, "X96508"),
     _t("DEB.CONV.SEGUROS", "Seguro mensal", 780.00, "X946122"),
-    _t("DEB.TRANSF.CONTAS DIFERENTE", "FAV.: RENATO COSTA SERVICOS", 8000.00, "X433434"),
+    _t("DEB.TRANSF.CONTAS DIFERENTE", "FAV.: JOAO SILVA SERVICOS", 8000.00, "X433434"),
     _t("DEB.TRANSF.CONTAS DIFERENTE", "FAV.: FULANO DESCONHECIDO", 150.00, "X768994"),
     _t("DEB.TRANSF.CONTAS MESMA TIT", "FAV.: PROPRIO CLIENTE", 2000.00, "X106834"),
 ]
@@ -86,7 +86,7 @@ async def test_cascata_completa_relatorio_exemplo():
     # Cadastros conhecidos:
     cliente1 = Cliente(id=uuid.uuid4(), nome="Empresa Alfa LTDA",
                        cnpj="64.961.274/0001-91", ativo=True, plano="basico")
-    cliente2 = Cliente(id=uuid.uuid4(), nome="RENATO COSTA SERVICOS ME",
+    cliente2 = Cliente(id=uuid.uuid4(), nome="JOAO SILVA SERVICOS ME",
                        cnpj="22.333.444/0001-95", ativo=True, plano="basico")
     cliente_pix2 = Cliente(id=uuid.uuid4(), nome="Empresa Beta SA",
                            cnpj="11.222.333/0001-81", ativo=True, plano="basico")
@@ -127,7 +127,7 @@ async def test_cascata_completa_relatorio_exemplo():
                 linhas = [cliente1]
             elif "11222333000181" in normalized:
                 linhas = [cliente_pix2]
-            elif "RENATO COSTA" in stmt_str.upper():
+            elif "JOAO SILVA" in stmt_str.upper():
                 linhas = [cliente2]
             else:
                 linhas = []

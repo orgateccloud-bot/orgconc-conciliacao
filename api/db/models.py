@@ -269,7 +269,7 @@ class DocumentoFiscal(Base):
     """Documento fiscal eletrônico (NF-e / CT-e / NFS-e) persistido após parsing.
 
     Centraliza os 3 tipos de documentos fiscais brasileiros que a auditoria
-    precisa cruzar contra pagamentos no extrato (cf. Constatação VIII LOCAR).
+    precisa cruzar contra pagamentos no extrato.
     """
     __tablename__ = "documento_fiscal"
     __table_args__ = (

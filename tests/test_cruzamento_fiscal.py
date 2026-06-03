@@ -24,7 +24,7 @@ def _doc(chave="abc"*14 + "ab", valor=1000.0, emit_cnpj="12345678000190", data="
     return DocumentoFiscalLido(
         tipo=tipo, modelo="55", chave=chave, numero="1", serie="1",
         data_emissao=data, emit_cnpj=emit_cnpj, emit_nome="Fornecedor",
-        emit_uf="GO", dest_cnpj="05509396000110", dest_nome="LOCAR",
+        emit_uf="GO", dest_cnpj="99888777000166", dest_nome="EMPRESA EXEMPLO",
         valor_total=valor,
     )
 

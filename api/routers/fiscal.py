@@ -254,7 +254,7 @@ _LAUDO_LOCK = threading.Lock()
 async def gerar_laudo(
     request: Request,
     empresa_cnpj: str = Form(..., description="CNPJ da entidade auditada (14 dígitos)"),
-    conta: str = Form("", description="escopar a uma conta (substring do ID, ex: 158083)"),
+    conta: str = Form("", description="escopar a uma conta (substring do ID da conta no OFX)"),
     arquivos: List[UploadFile] = File(..., description="1+ extratos OFX"),
     user: TokenPayload = Depends(current_user),
 ):
