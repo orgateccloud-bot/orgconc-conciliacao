@@ -419,9 +419,11 @@ class ApuracaoCBSIBSRow(Base):
     __table_args__ = (
         Index("ix_apuracao_cbs_ibs_documento", "documento_id"),
         Index("ix_apuracao_cbs_ibs_criado", text("criado_em DESC")),
+        Index("ix_apuracao_cbs_ibs_org", "org_id"),
     )
 
     id:                  Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    org_id:              Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     documento_id:        Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), nullable=False)
     versao_base:         Mapped[str]          = mapped_column(String(20), nullable=False)
     ambiente:            Mapped[str]          = mapped_column(String(10), nullable=False)  # PILOTO/PRODUCAO

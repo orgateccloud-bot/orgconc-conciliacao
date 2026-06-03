@@ -105,7 +105,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: sk-ant-test
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orgconc_test
-        run: python -m pytest tests/test_rls_isolation.py -v
+        run: python -m pytest tests/test_rls_isolation.py tests/test_rls_real_tables.py -v
 
   security:
     name: Security scan

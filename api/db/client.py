@@ -52,5 +52,10 @@ async def get_db():
     """Dependency FastAPI para injetar sessão de banco."""
     if SessionLocal is None:
         raise RuntimeError("DATABASE_URL nao configurado. Defina no .env ou no ambiente.")
+    # Import local evita ciclo (rls_context não depende de client).
+    from api.db.rls_context import aplicar_rls
     async with SessionLocal() as session:
+        # RLS por org: no-op enquanto não há org no contexto (preparado, ver
+        # db/rls/README.md). Quando o token trouxer org_id, filtra no banco.
+        await aplicar_rls(session)
         yield session
