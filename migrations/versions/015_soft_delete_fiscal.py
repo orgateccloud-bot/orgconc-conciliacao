@@ -1,4 +1,4 @@
-"""014 — Soft delete em tabelas fiscais
+"""015 — Soft delete em tabelas fiscais
 
 Adiciona `deletado_em TIMESTAMPTZ` em `documento_fiscal`, `cruzamento_fiscal`
 e `conformidade_fornecedor`. Documentos fiscais são evidência legal (LC 180/2016
@@ -16,8 +16,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "014"
-down_revision = "013"
+revision = "015"
+down_revision = "014"
 branch_labels = None
 depends_on = None
 

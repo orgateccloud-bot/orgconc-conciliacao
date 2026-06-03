@@ -1,4 +1,4 @@
-"""015 — role e cliente_id no refresh_token (corrige escalada no /auth/refresh)
+"""016 — role e cliente_id no refresh_token (corrige escalada no /auth/refresh)
 
 Antes, POST /auth/refresh reemitia o access token com role="admin" fixo — ao
 introduzir login multi-usuario, qualquer sessao viraria admin apos a primeira
@@ -13,8 +13,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "015"
-down_revision = "014"
+revision = "016"
+down_revision = "015"
 branch_labels = None
 depends_on = None
 
