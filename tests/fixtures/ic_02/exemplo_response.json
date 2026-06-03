@@ -1,0 +1,43 @@
+{
+  "documento_id": "550e8400-e29b-41d4-a716-446655440000",
+  "versao_base": "V0033",
+  "ambiente": "PILOTO",
+  "motor_versao": "CalculadorTributo v1.1.0",
+  "uf": "GO",
+  "municipio_ibge": "5208707",
+  "data_fato_gerador": "2026-05-29",
+  "base_calculo_total": 200.00,
+  "gIBSUF": {
+    "pIBSUF": 0.10,
+    "vIBSUF": 0.20,
+    "memoriaCalculo": "Operacao de consumo com enquadramento legal em LC 214/2025, Tributacao integral. Base de calculo R$ 200,00 x aliquota 0,10% (IBS-UF) = R$ 0,20. Valor de teste — ambiente piloto."
+  },
+  "gIBSMun": {
+    "pIBSMun": 0.00,
+    "vIBSMun": 0.00,
+    "memoriaCalculo": "IBS-Municipio sem aliquota ativa para a competencia no ambiente piloto. Base R$ 200,00 x 0,00% = R$ 0,00."
+  },
+  "gCBS": {
+    "pCBS": 0.10,
+    "vCBS": 0.20,
+    "memoriaCalculo": "Base de calculo R$ 200,00 x aliquota 0,10% (CBS) = R$ 0,20. Valor de teste — ambiente piloto."
+  },
+  "gIS": null,
+  "vTotTrib": 0.40,
+  "fundamentacao_legal": "LC 214/2025 — CST 000 / cClassTrib 000001 (situacao tributada integralmente IBS/CBS).",
+  "itens": [
+    {
+      "numero": 1,
+      "ncm": null,
+      "cst": "000",
+      "cClassTrib": "000001",
+      "base_calculo": 200.00,
+      "vIBSUF": 0.20,
+      "vIBSMun": 0.00,
+      "vCBS": 0.20,
+      "vIS": null
+    }
+  ],
+  "payload_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "obtido_em": "2026-06-02T10:50:00-03:00"
+}

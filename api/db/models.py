@@ -399,3 +399,48 @@ class RefreshToken(Base):
     substituido_por: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("refresh_tokens.id"))
     ip:              Mapped[str | None]      = mapped_column(Text)
     user_agent:      Mapped[str | None]      = mapped_column(Text)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# IC-02 — Apuração CBS/IBS (reforma tributária, LC 214/2025)
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class ApuracaoCBSIBSRow(Base):
+    """Apuração CBS/IBS persistida (contrato IC-02 §3.2 → colunas planas).
+
+    Saída da Calculadora CBS/IBS, obtida via ORQUESTRAÇÃO do motor oficial (o
+    OrgConc não recalcula tributos). Os grupos gIBSUF/gIBSMun/gCBS/gIS viram
+    colunas planas aliquota_*/valor_*; a memória de cálculo por esfera fica em
+    `memoria_calculo` (JSONB) para rastreabilidade no laudo (IC-02 §5). Gate de
+    proveniência (§4): versao_base + ambiente + fundamentacao_legal obrigatórios.
+    """
+    __tablename__ = "apuracao_cbs_ibs"
+    __table_args__ = (
+        Index("ix_apuracao_cbs_ibs_documento", "documento_id"),
+        Index("ix_apuracao_cbs_ibs_criado", text("criado_em DESC")),
+    )
+
+    id:                  Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    documento_id:        Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), nullable=False)
+    versao_base:         Mapped[str]          = mapped_column(String(20), nullable=False)
+    ambiente:            Mapped[str]          = mapped_column(String(10), nullable=False)  # PILOTO/PRODUCAO
+    motor_versao:        Mapped[str | None]   = mapped_column(Text)
+    uf:                  Mapped[str | None]   = mapped_column(String(2))
+    municipio_ibge:      Mapped[str | None]   = mapped_column(String(7))
+    data_fato_gerador:   Mapped[date | None]  = mapped_column(Date)
+    base_calculo_total:  Mapped[float]        = mapped_column(Numeric(15, 2), default=0)
+    aliquota_ibs_uf:     Mapped[float]        = mapped_column(Numeric(9, 4), default=0)
+    valor_ibs_uf:        Mapped[float]        = mapped_column(Numeric(15, 2), default=0)
+    aliquota_ibs_mun:    Mapped[float]        = mapped_column(Numeric(9, 4), default=0)
+    valor_ibs_mun:       Mapped[float]        = mapped_column(Numeric(15, 2), default=0)
+    aliquota_cbs:        Mapped[float]        = mapped_column(Numeric(9, 4), default=0)
+    valor_cbs:           Mapped[float]        = mapped_column(Numeric(15, 2), default=0)
+    aliquota_is:         Mapped[float | None] = mapped_column(Numeric(9, 4))
+    valor_is:            Mapped[float | None] = mapped_column(Numeric(15, 2))
+    v_tot_trib:          Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    fundamentacao_legal: Mapped[str]          = mapped_column(Text, nullable=False)
+    memoria_calculo:     Mapped[dict]         = mapped_column(JSONB, nullable=False)  # {ibs_uf,ibs_mun,cbs,is}
+    payload_hash:        Mapped[str | None]   = mapped_column(String(64))
+    obtido_em:           Mapped[datetime]     = mapped_column(TIMESTAMPTZ, nullable=False)
+    criado_em:           Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)

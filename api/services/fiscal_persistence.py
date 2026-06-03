@@ -13,12 +13,14 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
+    ApuracaoCBSIBSRow,
     ConformidadeFornecedor,
     CruzamentoFiscal,
     DocumentoFiscal,
 )
 from api.matchers.cruzamento_fiscal import CruzamentoResult
 from api.matchers.xml_fiscal import DocumentoFiscalLido
+from api.schemas_cbs_ibs import ApuracaoCBSIBS
 
 log = logging.getLogger("orgconc.fiscal.persistence")
 
@@ -239,3 +241,48 @@ async def listar_conformidade(
         stmt = stmt.where(ConformidadeFornecedor.risco_classe.in_(validas))
     stmt = stmt.order_by(ConformidadeFornecedor.risco_tributario_anual.desc())
     return list((await db.execute(stmt)).scalars().all())
+
+
+async def salvar_apuracao(db: AsyncSession, apuracao: ApuracaoCBSIBS) -> uuid.UUID:
+    """Persiste uma apuração CBS/IBS (contrato IC-02 §3.2 → colunas planas).
+
+    Os grupos gIBSUF/gIBSMun/gCBS/gIS viram colunas aliquota_*/valor_*; a memória
+    de cálculo por esfera vai para `memoria_calculo` (JSONB). Retorna o id da linha.
+    """
+    row_id = uuid.uuid4()
+    row = ApuracaoCBSIBSRow(
+        id=row_id,
+        documento_id=uuid.UUID(apuracao.documento_id),
+        versao_base=apuracao.versao_base,
+        ambiente=apuracao.ambiente,
+        motor_versao=apuracao.motor_versao,
+        uf=apuracao.uf,
+        municipio_ibge=apuracao.municipio_ibge,
+        data_fato_gerador=apuracao.data_fato_gerador,
+        base_calculo_total=apuracao.base_calculo_total,
+        aliquota_ibs_uf=apuracao.gIBSUF.pIBSUF,
+        valor_ibs_uf=apuracao.gIBSUF.vIBSUF,
+        aliquota_ibs_mun=apuracao.gIBSMun.pIBSMun,
+        valor_ibs_mun=apuracao.gIBSMun.vIBSMun,
+        aliquota_cbs=apuracao.gCBS.pCBS,
+        valor_cbs=apuracao.gCBS.vCBS,
+        aliquota_is=apuracao.gIS.pIS if apuracao.gIS else None,
+        valor_is=apuracao.gIS.vIS if apuracao.gIS else None,
+        v_tot_trib=apuracao.vTotTrib,
+        fundamentacao_legal=apuracao.fundamentacao_legal,
+        memoria_calculo={
+            "ibs_uf": apuracao.gIBSUF.memoriaCalculo,
+            "ibs_mun": apuracao.gIBSMun.memoriaCalculo,
+            "cbs": apuracao.gCBS.memoriaCalculo,
+            "is": apuracao.gIS.memoriaCalculo if apuracao.gIS else None,
+        },
+        payload_hash=apuracao.payload_hash,
+        obtido_em=apuracao.obtido_em,
+    )
+    db.add(row)
+    await db.flush()
+    log.info(
+        "fiscal.apuracao: documento=%s ambiente=%s vTotTrib=%s",
+        apuracao.documento_id, apuracao.ambiente, apuracao.vTotTrib,
+    )
+    return row_id
