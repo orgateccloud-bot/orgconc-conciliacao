@@ -19,11 +19,15 @@ async def criar(
     sub: str,
     token_hash: str,
     expira_em: datetime,
+    role: str = "user",
+    cliente_id: str | None = None,
     ip: str | None = None,
     user_agent: str | None = None,
 ) -> RefreshToken:
     rt = RefreshToken(
         sub=sub,
+        role=role,
+        cliente_id=cliente_id,
         token_hash=token_hash,
         expira_em=expira_em,
         ip=ip,

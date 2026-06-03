@@ -11,10 +11,15 @@ from api.core.rate_limit import limiter
 from api.db import audit_events as crud_audit
 from api.db.models import AuditEvent
 from api.services.audit import calcular_hash, verificar_cadeia
-from api.services.auth import current_user
+from api.services.auth import require_role
 from api.services.logging_estruturado import mask_pii
 
-router = APIRouter(prefix="/audit", tags=["audit"], dependencies=[Depends(current_user)])
+# Trilha forense: restrita a roles privilegiados (nao e dado de usuario comum).
+router = APIRouter(
+    prefix="/audit",
+    tags=["audit"],
+    dependencies=[Depends(require_role("admin", "auditor", "service"))],
+)
 
 
 def _mascarar_payload(payload: Optional[dict]) -> Optional[dict]:

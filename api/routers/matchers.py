@@ -15,7 +15,7 @@ from api.core.config import DB_DISPONIVEL, MAX_UPLOAD_BYTES, MAX_UPLOAD_TOTAL_BY
 from api.core.rate_limit import limiter
 from api.matchers.cascata import Disposicao, classificar, ler_ofx
 from api.matchers.orquestrador import conciliar as orquestrar_cascata, taxa_automatizacao
-from api.services.auth import TokenPayload, current_user
+from api.services.auth import TokenPayload, autorizar_cliente, current_user
 from api.services.storage import read_limited
 
 router = APIRouter(tags=["matchers"], prefix="/matchers")
@@ -110,6 +110,7 @@ async def conciliar_matchers(
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "cliente_id deve ser UUID válido")
+    autorizar_cliente(user, str(cid))
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
 

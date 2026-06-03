@@ -22,7 +22,7 @@ from typing import Optional
 
 from passlib.context import CryptContext
 import jwt
-from fastapi import Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 
 log = logging.getLogger("orgconc.auth")
@@ -221,3 +221,21 @@ def autorizar_cliente(
     if user.cliente_id == cliente_id:
         return
     raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
+
+
+def require_role(*roles: str):
+    """Dependency factory: exige que o usuario autenticado tenha um dos `roles`.
+
+    A autenticacao (401) ja e garantida por current_user; aqui aplicamos a
+    autorizacao por papel (403). Uso:
+        dependencies=[Depends(require_role("admin", "auditor", "service"))]
+    ou como parametro: user = Depends(require_role("admin"))
+    """
+    permitidos = set(roles)
+
+    def _dep(user: "TokenPayload" = Depends(current_user)) -> "TokenPayload":
+        if user.role not in permitidos:
+            raise HTTPException(status_code=403, detail="Acesso restrito")
+        return user
+
+    return _dep

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
 from api.db import metrics as crud_metrics
-from api.services.auth import TokenPayload, current_user
+from api.services.auth import TokenPayload, current_user, require_role
 
 router = APIRouter(prefix="/metrics", tags=["metrics"], dependencies=[Depends(current_user)])
 
@@ -147,8 +147,13 @@ async def trust_score(
 async def custo_llm(
     request: Request,
     periodo: int = Query(30, ge=1, le=365),
+    user: TokenPayload = Depends(require_role("admin", "auditor", "service")),
 ):
-    """Custo Claude API + previsao de gastos (burn rate, projecao mes/30d)."""
+    """Custo Claude API + previsao de gastos (burn rate, projecao mes/30d).
+
+    Restrito a roles privilegiados — custo da plataforma e dado financeiro
+    sensivel, nao pode vazar para usuario comum.
+    """
     _check_db()
     async with SessionLocal() as db:
         return await crud_metrics.custo_llm_resumo(db, periodo_dias=periodo)
