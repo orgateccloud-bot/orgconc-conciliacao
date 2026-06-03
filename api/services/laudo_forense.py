@@ -464,6 +464,42 @@ def carregar_docs(pasta: str):
     return list(nfes.values()), list(ctes.values()), n_xml
 
 
+def carregar_docs_xmls(xmls):
+    """Variante de carregar_docs para uploads em memória: aceita lista de
+    (nome, bytes) de XML e/ou ZIP (expande ZIPs). Retorna (nfes, ctes, n_xml).
+    Mesma engine — usada pelo endpoint /fiscal/laudo p/ alimentar as abas fiscais."""
+    import io as _io
+
+    nfes: dict[str, dict] = {}
+    ctes: dict[str, dict] = {}
+    n_xml = 0
+
+    def _proc(raw):
+        nonlocal n_xml
+        n_xml += 1
+        doc = parse_nfe(raw)
+        if doc and doc.get("chave"):
+            nfes.setdefault(doc["chave"], doc)
+            return
+        cte = parse_cte(raw)
+        if cte and cte.get("chave"):
+            ctes.setdefault(cte["chave"], cte)
+
+    for nome, conteudo in xmls:
+        low = (nome or "").lower()
+        if low.endswith(".zip"):
+            try:
+                with zipfile.ZipFile(_io.BytesIO(conteudo)) as zf:
+                    for m in zf.namelist():
+                        if m.lower().endswith(".xml"):
+                            _proc(zf.read(m))
+            except zipfile.BadZipFile:
+                continue
+        elif low.endswith(".xml"):
+            _proc(conteudo)
+    return list(nfes.values()), list(ctes.values()), n_xml
+
+
 def _norm_nome(s: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]", " ", (s or "").upper())).strip()
 

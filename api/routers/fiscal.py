@@ -43,7 +43,6 @@ from api.matchers.tributario import (
     estimar_risco_tributario_anual,
 )
 from api.matchers.xml_fiscal import (
-    extrair_xmls_zip,
     parse_lote_xmls,
 )
 from api.services.auth import TokenPayload, autorizar_cliente, current_user
@@ -62,7 +61,6 @@ from api.services.fiscal_persistence import (
 )
 from api.services.storage import read_limited
 from api.services import laudo_forense as laudo
-from api.services.laudo_notas import gerar_laudo_notas_html, gerar_laudo_notas_workbook
 
 router = APIRouter(tags=["fiscal"], prefix="/fiscal")
 log = logging.getLogger("orgconc.fiscal")
@@ -251,37 +249,48 @@ async def processar_fiscal(
 _LAUDO_LOCK = threading.Lock()
 
 
+_FORMATOS_LAUDO = {"xlsx", "html", "pdf"}
+
+
 @router.post("/laudo")
 @limiter.limit("3/minute")
 async def gerar_laudo(
     request: Request,
     empresa_cnpj: str = Form(..., description="CNPJ da entidade auditada (14 dígitos)"),
     conta: str = Form("", description="escopar a uma conta (substring do ID da conta no OFX)"),
-    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX"),
+    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX + (opcional) XMLs/ZIPs de NF-e/CT-e"),
+    formato: str = Query("xlsx", description="xlsx | html | pdf"),
     user: TokenPayload = Depends(current_user),
 ):
-    """Gera o Laudo Integrado de Auditoria Bancária (11 abas, XLSX) a partir de
-    extratos OFX, usando o MESMO núcleo do CLI (api.services.laudo_forense).
+    """Laudo Integrado de Auditoria (núcleo único de api.services.laudo_forense).
 
-    Usa o cache de CNPJ existente (sem rede em-request) — rode POST /fiscal/processar
-    antes para popular o enriquecimento cadastral (situação/pós-baixa).
+    Aceita extratos OFX e, opcionalmente, XMLs/ZIPs de NF-e/CT-e — quando enviados,
+    o MESMO documento ganha as abas/seções fiscais (12. Documentos Fiscais e
+    13. Conformidade Fiscal). Formatos: xlsx (abas), html, pdf (Playwright).
+    Usa o cache de CNPJ existente (sem rede em-request).
     """
+    formato = (formato or "xlsx").lower()
+    if formato not in _FORMATOS_LAUDO:
+        raise HTTPException(400, f"formato invalido: use {sorted(_FORMATOS_LAUDO)}")
     if not arquivos:
         raise HTTPException(400, "Envie ao menos 1 arquivo OFX.")
 
     transacoes = []
+    fiscais: list[tuple[str, bytes]] = []
     total = 0
     for up in arquivos:
         conteudo = await read_limited(up, MAX_UPLOAD_BYTES)
         total += len(conteudo)
         if total > MAX_UPLOAD_TOTAL_BYTES:
             raise HTTPException(413, f"Total de uploads excede {MAX_UPLOAD_TOTAL_MB} MB.")
-        if not (up.filename or "").lower().endswith(".ofx"):
-            continue
-        try:
-            transacoes.extend(await asyncio.to_thread(ler_ofx, conteudo))
-        except Exception:
-            raise HTTPException(400, f"Falha ao ler OFX: {up.filename}")
+        nome = (up.filename or "").lower()
+        if nome.endswith(".ofx"):
+            try:
+                transacoes.extend(await asyncio.to_thread(ler_ofx, conteudo))
+            except Exception:
+                raise HTTPException(400, f"Falha ao ler OFX: {up.filename}")
+        elif nome.endswith(".xml") or nome.endswith(".zip"):
+            fiscais.append((_sanitize_filename(up.filename or "doc"), conteudo))
     if not transacoes:
         raise HTTPException(400, "Nenhum arquivo OFX válido fornecido.")
 
@@ -304,116 +313,46 @@ async def gerar_laudo(
 
         from api.matchers.cnpj_enricher import _carregar_cache
         cache = _carregar_cache()
+        # NF-e/CT-e pela própria engine (alimenta as abas/seções fiscais).
+        nfes, ctes, _n = laudo.carregar_docs_xmls(fiscais) if fiscais else ([], [], 0)
         todos, saldos = laudo.montar_dados(dedup)
         # EMPRESA é global do módulo laudo — serializa a geração para evitar race.
         with _LAUDO_LOCK:
             laudo.EMPRESA = laudo.construir_empresa(empresa_cnpj, cache)
             razao = laudo.EMPRESA.get("razao_social", "laudo")
-            wb, _stats = laudo.gerar_laudo_workbook(todos, saldos, cache)
-            buf = BytesIO()
-            wb.save(buf)
-        return buf.getvalue(), razao
+            wb, stats = laudo.gerar_laudo_workbook(todos, saldos, cache, nfes, ctes)
+            if formato == "xlsx":
+                buf = BytesIO()
+                wb.save(buf)
+                return buf.getvalue(), razao
+            # html / pdf usam o mesmo stats -> gerar_md -> gerar_html
+            md, _totais = laudo.gerar_md(stats)
+            html = laudo.gerar_html(md, stats.get("periodo_str", ""))
+            return html, razao
 
-    blob, razao = await asyncio.to_thread(_build)
+    saida, razao = await asyncio.to_thread(_build)
     fname = re.sub(r"[^\w]+", "_", razao).strip("_")[:40] or "laudo"
-    return Response(
-        content=blob,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.xlsx"'},
-    )
 
-
-_FORMATOS_NOTAS = {"xlsx", "html", "pdf"}
-
-
-@router.post("/laudo-notas")
-@limiter.limit("3/minute")
-async def gerar_laudo_notas(
-    request: Request,
-    arquivos: List[UploadFile] = File(..., description="ZIP/XMLs de NF-e/CT-e/NFS-e"),
-    formato: str = Query("xlsx", description="xlsx | html | pdf"),
-    user: TokenPayload = Depends(current_user),
-):
-    """Laudo de Documentos Fiscais a partir SOMENTE dos XMLs (sem extrato).
-
-    Aceita XMLs diretos e/ou ZIPs. Formatos: `xlsx` (6 abas, detalhe completo),
-    `html` e `pdf` (resumo + top fornecedores/natureza/CFOP + alertas).
-    PDF via Playwright (motor unificado, cross-platform). Geração stateless.
-    """
-    formato = (formato or "xlsx").lower()
-    if formato not in _FORMATOS_NOTAS:
-        raise HTTPException(400, f"formato invalido: use {sorted(_FORMATOS_NOTAS)}")
-    if not arquivos:
-        raise HTTPException(400, "Envie ao menos 1 arquivo (XML ou ZIP).")
-
-    # Coleta XMLs (diretos + expandindo ZIPs) com limites de upload.
-    xmls: list[tuple[str, bytes]] = []
-    total = 0
-    for up in arquivos:
-        conteudo = await read_limited(up, MAX_UPLOAD_BYTES)
-        total += len(conteudo)
-        if total > MAX_UPLOAD_TOTAL_BYTES:
-            raise HTTPException(413, f"Total de uploads excede {MAX_UPLOAD_TOTAL_MB} MB.")
-        nome = (up.filename or "").lower()
-        if nome.endswith(".zip"):
-            xmls.extend(extrair_xmls_zip(conteudo))
-        elif nome.endswith(".xml"):
-            xmls.append((_sanitize_filename(up.filename or "doc.xml"), conteudo))
-    if not xmls:
-        raise HTTPException(400, "Nenhum XML encontrado (direto ou via ZIP).")
-
-    def _preparar():
-        """Parse + agregação (CPU-bound). Retorna (documentos, sit_por_cnpj) ou None."""
-        from api.matchers.cnpj_enricher import _carregar_cache
-        documentos = parse_lote_xmls(xmls)
-        if not documentos:
-            return None
-        cache = _carregar_cache()
-        sit_por_cnpj = {
-            cnpj: (info.get("situacao") or info.get("situacao_cadastral") or "")
-            for cnpj, info in cache.items()
-            if isinstance(info, dict)
-        }
-        return documentos, sit_por_cnpj
-
-    preparado = await asyncio.to_thread(_preparar)
-    if not preparado:
-        raise HTTPException(400, "Nenhum documento fiscal válido nos XMLs enviados.")
-    documentos, sit_por_cnpj = preparado
-    log.info("fiscal.laudo-notas: xmls=%d documentos=%d formato=%s", len(xmls), len(documentos), formato)
-
+    if formato == "xlsx":
+        return Response(
+            content=saida,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.xlsx"'},
+        )
     if formato == "html":
-        html, _stats = await asyncio.to_thread(gerar_laudo_notas_html, documentos, sit_por_cnpj)
         return Response(
-            content=html,
+            content=saida,
             media_type="text/html; charset=utf-8",
-            headers={"Content-Disposition": 'inline; filename="laudo_notas.html"'},
+            headers={"Content-Disposition": f'inline; filename="laudo_{fname}.html"'},
         )
-
-    if formato == "pdf":
-        html, _stats = await asyncio.to_thread(gerar_laudo_notas_html, documentos, sit_por_cnpj)
-        blob = await laudo.html_para_pdf_bytes(html, landscape=False)
-        if not blob:
-            raise HTTPException(500, "Falha ao gerar PDF.")
-        return Response(
-            content=blob,
-            media_type="application/pdf",
-            headers={"Content-Disposition": 'attachment; filename="laudo_notas.pdf"'},
-        )
-
-    # xlsx (default)
-    def _xlsx():
-        from io import BytesIO
-        wb, _stats = gerar_laudo_notas_workbook(documentos, sit_por_cnpj)
-        buf = BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
-
-    blob = await asyncio.to_thread(_xlsx)
+    # pdf
+    blob = await laudo.html_para_pdf_bytes(saida, landscape=True)
+    if not blob:
+        raise HTTPException(500, "Falha ao gerar PDF.")
     return Response(
         content=blob,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="laudo_notas.xlsx"'},
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.pdf"'},
     )
 
 
