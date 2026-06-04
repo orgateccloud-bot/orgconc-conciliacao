@@ -15,7 +15,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored === "light" || stored === "dark") return stored;
-    } catch {}
+    } catch { /* ignore */ }
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
 
@@ -23,7 +23,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const root = document.documentElement;
     root.classList.toggle("dark", tema === "dark");
     root.setAttribute("data-theme", tema);
-    try { localStorage.setItem(STORAGE_KEY, tema); } catch {}
+    try { localStorage.setItem(STORAGE_KEY, tema); } catch { /* ignore */ }
   }, [tema]);
 
   return (
@@ -33,6 +33,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTheme() {
   return useContext(Ctx);
 }

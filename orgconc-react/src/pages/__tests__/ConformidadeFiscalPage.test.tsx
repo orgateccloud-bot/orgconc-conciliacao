@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { ConformidadeFiscalPage } from "@/pages/ConformidadeFiscalPage";
 
 vi.mock("@/lib/api", async () => {

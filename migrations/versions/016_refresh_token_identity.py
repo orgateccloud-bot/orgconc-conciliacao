@@ -8,6 +8,7 @@ o access token preservando a identidade real.
 Migracao ADITIVA: ADD COLUMN com default. Linhas existentes recebem role='user'
 (conservador — nao escala) e cliente_id NULL. Reversivel.
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa

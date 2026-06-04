@@ -11,6 +11,7 @@ incluir `WHERE deletado_em IS NULL`.
 Migração ADITIVA: apenas ALTER TABLE ADD COLUMN com DEFAULT NULL.
 Sem risco para dados existentes. Totalmente reversível.
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa

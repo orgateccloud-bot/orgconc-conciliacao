@@ -6,10 +6,16 @@ pytest-cov==7.1.0
 pytest-asyncio==1.3.0
 pytest-mock==3.15.1
 httpx==0.28.1
+# teste de contrato IC-02 (valida payloads CBS/IBS contra os JSON Schemas).
+# Faixa (não pin exato): o semgrep — também em dev — exige jsonschema recente;
+# pinar 4.23.0 forçava backtracking e build do sdist do semgrep no CI.
+jsonschema>=4.23
 
 # lint / format / type / security (informativo no CI; usar via make lint/security)
 ruff
 black
 bandit
 pip-audit
-semgrep
+# semgrep fica FORA daqui: depende de pyjwt~=2.12 e conflitaria com pyjwt 2.13.0
+# (correcao das 5 CVEs) na resolucao unica do `pip install -r` do job de testes.
+# O CI o instala no job 'security' (a parte); p/ SAST local: pip install semgrep.

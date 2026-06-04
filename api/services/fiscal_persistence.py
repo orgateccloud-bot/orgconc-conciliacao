@@ -13,13 +13,14 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
-    ApuracaoCBSIBS,
+    ApuracaoCBSIBSRow,
     ConformidadeFornecedor,
     CruzamentoFiscal,
     DocumentoFiscal,
 )
 from api.matchers.cruzamento_fiscal import CruzamentoResult
 from api.matchers.xml_fiscal import DocumentoFiscalLido
+from api.schemas_cbs_ibs import ApuracaoCBSIBS
 
 log = logging.getLogger("orgconc.fiscal.persistence")
 
@@ -243,46 +244,51 @@ async def listar_conformidade(
 
 
 async def salvar_apuracao(
-    db: AsyncSession,
-    cliente_id: uuid.UUID,
-    documento_id: uuid.UUID,
-    payload: dict,
-) -> ApuracaoCBSIBS:
-    """Upsert da apuração CBS/IBS por (documento_id, versao_base) — idempotente (IC-02 §3/§4).
+    db: AsyncSession, apuracao: ApuracaoCBSIBS, org_id: Optional[uuid.UUID] = None
+) -> uuid.UUID:
+    """Persiste uma apuração CBS/IBS (contrato IC-02 §3.2 → colunas planas).
 
-    `payload` deve conter ao menos `versao_base` e `ambiente`; demais campos
-    (valores/alíquotas por esfera, v_tot_trib, memoria_calculo, itens, etc.) são
-    opcionais. O cálculo é responsabilidade da Calculadora (fronteira IC-02 §1.3);
-    esta função apenas persiste o resultado já apurado.
+    Os grupos gIBSUF/gIBSMun/gCBS/gIS viram colunas aliquota_*/valor_*; a memória
+    de cálculo por esfera vai para `memoria_calculo` (JSONB). Retorna o id da linha.
+
+    `org_id` é o tenant (firma) para RLS por organização — opcional enquanto o
+    auth não popula org por usuário (ver db/rls/README.md).
     """
-    versao_base = payload.get("versao_base")
-    stmt = select(ApuracaoCBSIBS).where(
-        ApuracaoCBSIBS.documento_id == documento_id,
-        ApuracaoCBSIBS.versao_base == versao_base,
+    row_id = uuid.uuid4()
+    row = ApuracaoCBSIBSRow(
+        id=row_id,
+        org_id=org_id,
+        documento_id=uuid.UUID(apuracao.documento_id),
+        versao_base=apuracao.versao_base,
+        ambiente=apuracao.ambiente,
+        motor_versao=apuracao.motor_versao,
+        uf=apuracao.uf,
+        municipio_ibge=apuracao.municipio_ibge,
+        data_fato_gerador=apuracao.data_fato_gerador,
+        base_calculo_total=apuracao.base_calculo_total,
+        aliquota_ibs_uf=apuracao.gIBSUF.pIBSUF,
+        valor_ibs_uf=apuracao.gIBSUF.vIBSUF,
+        aliquota_ibs_mun=apuracao.gIBSMun.pIBSMun,
+        valor_ibs_mun=apuracao.gIBSMun.vIBSMun,
+        aliquota_cbs=apuracao.gCBS.pCBS,
+        valor_cbs=apuracao.gCBS.vCBS,
+        aliquota_is=apuracao.gIS.pIS if apuracao.gIS else None,
+        valor_is=apuracao.gIS.vIS if apuracao.gIS else None,
+        v_tot_trib=apuracao.vTotTrib,
+        fundamentacao_legal=apuracao.fundamentacao_legal,
+        memoria_calculo={
+            "ibs_uf": apuracao.gIBSUF.memoriaCalculo,
+            "ibs_mun": apuracao.gIBSMun.memoriaCalculo,
+            "cbs": apuracao.gCBS.memoriaCalculo,
+            "is": apuracao.gIS.memoriaCalculo if apuracao.gIS else None,
+        },
+        payload_hash=apuracao.payload_hash,
+        obtido_em=apuracao.obtido_em,
     )
-    existing = (await db.execute(stmt)).scalar_one_or_none()
-    if existing:
-        for k, v in payload.items():
-            if hasattr(existing, k):
-                setattr(existing, k, v)
-        existing.obtido_em = datetime.now(timezone.utc)
-        await db.flush()
-        return existing
-
-    novo = ApuracaoCBSIBS(cliente_id=cliente_id, documento_id=documento_id, **payload)
-    db.add(novo)
+    db.add(row)
     await db.flush()
-    return novo
-
-
-async def listar_apuracao(
-    db: AsyncSession,
-    cliente_id: uuid.UUID,
-    documento_id: Optional[uuid.UUID] = None,
-    limit: int = 500,
-) -> list[ApuracaoCBSIBS]:
-    stmt = select(ApuracaoCBSIBS).where(ApuracaoCBSIBS.cliente_id == cliente_id)
-    if documento_id:
-        stmt = stmt.where(ApuracaoCBSIBS.documento_id == documento_id)
-    stmt = stmt.order_by(ApuracaoCBSIBS.obtido_em.desc()).limit(limit)
-    return list((await db.execute(stmt)).scalars().all())
+    log.info(
+        "fiscal.apuracao: documento=%s ambiente=%s vTotTrib=%s",
+        apuracao.documento_id, apuracao.ambiente, apuracao.vTotTrib,
+    )
+    return row_id

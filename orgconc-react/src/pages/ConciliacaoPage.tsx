@@ -10,7 +10,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import { Download, CheckCircle2, ChevronDown, ChevronUp, Hash, AlertTriangle, Activity, Upload as UploadIcon } from "lucide-react";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { MODO_CX, MODO_LABEL } from "@/lib/constants";
 
 const SEVERIDADE_CX: Record<string, string> = {
@@ -21,13 +21,6 @@ const SEVERIDADE_CX: Record<string, string> = {
   medio:    "bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400",
   baixo:    "bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-400",
   info:     "bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400",
-};
-
-const EXT_CX: Record<string, string> = {
-  ofx: "bg-blue-100 text-blue-700",
-  pdf: "bg-red-100 text-red-700",
-  xml: "bg-orange-100 text-orange-700",
-  csv: "bg-green-100 text-green-700",
 };
 
 export function ConciliacaoPage() {

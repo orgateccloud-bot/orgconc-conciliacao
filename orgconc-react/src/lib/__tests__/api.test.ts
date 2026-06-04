@@ -13,7 +13,7 @@ describe("apiFetch", () => {
 
   it("envia Authorization quando ha token", async () => {
     setToken("abc.def.ghi");
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -31,7 +31,7 @@ describe("apiFetch", () => {
   it("nao define Content-Type quando body eh FormData", async () => {
     const fd = new FormData();
     fd.append("file", new Blob(["x"]));
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
     );
 
@@ -43,7 +43,7 @@ describe("apiFetch", () => {
   });
 
   it("define Content-Type application/json para body string", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
     );
 
@@ -56,7 +56,7 @@ describe("apiFetch", () => {
 
   it("401 com refresh falho limpa token e dispara orgconc:logout", async () => {
     setToken("vai-ser-limpo");
-    vi.spyOn(global, "fetch")
+    vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response("", { status: 401 }))   // request original
       .mockResolvedValueOnce(new Response("", { status: 401 }));  // /auth/refresh falha
     const ouvinte = vi.fn();
@@ -72,7 +72,7 @@ describe("apiFetch", () => {
   it("401 com refresh OK renova o token e refaz a request", async () => {
     setToken("token-velho");
     const fetchSpy = vi
-      .spyOn(global, "fetch")
+      .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response("", { status: 401 })) // request original -> 401
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ access_token: "token-novo" }), {
@@ -102,7 +102,7 @@ describe("apiFetch", () => {
   });
 
   it("status >=400 levanta ApiError com detail", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ detail: "campo invalido" }), {
         status: 400,
         headers: { "content-type": "application/json" },
@@ -115,7 +115,7 @@ describe("apiFetch", () => {
   });
 
   it("204 retorna undefined", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(null, { status: 204 }),
     );
     const out = await apiFetch("/x");

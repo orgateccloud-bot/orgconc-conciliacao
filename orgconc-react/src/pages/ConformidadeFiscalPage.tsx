@@ -30,6 +30,7 @@ export function ConformidadeFiscalPage() {
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [enrichAll, setEnrichAll] = useState(false);
   const [resultado, setResultado] = useState<FiscalProcessarResponse | null>(null);
   const [conformidade, setConformidade] = useState<FiscalConformidadeResponse | null>(null);
   const [risco, setRisco] = useState<FiscalRiscoResponse | null>(null);
@@ -81,7 +82,7 @@ export function ConformidadeFiscalPage() {
     }
     setBusy(true);
     try {
-      const r = await fiscalProcessar(clienteId, arquivos);
+      const r = await fiscalProcessar(clienteId, arquivos, enrichAll);
       setResultado(r);
       toast.success(
         `${r.documentos_processados} documentos processados (${r.fornecedores_classificados} fornecedores classificados)`,
@@ -180,6 +181,16 @@ export function ConformidadeFiscalPage() {
             ))}
           </ul>
         )}
+
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={enrichAll}
+            onChange={(e) => setEnrichAll(e.target.checked)}
+            className="h-4 w-4 rounded border-input accent-primary"
+          />
+          Enriquecimento completo de CNPJs (pós-baixa fiel — mais lento)
+        </label>
 
         <Button onClick={processar} disabled={busy} className="w-full">
           {busy ? "Processando..." : "Iniciar Cruzamento Fiscal"}

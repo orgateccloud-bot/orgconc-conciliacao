@@ -106,6 +106,7 @@ class TokenPayload(BaseModel):
     sub: str  # subject (cliente_id ou identificador)
     email: Optional[str] = None
     cliente_id: Optional[str] = None
+    org_id: Optional[str] = None  # tenant (firma) — RLS por organização
     role: str = "user"
     exp: Optional[int] = None
     iat: Optional[int] = None
@@ -115,6 +116,7 @@ def emitir_token(
     sub: str,
     email: Optional[str] = None,
     cliente_id: Optional[str] = None,
+    org_id: Optional[str] = None,
     role: str = "user",
     ttl_min: Optional[int] = None,
 ) -> str:
@@ -133,6 +135,8 @@ def emitir_token(
         payload["email"] = email
     if cliente_id:
         payload["cliente_id"] = cliente_id
+    if org_id:
+        payload["org_id"] = org_id
     return jwt.encode(payload, _JWT_SECRET, algorithm=_JWT_ALG)
 
 

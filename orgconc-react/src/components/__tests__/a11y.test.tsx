@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
 import { render } from "@testing-library/react";
 import { auditarA11y, semViolacoesCriticas } from "@/test/axe-helper";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -7,7 +8,7 @@ describe("Acessibilidade WCAG 2.1 AA", () => {
   it("ErrorBoundary fallback nao tem violacoes criticas", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    function Bomba(): JSX.Element {
+    function Bomba(): ReactElement {
       throw new Error("teste");
     }
 

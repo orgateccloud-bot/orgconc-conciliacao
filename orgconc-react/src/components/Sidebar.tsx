@@ -3,7 +3,7 @@ import { Logo } from "@/components/Logo";
 import {
   Users, FileText, LayoutDashboard, LineChart, Settings,
   Upload, AlertTriangle, ShieldCheck, Lock, Activity,
-  Network, Receipt, FileSignature, ScrollText, FileWarning, Calculator,
+  Network, Receipt, FileSignature, ScrollText, FileWarning, Calculator, Gauge,
   FileBarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -29,11 +29,12 @@ const OPERACAO_ITEMS: SidebarItem[] = [
 ];
 
 const FISCAL_ITEMS: SidebarItem[] = [
-  { id: "laudo",               label: "Laudo Integrado",  icon: FileBarChart2 },
-  { id: "conformidade-fiscal", label: "Conformidade",     icon: ScrollText },
-  { id: "gaps-fiscais",        label: "Gaps Fiscais",     icon: FileWarning },
-  { id: "risco-tributario",    label: "Risco Tributário", icon: Calculator },
-  { id: "cartas-fiscais",      label: "Cartas",           icon: FileText },
+  { id: "laudo",               label: "Laudo Integrado",   icon: FileBarChart2 },
+  { id: "conformidade-fiscal", label: "Conformidade",      icon: ScrollText },
+  { id: "gaps-fiscais",        label: "Gaps Fiscais",      icon: FileWarning },
+  { id: "risco-tributario",    label: "Risco Tributário",  icon: Calculator },
+  { id: "auditoria-forense",   label: "Auditoria Forense", icon: Gauge },
+  { id: "cartas-fiscais",      label: "Cartas",            icon: FileText },
 ];
 
 const COMPLIANCE_ITEMS: SidebarItem[] = [
@@ -70,6 +71,7 @@ export function SidebarNavContent({
       "clientes","anomalias","relatorios","configuracoes",
       "conformidade-fiscal","gaps-fiscais","risco-tributario","cartas-fiscais",
       "laudo",
+      "auditoria-forense",
     ];
     if (routableIds.includes(id)) navigate(`/${id}`);
     onNavigate?.();

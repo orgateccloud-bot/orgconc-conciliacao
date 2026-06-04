@@ -31,6 +31,7 @@ from api.core.config import (
 from api.core.rate_limit import limiter
 from api.matchers.auditoria_forense import (
     analisar_auditoria,
+    cnpjs_das_transacoes,
     construir_cadastro,
     enriquecer_cadastro,
     resumo_para_dict,
@@ -55,12 +56,15 @@ from api.services.fiscal_persistence import (
     listar_conformidade,
     listar_cruzamentos,
     listar_documentos_por_cliente,
+    salvar_apuracao,
     salvar_conformidade,
     salvar_cruzamentos,
     salvar_documentos_fiscais,
 )
 from api.services.storage import read_limited
 from api.services import laudo_forense as laudo
+from api.services import calculadora_cbs_ibs
+from api.schemas_cbs_ibs import OperacaoFiscalInput
 
 router = APIRouter(tags=["fiscal"], prefix="/fiscal")
 log = logging.getLogger("orgconc.fiscal")
@@ -252,6 +256,79 @@ _LAUDO_LOCK = threading.Lock()
 _FORMATOS_LAUDO = {"xlsx", "html", "pdf"}
 
 
+@router.post("/apurar")
+@limiter.limit("30/minute")
+async def apurar_cbs_ibs(
+    request: Request,
+    operacao: OperacaoFiscalInput,
+    user: TokenPayload = Depends(current_user),
+):
+    """Apura CBS/IBS de uma operação (contrato IC-02 §3.2).
+
+    Orquestra o motor de cálculo (stub PILOTO em dev; SERPRO hospedado/offline em
+    prod — o OrgConc não recalcula) e persiste o resultado + memória de cálculo.
+    Resposta = ApuracaoCBSIBS com gate de proveniência (versao_base/ambiente/
+    fundamentacao). Em PILOTO os valores são provisórios (§4.2).
+    """
+    try:
+        apuracao = await calculadora_cbs_ibs.apurar(operacao)
+    except NotImplementedError as e:
+        raise HTTPException(501, str(e))
+
+    if DB_DISPONIVEL and SessionLocal is not None:
+        try:
+            async with SessionLocal() as db:
+                await salvar_apuracao(db, apuracao)
+                await db.commit()
+        except Exception:
+            log.exception("Falha ao persistir apuração CBS/IBS (segue sem persistir)")
+
+    return JSONResponse(apuracao.model_dump(mode="json"))
+
+
+def _t_data_str(t) -> str:
+    d = getattr(t, "data", "") or ""
+    return d if isinstance(d, str) else d.isoformat()
+
+
+async def _ler_dedup_ofx(arquivos: List[UploadFile], conta: str) -> list:
+    """Lê 1+ OFX, deduplica por (conta, fitid) e filtra por conta. Compartilhado
+    por POST /fiscal/laudo/resumo (JSON)."""
+    if not arquivos:
+        raise HTTPException(400, "Envie ao menos 1 arquivo OFX.")
+
+    transacoes = []
+    total = 0
+    for up in arquivos:
+        conteudo = await read_limited(up, MAX_UPLOAD_BYTES)
+        total += len(conteudo)
+        if total > MAX_UPLOAD_TOTAL_BYTES:
+            raise HTTPException(413, f"Total de uploads excede {MAX_UPLOAD_TOTAL_MB} MB.")
+        if not (up.filename or "").lower().endswith(".ofx"):
+            continue
+        try:
+            transacoes.extend(await asyncio.to_thread(ler_ofx, conteudo))
+        except Exception:
+            raise HTTPException(400, f"Falha ao ler OFX: {up.filename}")
+    if not transacoes:
+        raise HTTPException(400, "Nenhum arquivo OFX válido fornecido.")
+
+    # dedup por (conta, fitid) + filtro de conta
+    vistos: set = set()
+    dedup = []
+    for t in transacoes:
+        k = (t.conta, t.fitid) if t.fitid else (t.conta, t.data, round(t.valor, 2), t.memo, t.nome)
+        if k in vistos:
+            continue
+        vistos.add(k)
+        dedup.append(t)
+    if conta:
+        dedup = [t for t in dedup if conta in (t.conta or "")]
+    if not dedup:
+        raise HTTPException(400, "Nenhuma transação para a conta informada.")
+    return dedup
+
+
 @router.post("/laudo")
 @limiter.limit("3/minute")
 async def gerar_laudo(
@@ -354,6 +431,59 @@ async def gerar_laudo(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.pdf"'},
     )
+
+
+@router.post("/laudo/resumo")
+@limiter.limit("6/minute")
+async def laudo_resumo(
+    request: Request,
+    background: BackgroundTasks,
+    empresa_cnpj: str = Form(..., description="CNPJ da entidade auditada (14 dígitos)"),
+    conta: str = Form("", description="escopar a uma conta (substring do ID, ex: 158083)"),
+    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX"),
+    user: TokenPayload = Depends(current_user),
+):
+    """Resumo forense JSON (regime×teto + heatmap + sinais + top disposições) dos
+    MESMOS OFX do laudo. Alimenta a aba 'Auditoria Forense' do frontend; o XLSX
+    completo de 11 abas vem de POST /fiscal/laudo.
+
+    Determinístico e sem rede em-request: usa o cache de CNPJ para situação/porte
+    (pós-baixa, MEI-teto). CNPJs ainda não cacheados disparam enriquecimento COMPLETO
+    em background (enrich_all) — a próxima análise vem com pós-baixa fiel. O campo
+    `enriquecimento_pendente` informa quantos faltam para a UI sugerir re-análise.
+    """
+    dedup = await _ler_dedup_ofx(arquivos, conta)
+
+    def _analisar():
+        from api.matchers.cnpj_enricher import _carregar_cache
+        cache = _carregar_cache()
+        cadastro = construir_cadastro(dedup, cache)
+        resumo_aud = resumo_para_dict(analisar_auditoria(dedup, cadastro=cadastro))
+        empresa = laudo.construir_empresa(empresa_cnpj, cache)
+        faltantes = [c for c in cnpjs_das_transacoes(dedup) if c not in cache]
+        return resumo_aud, empresa, faltantes
+
+    resumo_aud, empresa, faltantes = await asyncio.to_thread(_analisar)
+    # CNPJs não cacheados → enriquece TODOS em background (pós-baixa fiel na próxima).
+    if faltantes:
+        background.add_task(enriquecer_cadastro, dedup, enrich_all=True)
+    datas = sorted(_t_data_str(t)[:10] for t in dedup if _t_data_str(t))
+    return JSONResponse({
+        "empresa": {
+            "cnpj": empresa.get("cnpj", empresa_cnpj),
+            "razao_social": empresa.get("razao_social", "—"),
+            "porte": empresa.get("porte_declarado", "—"),
+            "situacao": empresa.get("situacao", "—"),
+            "cnae": empresa.get("cnae_principal", "—"),
+        },
+        "conta": conta or None,
+        "periodo": {
+            "inicio": datas[0] if datas else None,
+            "fim": datas[-1] if datas else None,
+        },
+        "enriquecimento_pendente": len(faltantes),
+        **resumo_aud,
+    })
 
 
 @router.get("/conformidade/{cliente_id}")

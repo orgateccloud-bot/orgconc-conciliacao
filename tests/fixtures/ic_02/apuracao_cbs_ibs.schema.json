@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orgatec.local/ic-02/apuracao_cbs_ibs.schema.json",
+  "title": "ApuracaoCBSIBS",
+  "description": "Saida da Calculadora CBS/IBS (IC-02 §3.2). Decompoe os tributos por esfera, com memoria de calculo por tributo (§5). O gate de proveniencia (§4) exige versao_base, ambiente, memoriaCalculo e fundamentacao_legal preenchidos.",
+  "type": "object",
+  "required": [
+    "documento_id", "versao_base", "ambiente",
+    "gIBSUF", "gIBSMun", "gCBS",
+    "vTotTrib", "fundamentacao_legal", "obtido_em"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "documento_id": { "type": "string", "format": "uuid", "description": "Eco do identificador de entrada." },
+    "versao_base": { "type": "string", "description": "Versao da base de regras usada (ex.: V0033). Gate IC-02 §4." },
+    "ambiente": { "type": "string", "enum": ["PILOTO", "PRODUCAO"], "description": "Em PILOTO os valores sao provisorios/de teste; o consumidor deve propagar a ressalva (§4.2)." },
+    "motor_versao": { "type": ["string", "null"], "description": "Versao do motor oficial (ex.: CalculadorTributo v1.1.0)." },
+    "uf": { "type": ["string", "null"], "pattern": "^[A-Z]{2}$" },
+    "municipio_ibge": { "type": ["string", "null"], "pattern": "^[0-9]{7}$" },
+    "data_fato_gerador": { "type": ["string", "null"], "format": "date" },
+    "base_calculo_total": { "type": "number", "minimum": 0 },
+    "gIBSUF": {
+      "type": "object",
+      "description": "IBS - esfera estadual/UF.",
+      "required": ["pIBSUF", "vIBSUF", "memoriaCalculo"],
+      "additionalProperties": false,
+      "properties": {
+        "pIBSUF": { "type": "number", "description": "Aliquota em %, conforme API (ex.: 0.10 = 0,10%)." },
+        "vIBSUF": { "type": "number", "description": "Valor do tributo." },
+        "memoriaCalculo": { "type": "string", "description": "Texto descritivo da apuracao (IC-02 §5)." }
+      }
+    },
+    "gIBSMun": {
+      "type": "object",
+      "description": "IBS - esfera municipal.",
+      "required": ["pIBSMun", "vIBSMun", "memoriaCalculo"],
+      "additionalProperties": false,
+      "properties": {
+        "pIBSMun": { "type": "number" },
+        "vIBSMun": { "type": "number" },
+        "memoriaCalculo": { "type": "string" }
+      }
+    },
+    "gCBS": {
+      "type": "object",
+      "description": "CBS - federal.",
+      "required": ["pCBS", "vCBS", "memoriaCalculo"],
+      "additionalProperties": false,
+      "properties": {
+        "pCBS": { "type": "number" },
+        "vCBS": { "type": "number" },
+        "memoriaCalculo": { "type": "string" }
+      }
+    },
+    "gIS": {
+      "description": "Imposto Seletivo - presente apenas quando incidente; null caso contrario.",
+      "type": ["object", "null"],
+      "required": ["pIS", "vIS", "memoriaCalculo"],
+      "additionalProperties": false,
+      "properties": {
+        "pIS": { "type": "number" },
+        "vIS": { "type": "number" },
+        "memoriaCalculo": { "type": "string" }
+      }
+    },
+    "vTotTrib": { "type": "number", "minimum": 0, "description": "Total de tributos da operacao." },
+    "fundamentacao_legal": { "type": "string", "description": "Dispositivo aplicado (LC 214/2025)." },
+    "itens": {
+      "type": ["array", "null"],
+      "description": "Detalhe por item (opcional).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "numero": { "type": "integer" },
+          "ncm": { "type": ["string", "null"] },
+          "cst": { "type": "string" },
+          "cClassTrib": { "type": "string" },
+          "base_calculo": { "type": "number" },
+          "vIBSUF": { "type": "number" },
+          "vIBSMun": { "type": "number" },
+          "vCBS": { "type": "number" },
+          "vIS": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "payload_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "SHA-256 do payload de entrada (idempotencia/auditoria)." },
+    "obtido_em": { "type": "string", "format": "date-time", "description": "Carimbo de tempo da apuracao." }
+  }
+}
