@@ -139,7 +139,8 @@ def cruzar(
                     continue
                 dif_dias = abs((dt - dd).days) if dt and dd else None
                 resultados.append(CruzamentoResult("CASADO", d, t, round(abs(d.valor_total - vt), 2), dif_dias))
-                docs_usados.add(id(d)); txs_usadas.add(id(t))
+                docs_usados.add(id(d))
+                txs_usadas.add(id(t))
                 break
 
         # 1:N — um pagamento quita a soma de vários documentos
@@ -151,7 +152,8 @@ def cruzar(
             for d in ds:
                 if id(d) in docs_usados or not _na_janela(dt, _parse_data(d.data_emissao)):
                     continue
-                grupo.append(d); soma += d.valor_total
+                grupo.append(d)
+                soma += d.valor_total
                 if _dentro_tol(soma, vt):
                     break
             if len(grupo) >= 2 and _dentro_tol(soma, vt):
@@ -169,7 +171,8 @@ def cruzar(
             for t in ps:
                 if id(t) in txs_usadas or not _na_janela(_data_transacao(t), dd):
                     continue
-                grupo.append(t); soma += abs(t.valor)
+                grupo.append(t)
+                soma += abs(t.valor)
                 if _dentro_tol(soma, d.valor_total):
                     break
             if len(grupo) >= 2 and _dentro_tol(soma, d.valor_total):
@@ -192,7 +195,8 @@ def cruzar(
             dd = _parse_data(d.data_emissao)
             dif_dias = abs((dt - dd).days) if dt and dd else None
             resultados.append(CruzamentoResult("VALOR_DIVERGENTE", d, t, round(abs(d.valor_total - abs(t.valor)), 2), dif_dias))
-            docs_usados.add(id(d)); txs_usadas.add(id(t))
+            docs_usados.add(id(d))
+            txs_usadas.add(id(t))
             break
 
     # SEM_PAGAMENTO: documentos não utilizados
