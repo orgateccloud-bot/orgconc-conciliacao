@@ -34,6 +34,12 @@ RUN pip install --no-cache-dir -r requirements-prod.txt
 COPY api/ ./api/
 COPY .env.example ./.env.example
 
+# Migrations Alembic — necessarias para o `alembic upgrade head` do startCommand
+# (railway.json / Procfile). Sem isto o alembic falha com
+# "No 'script_location' key found in configuration" e o container nao sobe.
+COPY alembic.ini ./alembic.ini
+COPY migrations/ ./migrations/
+
 # Frontend compilado — FastAPI serve em /app quando orgconc-react/dist existe
 COPY --from=frontend /build/dist ./orgconc-react/dist
 
