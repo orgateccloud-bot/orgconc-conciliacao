@@ -2,7 +2,7 @@
 
 Substitui `cadastro_contrapartes.py` do OrgNeural2. Usa a tabela `clientes`
 existente; aliases (texto curto presente no memo/nome bancário, ex: "FAV.:
-RENATO COSTA SERVIÇOS") são procurados via ILIKE no campo `nome`.
+FULANO DE TAL SERVIÇOS") são procurados via ILIKE no campo `nome`.
 
 Backlog: tabela dedicada `cliente_alias(cliente_id, alias)` para mapeamentos
 explícitos definidos pelo contador.

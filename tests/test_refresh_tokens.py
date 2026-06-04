@@ -145,7 +145,7 @@ def test_login_com_db_emite_refresh():
 
 def test_refresh_rotaciona_e_emite_novo_access():
     sl, _db = _mock_session_cm()
-    fake_row = MagicMock(sub="admin@orgconc.com", id=uuid.uuid4())
+    fake_row = MagicMock(sub="admin@orgconc.com", role="admin", cliente_id=None, id=uuid.uuid4())
     novo_row = MagicMock(id=uuid.uuid4())
     with (
         patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),

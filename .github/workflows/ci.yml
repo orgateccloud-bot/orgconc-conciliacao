@@ -18,6 +18,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orgconc_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -50,6 +65,12 @@ jobs:
           echo "ANTHROPIC_API_KEY=sk-ant-test" >> $GITHUB_ENV
           echo "ORGCONC_AUTH_TOKEN=" >> $GITHUB_ENV
           echo "ORGCONC_CORS_ORIGINS=http://127.0.0.1:8765" >> $GITHUB_ENV
+          # Banco real para ativar os testes de DB e validar as migrations Alembic
+          echo "DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/orgconc_test" >> $GITHUB_ENV
+          echo "ORGCONC_RUN_DB_TESTS=1" >> $GITHUB_ENV
+
+      - name: Aplicar migrations Alembic (valida schema em Postgres limpo)
+        run: alembic upgrade head
 
       - name: Rodar pytest
         run: |

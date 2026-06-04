@@ -31,9 +31,9 @@ resultado.py
 teste*.py
 
 # Scripts de análise forense por cliente (dados sensíveis, nunca publicar)
-scripts/analisar_locar.py
 scripts/analisar_*.py
-scripts/auditoria_locar*.py
+scripts/auditoria_*.py
+scripts/investiga*.py
 
 # Python
 .venv/
@@ -69,3 +69,9 @@ sim_resposta.json
 .obsidian/
 60-TEMPLATES/
 CEREBRO_OBSIDIAN_GUIA_COMPLETO.md
+
+# Cobertura de testes (gerado)
+orgconc-react/coverage/
+coverage/
+.coverage
+htmlcov/

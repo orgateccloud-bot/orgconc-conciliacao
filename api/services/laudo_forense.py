@@ -14,15 +14,17 @@ Nucleo reutilizavel pela API em api/services/laudo_forense.py (Fase 2).
 from __future__ import annotations
 
 import base64
+import os
 import re
 import xml.etree.ElementTree as ET
+# F-Sec: parse de XML de upload via defusedxml (anti-XXE/billion-laughs).
+# Mantém ET para ET.ParseError e tipos; só a leitura usa o parser seguro.
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 import zipfile
 from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
-# defusedxml contra XXE/billion-laughs em XMLs (NF-e/CT-e) de terceiros (bandit B314)
-from defusedxml.ElementTree import fromstring as _safe_fromstring
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -80,8 +82,8 @@ ENRICH_LIMITE_PADRAO = 300
 
 EMPRESA: dict = {}  # preenchido por construir_empresa()
 
-PASTA_DEFAULT = r"C:\Users\Veloso\Desktop\locar"
-OUT_DIR = Path(r"C:\Users\Veloso\Downloads")
+PASTA_DEFAULT = os.environ.get("ORGCONC_OFX_DIR", "")
+OUT_DIR = Path(os.environ.get("ORGCONC_OUT_DIR", "."))
 # O serviço NÃO faz I/O de arquivo nem mantém estado de saída — o chamador (CLI/API)
 # salva o Workbook retornado por gerar_laudo_workbook().
 
@@ -200,6 +202,97 @@ def cabecalho(ws, ultima_col, secao):
     c3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
     ws.merge_cells(f"A3:{get_column_letter(ultima_col)}3")
     return 5
+
+
+def cabecalho_padrao(ws, ultima_col, *, titulo, linha2="", secao="", com_logo=True):
+    """Cabeçalho XLSX padrão ORGATEC reutilizável por qualquer laudo (não depende
+    de EMPRESA global). 3 linhas: banda navy (título + logo), banda azul (linha2),
+    banda info (seção). Retorna a primeira linha de conteúdo (5)."""
+    c1 = ws.cell(row=1, column=1, value="    ORGATEC · " + titulo)
+    c1.font = Font(bold=True, size=14, color="FFFFFF")
+    c1.fill = PatternFill("solid", fgColor=NAVY)
+    c1.alignment = Alignment(horizontal="center", vertical="center", indent=2)
+    ws.merge_cells(f"A1:{get_column_letter(ultima_col)}1")
+    ws.row_dimensions[1].height = 60
+    if ws.column_dimensions["A"].width is None or ws.column_dimensions["A"].width < 12:
+        ws.column_dimensions["A"].width = 12
+    if com_logo:
+        inserir_logo_xlsx(ws, "A1", largura_px=60, altura_px=60)
+    if linha2:
+        c2 = ws.cell(row=2, column=1, value=linha2)
+        c2.font = Font(bold=True, size=10, color="FFFFFF")
+        c2.fill = PatternFill("solid", fgColor="1F7FB8")
+        c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        ws.merge_cells(f"A2:{get_column_letter(ultima_col)}2")
+    if secao:
+        c3 = ws.cell(row=3, column=1, value=secao)
+        c3.font = Font(size=9, color="12345E")
+        c3.fill = INFO_FILL
+        c3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        ws.merge_cells(f"A3:{get_column_letter(ultima_col)}3")
+    return 5
+
+
+def aba_capa(wb, *, titulo_relatorio, linha2, objeto, secoes, sumario, subtitulo="Sistema OrgConc"):
+    """Cria a primeira aba 'Capa' no padrão do laudo forense (reutilizável):
+    cabeçalho + título + data + ÍNDICE DE SEÇÕES (hyperlinks) + SUMÁRIO EXECUTIVO.
+
+    secoes: list[(num, nome, descricao, sheet_name)] — links para as demais abas.
+    sumario: list[(rotulo, valor)] — KPIs principais.
+    Usa a aba ativa (renomeia para '1. Capa'); demais abas são criadas pelo caller.
+    """
+    ws = wb.active
+    ws.title = "1. Capa"
+    start = cabecalho_padrao(ws, 6, titulo=titulo_relatorio, linha2=linha2, secao=subtitulo)
+
+    ws.cell(row=start, column=1, value=titulo_relatorio.upper()).font = TITLE_FONT
+    ws.merge_cells(f"A{start}:F{start}")
+    ws.cell(row=start + 1, column=1, value=objeto).font = Font(size=9, color="51616F")
+    ws.merge_cells(f"A{start + 1}:F{start + 1}")
+    ws.cell(row=start + 2, column=1,
+            value="Gerado em " + datetime.now().strftime("%d/%m/%Y %H:%M")).font = Font(size=9, italic=True, color="65778A")
+
+    r = start + 4
+    ws.cell(row=r, column=1, value="INDICE DE SECOES").font = SUBTITLE_FONT
+    ws.merge_cells(f"A{r}:F{r}")
+    r += 1
+    ws.cell(row=r, column=1, value="#")
+    ws.cell(row=r, column=2, value="Secao")
+    ws.cell(row=r, column=3, value="Conteudo")
+    style_header(ws, r, 3)
+    ws.merge_cells(f"C{r}:F{r}")
+    r += 1
+    for num, nome, desc, sheet in secoes:
+        ws.cell(row=r, column=1, value=num)
+        c = ws.cell(row=r, column=2, value=nome)
+        c.font = Font(bold=True, color="1F7FB8", underline="single")
+        c.hyperlink = f"#'{sheet}'!A1"
+        c.style = "Hyperlink"
+        ws.cell(row=r, column=3, value=desc)
+        ws.merge_cells(f"C{r}:F{r}")
+        for cc in range(1, 7):
+            ws.cell(row=r, column=cc).border = THIN_BORDER
+            if r % 2 == 0:
+                ws.cell(row=r, column=cc).fill = ZEBRA_FILL
+        r += 1
+
+    r += 2
+    ws.cell(row=r, column=1, value="SUMARIO EXECUTIVO").font = SUBTITLE_FONT
+    ws.merge_cells(f"A{r}:F{r}")
+    r += 1
+    for rotulo, valor in sumario:
+        ws.cell(row=r, column=1, value=rotulo).font = Font(bold=True)
+        cv = ws.cell(row=r, column=2, value=valor)
+        cv.alignment = Alignment(horizontal="left")
+        ws.merge_cells(f"B{r}:F{r}")
+        for cc in range(1, 7):
+            ws.cell(row=r, column=cc).border = THIN_BORDER
+        r += 1
+
+    ws.column_dimensions["A"].width = 16
+    for col in "BCDEF":
+        ws.column_dimensions[col].width = 22
+    return ws
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -371,6 +464,42 @@ def carregar_docs(pasta: str):
     return list(nfes.values()), list(ctes.values()), n_xml
 
 
+def carregar_docs_xmls(xmls):
+    """Variante de carregar_docs para uploads em memória: aceita lista de
+    (nome, bytes) de XML e/ou ZIP (expande ZIPs). Retorna (nfes, ctes, n_xml).
+    Mesma engine — usada pelo endpoint /fiscal/laudo p/ alimentar as abas fiscais."""
+    import io as _io
+
+    nfes: dict[str, dict] = {}
+    ctes: dict[str, dict] = {}
+    n_xml = 0
+
+    def _proc(raw):
+        nonlocal n_xml
+        n_xml += 1
+        doc = parse_nfe(raw)
+        if doc and doc.get("chave"):
+            nfes.setdefault(doc["chave"], doc)
+            return
+        cte = parse_cte(raw)
+        if cte and cte.get("chave"):
+            ctes.setdefault(cte["chave"], cte)
+
+    for nome, conteudo in xmls:
+        low = (nome or "").lower()
+        if low.endswith(".zip"):
+            try:
+                with zipfile.ZipFile(_io.BytesIO(conteudo)) as zf:
+                    for m in zf.namelist():
+                        if m.lower().endswith(".xml"):
+                            _proc(zf.read(m))
+            except zipfile.BadZipFile:
+                continue
+        elif low.endswith(".xml"):
+            _proc(conteudo)
+    return list(nfes.values()), list(ctes.values()), n_xml
+
+
 def _norm_nome(s: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]", " ", (s or "").upper())).strip()
 
@@ -455,7 +584,7 @@ def _fmt_cnpj(c: str) -> str:
 
 
 def _cnpj_do_texto(texto: str) -> str:
-    """Extrai um CNPJ (14 dígitos) do texto bancário (ex.: 'Pagamento Pix 05.509.396 0001-10')."""
+    """Extrai um CNPJ (14 dígitos) do texto bancário (ex.: 'Pagamento Pix 12.345.678 0001-90')."""
     m = _RX_CNPJ_FLEX.search(texto or "")
     return "".join(m.groups()) if m else ""
 
@@ -683,6 +812,18 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
                 ws.cell(row=r, column=c).fill = ZEBRA_FILL
         r += 1
 
+    # Volume liquido = bruto menos transferencias internas (auto-movimentacao
+    # por proprio CNPJ + mesma titularidade entre contas proprias), que NAO
+    # representam movimentacao economica real. Mesma deteccao da aba 8.
+    _cnpj_basico = EMPRESA.get("cnpj_basico", "")
+    vol_transf_interna = 0.0
+    for _d in todas_disps:
+        _txt = ((_d.transacao.nome or "") + " " + (_d.transacao.memo or "")).upper()
+        if (_cnpj_basico and (_d.cnpj == _cnpj_basico or _cnpj_basico in re.sub(r"\D", "", _txt))) \
+           or "MESMA TIT" in _txt or "MESMA TITULAR" in _txt:
+            vol_transf_interna += abs(_d.transacao.valor)
+    volume_liquido = volume_bruto - vol_transf_interna
+
     # Sumario rapido
     r += 2
     ws.cell(row=r, column=1, value="SUMARIO EXECUTIVO").font = SUBTITLE_FONT
@@ -692,6 +833,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         ("Periodo analisado", f"{periodo_str} ({n_meses} meses)"),
         ("Total de transacoes", f"{n_total:,}"),
         ("Volume bruto movimentado", f"R$ {volume_bruto:,.2f}"),
+        ("Volume liquido (excl. transf. internas)", f"R$ {volume_liquido:,.2f}"),
         ("Volume anualizado projetado", f"R$ {anualizado:,.2f}"),
         ("Saldo inicial do periodo", f"R$ {saldo_ini_jan:,.2f}"),
         ("Saldo final do periodo", f"R$ {saldo_fim_mai:,.2f}"),
@@ -834,6 +976,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         ("Volume de creditos", cred_total),
         ("Volume de debitos", deb_total),
         ("Volume bruto movimentado", volume_bruto),
+        ("Volume liquido (excl. transf. internas)", volume_liquido),
         ("Saldo inicial do periodo", saldo_ini_jan),
         ("Saldo final do periodo", saldo_fim_mai),
         ("Variacao do periodo", saldo_fim_mai - saldo_ini_jan),
@@ -1259,15 +1402,15 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     for cnpj, dd in por_cnpj_mei.items():
         info = cache.get(cnpj, {})
         cnae = info.get("cnae_principal", "")
-        anualizado_mei = dd["deb"] * 12 / max(meses_obs, 1)
+        anualizado = dd["deb"] * 12 / max(meses_obs, 1)
         teto = _limite_mei_por_cnae(cnae)
         eh_tac = teto == LIMITE_MEI_TAC
-        excesso = anualizado_mei - teto if anualizado_mei > teto else 0.0
+        excesso = anualizado - teto if anualizado > teto else 0.0
         item = {
             "cnpj": cnpj, "razao": info.get("razao_social", ""),
             "cnae": cnae, "cnae_desc": info.get("cnae_descricao", ""),
             "uf": info.get("uf", ""), "n": dd["n"],
-            "deb_5m": dd["deb"], "anualizado": anualizado_mei,
+            "deb_5m": dd["deb"], "anualizado": anualizado,
             "teto": teto, "excesso": excesso, "eh_tac": eh_tac,
         }
         if eh_tac and excesso > 0:
@@ -1541,6 +1684,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         "fiscal": fiscal,
         "anualizado": anualizado, "multiplo": multiplo, "meses_obs": meses_obs,
         "n_total": n_total, "volume_bruto": volume_bruto,
+        "volume_liquido": volume_liquido, "vol_transf_interna": vol_transf_interna,
         "cred_total": cred_total, "deb_total": deb_total,
         "saldo_ini": saldo_ini_jan, "saldo_fim": saldo_fim_mai,
         "saldos": saldos, "todas_disps": todas_disps,
@@ -1584,6 +1728,7 @@ def gerar_md(stats):
         f"| Volume de creditos | R$ {cred:,.2f} |",
         f"| Volume de debitos | R$ {deb:,.2f} |",
         f"| Volume bruto movimentado | **R$ {vol:,.2f}** |",
+        f"| Volume liquido (excl. transf. internas) | **R$ {stats.get('volume_liquido', vol):,.2f}** |",
         f"| Saldo inicial do periodo | R$ {saldo_ini:,.2f} |",
         f"| Saldo final do periodo | R$ {saldo_fim:,.2f} |",
         f"| Variacao do periodo | R$ {saldo_fim - saldo_ini:,.2f} |",
@@ -1789,7 +1934,10 @@ def gerar_md(stats):
     return "\n".join(lines), {"total_pr": total_pr, "total_exc": total_exc, "total_pb": total_pb}
 
 
-def gerar_html(md_text, periodo=""):
+def gerar_html(md_text, periodo="", titulo=None, objeto=None, razao=None, cnpj=None, subtitulo=None):
+    """Envelopa um corpo Markdown no template visual padrão dos laudos ORGATEC
+    (capa + CSS Playfair/Source Sans + assinatura). Reutilizável por outros
+    laudos (notas, fiscal) para visual idêntico — basta passar titulo/objeto."""
     import markdown as mdlib
     body = mdlib.markdown(md_text, extensions=["tables", "fenced_code"])
     # A capa já carrega título/empresa/período — remove o cabeçalho redundante do MD
@@ -1797,8 +1945,14 @@ def gerar_html(md_text, periodo=""):
     if "<h2" in body:
         body = body[body.index("<h2"):]
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-    razao = EMPRESA.get("razao_social", "") or "—"
-    cnpj = EMPRESA.get("cnpj", "—")
+    razao = razao or (EMPRESA.get("razao_social", "") or "—")
+    cnpj = cnpj or EMPRESA.get("cnpj", "—")
+    titulo = titulo or "Laudo de Auditoria<br>Bancária Forense"
+    subtitulo = subtitulo or "Sistema OrgAudi · Auditoria Bancária Forense"
+    objeto = objeto or (
+        razao + " — análise forense de extratos bancários (OFX): regime × teto, "
+        "retenções na fonte, tipologias (smurfing, carrossel, pós-baixa) e cruzamento cadastral RFB/BrasilAPI."
+    )
     css = """
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
 @page { size: A4 landscape; margin: 14mm 14mm 16mm 14mm;
@@ -1857,13 +2011,12 @@ blockquote { border-left: 3pt solid #1f7fb8; background: #eef6fb; padding: 3mm 4
   <div>
     <div class="capa-brand">{html_logo_inline()}<div class="capa-wm">
       <div class="nome">ORGATEC</div><div class="desc">Contabilidade e Auditoria</div></div></div>
-    <div class="capa-sub">Sistema OrgAudi · Auditoria Bancária Forense</div>
+    <div class="capa-sub">{subtitulo}</div>
   </div>
   <div class="capa-mid">
-    <div class="capa-titulo">Laudo de Auditoria<br>Bancária Forense</div>
+    <div class="capa-titulo">{titulo}</div>
     <div class="capa-rule"></div>
-    <div class="capa-objeto">{razao} — análise forense de extratos bancários (OFX): regime × teto,
-      retenções na fonte, tipologias (smurfing, carrossel, pós-baixa) e cruzamento cadastral RFB/BrasilAPI.</div>
+    <div class="capa-objeto">{objeto}</div>
     <div class="capa-selo">Parecer técnico · assessoria · caráter indicativo</div>
   </div>
   <div class="capa-meta">
@@ -1888,19 +2041,36 @@ blockquote { border-left: 3pt solid #1f7fb8; background: #eef6fb; padding: 3mm 4
 </body></html>"""
 
 
-async def gerar_pdf(html_text, out_pdf):
-    try:
-        from playwright.async_api import async_playwright
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
+async def html_para_pdf_bytes(html_text, landscape=True):
+    """Renderiza HTML em PDF (Playwright/chromium) e retorna os bytes.
+
+    Motor unificado de PDF do projeto — funciona cross-platform (só precisa do
+    chromium), ao contrário do WeasyPrint que exige libs GTK nativas. Retorna
+    None em falha (chamador decide o fallback / erro HTTP).
+    """
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        try:
             page = await browser.new_page()
             await page.set_content(html_text, wait_until="load")
-            await page.pdf(
-                path=str(out_pdf), format="A4", landscape=True,
+            return await page.pdf(
+                format="A4", landscape=landscape,
                 margin={"top": "14mm", "right": "12mm", "bottom": "14mm", "left": "12mm"},
                 print_background=True,
             )
+        finally:
             await browser.close()
+
+
+async def gerar_pdf(html_text, out_pdf):
+    """Escreve o PDF em `out_pdf` (compat: CLI/laudo). Usa html_para_pdf_bytes."""
+    try:
+        blob = await html_para_pdf_bytes(html_text, landscape=True)
+        if not blob:
+            return False
+        with open(out_pdf, "wb") as fh:
+            fh.write(blob)
         return True
     except Exception as exc:  # noqa: BLE001
         print(f"PDF failed: {exc}")

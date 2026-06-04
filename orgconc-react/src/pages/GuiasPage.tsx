@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   criarGuia,
   listarClientes,
   listarGuias,
-  type Cliente,
   type Guia,
 } from "@/lib/api";
 import { HeroCard } from "@/components/HeroCard";
@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatBRLNum } from "@/lib/utils";
 import { toast } from "sonner";
 import { Receipt, Search } from "lucide-react";
 
@@ -32,12 +33,8 @@ const TIPO_CX: Record<string, string> = {
   DARJ: "bg-cyan-100 text-cyan-700 border-cyan-200",
 };
 
-function formatBRL(v: number): string {
-  return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 export function GuiasPage() {
-  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const { data: clientes = [] } = useQuery({ queryKey: ["clientes"], queryFn: listarClientes });
   const [guias, setGuias] = useState<Guia[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
@@ -54,8 +51,7 @@ export function GuiasPage() {
   async function carregar() {
     setLoading(true);
     try {
-      const [cls, gs] = await Promise.all([listarClientes(), listarGuias()]);
-      setClientes(cls);
+      const gs = await listarGuias();
       setGuias(gs);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao carregar dados");
@@ -74,10 +70,13 @@ export function GuiasPage() {
     }
     setBusy(true);
     try {
+      const limpo = valor.replace(/[^0-9,]/g, "");
+      const valorNum = Number(limpo.replace(",", "."));
+      if (isNaN(valorNum) || valorNum <= 0) { toast.error("Valor inválido"); return; }
       await criarGuia({
         cliente_id: clienteId,
         tipo,
-        valor: Number(valor.replace(",", ".")),
+        valor: valorNum,
         competencia: competencia || null,
         data_vencimento: vencimento || null,
         conta_contabil: contaContabil || null,
@@ -202,7 +201,7 @@ export function GuiasPage() {
                     </span>
                   </td>
                   <td className="p-3 text-xs">{nomePorId[g.cliente_id] ?? g.cliente_id.slice(0, 8)}</td>
-                  <td className="p-3 text-right font-mono">{formatBRL(g.valor)}</td>
+                  <td className="p-3 text-right font-mono">{formatBRLNum(g.valor)}</td>
                   <td className="p-3 text-xs">{g.competencia ?? "—"}</td>
                   <td className="p-3 text-xs">{g.data_vencimento ?? "—"}</td>
                   <td className="p-3 text-xs font-mono">{g.conta_contabil ?? "—"}</td>

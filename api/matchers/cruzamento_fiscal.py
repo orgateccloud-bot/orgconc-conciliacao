@@ -9,9 +9,15 @@ Algoritmo:
 3. Para cada documento sem pagamento correspondente, registra SEM_PAGAMENTO.
 4. Para cada transação sem documento, registra SEM_NF (gap fiscal).
 
+Matching N:M:
+- 1:1 exato (valor dentro da tolerância, na janela temporal)
+- 1:N: um pagamento quita a soma de vários documentos (pagamento agregado)
+- N:1: vários pagamentos quitam um documento (parcelamento)
+
 Tolerâncias:
-- Valor: R$ 0,01 (match exato)
+- Valor: max(R$ 0,01, 2% do valor) — o percentual absorve juros/multa
 - Janela temporal: 30 dias entre emissão e pagamento
+Documentos CANCELADA/DENEGADA são ignorados (sem validade fiscal).
 """
 from __future__ import annotations
 
@@ -28,7 +34,20 @@ RX_CNPJ = re.compile(r"(\d{2})[.](\d{3})[.](\d{3})[ /](\d{4})[-](\d{2})")
 RX_CNPJ_BRUTO = re.compile(r"\b(\d{14})\b")
 
 TOLERANCIA_VALOR = 0.01
+TOLERANCIA_PCT = 0.02   # 2% para absorver juros/multa em parcelamentos
 JANELA_DIAS = 30
+
+
+def _dentro_tol(a: float, b: float) -> bool:
+    """True se a ≈ b dentro de max(R$0,01, 2% de b)."""
+    return abs(a - b) <= max(TOLERANCIA_VALOR, abs(b) * TOLERANCIA_PCT)
+
+
+def _na_janela(d1: Optional[date], d2: Optional[date]) -> bool:
+    """True se as datas estão dentro da janela (ou se alguma é desconhecida)."""
+    if d1 is None or d2 is None:
+        return True
+    return abs((d1 - d2).days) <= JANELA_DIAS
 
 
 @dataclass
@@ -80,95 +99,111 @@ def cruzar(
     Retorna lista de cruzamentos. Cada documento gera no mínimo um registro
     (CASADO ou SEM_PAGAMENTO). Transações sem documento geram SEM_NF.
     """
-    docs = list(documentos)
-    txs = list(transacoes)
+    # Ignora documentos sem validade fiscal (não contam como cobertura).
+    docs = [d for d in documentos
+            if getattr(d, "situacao", "AUTORIZADA") not in ("CANCELADA", "DENEGADA")]
+    txs_saida = [t for t in transacoes if t.valor < 0]
 
-    # Indexa documentos por CNPJ do emitente
+    # Índices por CNPJ
     docs_por_cnpj: dict[str, list[DocumentoFiscalLido]] = defaultdict(list)
     for d in docs:
         if d.emit_cnpj:
             docs_por_cnpj[d.emit_cnpj].append(d)
+    pagtos_por_cnpj: dict[str, list[Transacao]] = defaultdict(list)
+    for t in txs_saida:
+        cnpj = _extrair_cnpj_da_transacao(t)
+        if cnpj:
+            pagtos_por_cnpj[cnpj].append(t)
 
-    # Marcações de uso
     docs_usados: set[int] = set()
     txs_usadas: set[int] = set()
     resultados: list[CruzamentoResult] = []
 
-    # Etapa 1: Para cada transação de SAÍDA, procura documento correspondente
-    for tx_idx, t in enumerate(txs):
-        if t.valor >= 0:  # pular entradas
-            continue
-        valor_tx = abs(t.valor)
-        data_tx = _data_transacao(t)
-        cnpj_tx = _extrair_cnpj_da_transacao(t)
+    # Por CNPJ: 1:1 exato → 1:N (pagamento agregado) → N:1 (parcelamento)
+    for cnpj in set(docs_por_cnpj) | set(pagtos_por_cnpj):
+        ds = sorted(docs_por_cnpj.get(cnpj, []),
+                    key=lambda d: _parse_data(d.data_emissao) or date.min)
+        ps = sorted(pagtos_por_cnpj.get(cnpj, []),
+                    key=lambda t: _data_transacao(t) or date.min)
 
-        candidatos: list[DocumentoFiscalLido] = []
-        if cnpj_tx and cnpj_tx in docs_por_cnpj:
-            candidatos = docs_por_cnpj[cnpj_tx]
-
-        match_encontrado = False
-        for d in candidatos:
-            d_idx = id(d)
-            if d_idx in docs_usados:
+        # 1:1 — um pagamento casa um documento
+        for t in ps:
+            if id(t) in txs_usadas:
                 continue
-            # Match por valor
-            dif_valor = abs(d.valor_total - valor_tx)
-            if dif_valor > TOLERANCIA_VALOR:
-                continue
-            # Match por janela temporal
-            d_data = _parse_data(d.data_emissao)
-            dif_dias = None
-            if data_tx and d_data:
-                dif_dias = abs((data_tx - d_data).days)
-                if dif_dias > JANELA_DIAS:
+            vt, dt = abs(t.valor), _data_transacao(t)
+            for d in ds:
+                if id(d) in docs_usados or not _dentro_tol(d.valor_total, vt):
                     continue
-            # Match!
-            resultados.append(CruzamentoResult(
-                status="CASADO",
-                documento=d,
-                transacao=t,
-                diferenca_valor=dif_valor,
-                diferenca_dias=dif_dias,
-            ))
-            docs_usados.add(d_idx)
-            txs_usadas.add(tx_idx)
-            match_encontrado = True
-            break
-
-        # Se não encontrou match por valor, tenta match parcial (mesmo CNPJ e janela, mas valor diferente)
-        if not match_encontrado and cnpj_tx and cnpj_tx in docs_por_cnpj:
-            for d in candidatos:
-                d_idx = id(d)
-                if d_idx in docs_usados:
+                dd = _parse_data(d.data_emissao)
+                if not _na_janela(dt, dd):
                     continue
-                d_data = _parse_data(d.data_emissao)
-                if data_tx and d_data:
-                    dif_dias = abs((data_tx - d_data).days)
-                    if dif_dias > JANELA_DIAS:
-                        continue
-                # Encontrado documento na janela mas valor diverge
-                resultados.append(CruzamentoResult(
-                    status="VALOR_DIVERGENTE",
-                    documento=d,
-                    transacao=t,
-                    diferenca_valor=abs(d.valor_total - valor_tx),
-                    diferenca_dias=dif_dias if data_tx and d_data else None,
-                ))
-                docs_usados.add(d_idx)
-                txs_usadas.add(tx_idx)
+                dif_dias = abs((dt - dd).days) if dt and dd else None
+                resultados.append(CruzamentoResult("CASADO", d, t, round(abs(d.valor_total - vt), 2), dif_dias))
+                docs_usados.add(id(d)); txs_usadas.add(id(t))
                 break
 
-    # Etapa 2: Documentos sem pagamento correspondente
+        # 1:N — um pagamento quita a soma de vários documentos
+        for t in ps:
+            if id(t) in txs_usadas:
+                continue
+            vt, dt = abs(t.valor), _data_transacao(t)
+            grupo, soma = [], 0.0
+            for d in ds:
+                if id(d) in docs_usados or not _na_janela(dt, _parse_data(d.data_emissao)):
+                    continue
+                grupo.append(d); soma += d.valor_total
+                if _dentro_tol(soma, vt):
+                    break
+            if len(grupo) >= 2 and _dentro_tol(soma, vt):
+                for d in grupo:
+                    resultados.append(CruzamentoResult("CASADO", d, t, round(soma - vt, 2), None))
+                    docs_usados.add(id(d))
+                txs_usadas.add(id(t))
+
+        # N:1 — vários pagamentos quitam um documento (parcelamento)
+        for d in ds:
+            if id(d) in docs_usados:
+                continue
+            dd = _parse_data(d.data_emissao)
+            grupo, soma = [], 0.0
+            for t in ps:
+                if id(t) in txs_usadas or not _na_janela(_data_transacao(t), dd):
+                    continue
+                grupo.append(t); soma += abs(t.valor)
+                if _dentro_tol(soma, d.valor_total):
+                    break
+            if len(grupo) >= 2 and _dentro_tol(soma, d.valor_total):
+                resultados.append(CruzamentoResult("CASADO", d, grupo[0], round(soma - d.valor_total, 2), None))
+                docs_usados.add(id(d))
+                for t in grupo:
+                    txs_usadas.add(id(t))
+
+    # VALOR_DIVERGENTE: pagamento com documento do mesmo CNPJ na janela, sem casar valor
+    for t in txs_saida:
+        if id(t) in txs_usadas:
+            continue
+        cnpj = _extrair_cnpj_da_transacao(t)
+        if not cnpj or cnpj not in docs_por_cnpj:
+            continue
+        dt = _data_transacao(t)
+        for d in docs_por_cnpj[cnpj]:
+            if id(d) in docs_usados or not _na_janela(dt, _parse_data(d.data_emissao)):
+                continue
+            dd = _parse_data(d.data_emissao)
+            dif_dias = abs((dt - dd).days) if dt and dd else None
+            resultados.append(CruzamentoResult("VALOR_DIVERGENTE", d, t, round(abs(d.valor_total - abs(t.valor)), 2), dif_dias))
+            docs_usados.add(id(d)); txs_usadas.add(id(t))
+            break
+
+    # SEM_PAGAMENTO: documentos não utilizados
     for d in docs:
         if id(d) not in docs_usados:
-            resultados.append(CruzamentoResult(status="SEM_PAGAMENTO", documento=d))
+            resultados.append(CruzamentoResult("SEM_PAGAMENTO", documento=d))
 
-    # Etapa 3: Transações de saída sem documento (gap fiscal)
-    for tx_idx, t in enumerate(txs):
-        if t.valor >= 0:
-            continue
-        if tx_idx not in txs_usadas:
-            resultados.append(CruzamentoResult(status="SEM_NF", transacao=t))
+    # SEM_NF: pagamentos de saída sem documento
+    for t in txs_saida:
+        if id(t) not in txs_usadas:
+            resultados.append(CruzamentoResult("SEM_NF", transacao=t))
 
     return resultados
 

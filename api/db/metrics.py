@@ -138,9 +138,17 @@ async def heatmap_diario(db: AsyncSession, periodo_dias: int = 365) -> list[dict
     ]
 
 
-async def listar_transacoes_recentes(db: AsyncSession, limit: int = 10) -> list[Transacao]:
-    """Ultimas transacoes cross-conciliacao."""
+async def listar_transacoes_recentes(
+    db: AsyncSession,
+    limit: int = 10,
+    cliente_id=None,
+) -> list[Transacao]:
+    """Ultimas transacoes. Se cliente_id fornecido, filtra pelo tenant via JOIN."""
     q = select(Transacao).order_by(Transacao.criado_em.desc()).limit(limit)
+    if cliente_id is not None:
+        q = q.join(Conciliacao, Transacao.conciliacao_id == Conciliacao.id).where(
+            Conciliacao.cliente_id == cliente_id
+        )
     result = await db.execute(q)
     return list(result.scalars().all())
 

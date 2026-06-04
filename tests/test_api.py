@@ -516,9 +516,12 @@ def test_clientes_criar_sem_db_retorna_503():
 
 
 def test_clientes_listar_sem_db_retorna_503():
-    """Com DB_DISPONIVEL=False, GET /clientes deve retornar 503."""
-    with patch("api.main.DB_DISPONIVEL", False):
-        r = client.get("/clientes")
+    """Com DB_DISPONIVEL=False, GET /clientes deve retornar 503 para admin."""
+    from api.services.auth import emitir_token
+    token = emitir_token(sub="admin@orgconc.com", email="admin@orgconc.com", role="admin")
+    headers = {"Authorization": f"Bearer {token}"}
+    with patch("api.routers.clientes.DB_DISPONIVEL", False), patch("api.routers.clientes.SessionLocal", None):
+        r = client.get("/clientes", headers=headers)
     assert r.status_code == 503
 
 
@@ -1330,9 +1333,12 @@ def test_listar_clientes_com_db_mockado():
                 _fake_cliente_mock(nome="Cliente B"),
             ]
 
+    from api.services.auth import emitir_token
+    token = emitir_token(sub="admin@orgconc.com", email="admin@orgconc.com", role="admin")
+    headers = {"Authorization": f"Bearer {token}"}
     ctx, _ = _patch_db_session()
     with ctx, patch("api.routers.clientes.ListarClientesUseCase", _FakeListarUC):
-        r = client.get("/clientes")
+        r = client.get("/clientes", headers=headers)
 
     assert r.status_code == 200, r.text
     body = r.json()

@@ -10,7 +10,8 @@ COPY orgconc-react/ ./
 RUN npm run build          # gera /build/dist (base "/app/")
 
 # ── Estágio 2: runtime FastAPI ───────────────────────────────────────
-FROM python:3.11-slim
+# 3.12 para alinhar com o CI (evita divergência CI-pass vs prod-runtime).
+FROM python:3.12-slim
 
 WORKDIR /app
 

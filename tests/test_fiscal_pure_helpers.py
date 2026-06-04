@@ -82,15 +82,15 @@ def test_mei_cnae_fora_de_transporte_nao_flaga():
     assert "MEI_SEM_CTE" not in flags
 
 
-def test_flag_parte_relacionada_via_locar():
-    flags = _detectar_flags(nome="LOCAR VEICULOS LTDA", cnae="", volume_pago=1000,
-                            volume_nf=0, is_mei=False, n_ctes=0)
+def test_flag_parte_relacionada_via_nome_socio():
+    flags = _detectar_flags(nome="JOAO SILVA VEICULOS LTDA", cnae="", volume_pago=1000,
+                            volume_nf=0, is_mei=False, n_ctes=0, nomes_socios=["Joao Silva"])
     assert "PARTE_RELACIONADA" in flags
 
 
-def test_locar_bovinos_e_excecao():
-    flags = _detectar_flags(nome="LOCAR BOVINOS LTDA", cnae="", volume_pago=1000,
-                            volume_nf=0, is_mei=False, n_ctes=0)
+def test_sem_socio_nao_dispara_parte_relacionada():
+    flags = _detectar_flags(nome="EXEMPLO AGRO LTDA", cnae="", volume_pago=1000,
+                            volume_nf=0, is_mei=False, n_ctes=0, nomes_socios=["Joao Silva"])
     assert "PARTE_RELACIONADA" not in flags
 
 
@@ -101,8 +101,8 @@ def test_flag_parte_relacionada_via_socio():
 
 
 def test_multiplas_flags_simultaneas():
-    flags = _detectar_flags(nome="LOCAR MEI", cnae="4930-2/02", volume_pago=120_000,
-                            volume_nf=0, is_mei=True, n_ctes=0)
+    flags = _detectar_flags(nome="JOAO SILVA MEI", cnae="4930-2/02", volume_pago=120_000,
+                            volume_nf=0, is_mei=True, n_ctes=0, nomes_socios=["Joao Silva"])
     assert {"REDE_FROTA_TYPE", "MEI_SEM_CTE", "PARTE_RELACIONADA"} <= set(flags)
 
 

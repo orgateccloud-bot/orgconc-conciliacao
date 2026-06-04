@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   BrowserRouter,
   Routes,
@@ -27,11 +28,16 @@ const UploadPage        = lazy(() => import("@/pages/UploadPage").then(m => ({ d
 const MatchersPage      = lazy(() => import("@/pages/MatchersPage").then(m => ({ default: m.MatchersPage })));
 const GuiasPage         = lazy(() => import("@/pages/GuiasPage").then(m => ({ default: m.GuiasPage })));
 const ContratosPage     = lazy(() => import("@/pages/ContratosPage").then(m => ({ default: m.ContratosPage })));
+const LaudoPage         = lazy(() => import("@/pages/LaudoPage").then(m => ({ default: m.LaudoPage })));
 const ConformidadeFiscalPage = lazy(() => import("@/pages/ConformidadeFiscalPage").then(m => ({ default: m.ConformidadeFiscalPage })));
 const GapsFiscaisPage   = lazy(() => import("@/pages/GapsFiscaisPage").then(m => ({ default: m.GapsFiscaisPage })));
 const RiscoTributarioPage = lazy(() => import("@/pages/RiscoTributarioPage").then(m => ({ default: m.RiscoTributarioPage })));
 const CartasFiscaisPage = lazy(() => import("@/pages/CartasFiscaisPage").then(m => ({ default: m.CartasFiscaisPage })));
 const AuditoriaForensePage = lazy(() => import("@/pages/AuditoriaForensePage").then(m => ({ default: m.AuditoriaForensePage })));
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 60000, retry: 1 } },
+});
 
 const TITULOS: Record<string, string> = {
   dashboard:     "Dashboard",
@@ -79,7 +85,7 @@ function DashboardLayout() {
       const clientes = Array.isArray(clts) ? clts.length : 0;
       setSidebarCounts({ anomalias, clientes });
     });
-  }, []);
+  }, [location.pathname]);
 
   const secao = location.pathname.replace(/^\//, "");
   const title = TITULOS[secao] ?? "OrgConc";
@@ -122,6 +128,7 @@ function DashboardLayout() {
 
 export default function App() {
   return (
+    <QueryClientProvider client={queryClient}>
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter basename="/app">
@@ -136,6 +143,7 @@ export default function App() {
                 <Route path="/matchers" element={<MatchersPage />} />
                 <Route path="/guias" element={<GuiasPage />} />
                 <Route path="/contratos" element={<ContratosPage />} />
+                <Route path="/laudo" element={<LaudoPage />} />
                 <Route path="/conformidade-fiscal" element={<ConformidadeFiscalPage />} />
                 <Route path="/gaps-fiscais" element={<GapsFiscaisPage />} />
                 <Route path="/risco-tributario" element={<RiscoTributarioPage />} />
@@ -152,5 +160,6 @@ export default function App() {
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>
+    </QueryClientProvider>
   );
 }

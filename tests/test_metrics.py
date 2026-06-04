@@ -11,8 +11,12 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
 from fastapi.testclient import TestClient
 
 from api.main import app
+from api.services.auth import emitir_token
 
 client = TestClient(app)
+
+# /audit exige role privilegiado (admin/auditor/service)
+_ADMIN_HDR = {"Authorization": f"Bearer {emitir_token(sub='admin@orgconc.com', email='admin@orgconc.com', role='admin')}"}
 
 
 # ── 503 sem DB ─────────────────────────────────────────────────────────────
@@ -123,25 +127,49 @@ def test_trust_score_periodo_invalido():
 
 def test_audit_timeline_503_sem_db():
     with patch("api.routers.audit.DB_DISPONIVEL", False):
-        r = client.get("/audit/timeline")
+        r = client.get("/audit/timeline", headers=_ADMIN_HDR)
     assert r.status_code == 503
 
 
 def test_audit_evento_503_sem_db():
     with patch("api.routers.audit.DB_DISPONIVEL", False):
-        r = client.get("/audit/eventos/00000000-0000-0000-0000-000000000000")
+        r = client.get("/audit/eventos/00000000-0000-0000-0000-000000000000", headers=_ADMIN_HDR)
     assert r.status_code == 503
 
 
 def test_audit_evento_id_invalido():
     with patch("api.routers.audit.DB_DISPONIVEL", True):
-        r = client.get("/audit/eventos/not-a-uuid")
+        r = client.get("/audit/eventos/not-a-uuid", headers=_ADMIN_HDR)
     assert r.status_code == 400
 
 
 def test_audit_timeline_limit_invalido():
-    r = client.get("/audit/timeline?limit=0")
+    r = client.get("/audit/timeline?limit=0", headers=_ADMIN_HDR)
     assert r.status_code == 422
+
+
+def test_audit_timeline_sem_role_privilegiado_403():
+    """Usuario nao-privilegiado nao acessa a trilha forense."""
+    token = emitir_token(sub="user@x.com", email="user@x.com", role="user", cliente_id="c1")
+    r = client.get("/audit/timeline", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+def test_custo_llm_sem_role_privilegiado_403():
+    """Custo da plataforma e restrito a admin/auditor/service."""
+    token = emitir_token(sub="user@x.com", email="user@x.com", role="user", cliente_id="c1")
+    r = client.get("/metrics/custo-llm", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+def test_buscar_cliente_idor_cross_tenant_403():
+    """Usuario do cliente A nao pode ler cliente B (IDOR). autorizar_cliente
+    roda antes do acesso ao DB, entao 403 nao depende de banco."""
+    a = "11111111-1111-1111-1111-111111111111"
+    b = "22222222-2222-2222-2222-222222222222"
+    token = emitir_token(sub="user@x.com", email="user@x.com", role="user", cliente_id=a)
+    r = client.get(f"/clientes/{b}", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
 
 
 # ── Trust score: cálculo determinístico ─────────────────────────────────

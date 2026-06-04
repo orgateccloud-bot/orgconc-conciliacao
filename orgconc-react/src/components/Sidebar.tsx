@@ -4,6 +4,7 @@ import {
   Users, FileText, LayoutDashboard, LineChart, Settings,
   Upload, AlertTriangle, ShieldCheck, Lock, Activity,
   Network, Receipt, FileSignature, ScrollText, FileWarning, Calculator, Gauge,
+  FileBarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ const OPERACAO_ITEMS: SidebarItem[] = [
 ];
 
 const FISCAL_ITEMS: SidebarItem[] = [
+  { id: "laudo",               label: "Laudo Integrado",   icon: FileBarChart2 },
   { id: "conformidade-fiscal", label: "Conformidade",      icon: ScrollText },
   { id: "gaps-fiscais",        label: "Gaps Fiscais",      icon: FileWarning },
   { id: "risco-tributario",    label: "Risco Tributário",  icon: Calculator },
@@ -56,9 +58,9 @@ export function SidebarNavContent({
   const operacaoWithBadges = OPERACAO_ITEMS.map((item) => ({
     ...item,
     badge:
-      item.label === "Clientes" && clientes > 0
+      item.id === "clientes" && clientes > 0
         ? clientes
-        : item.label === "Anomalias" && anomalias > 0
+        : item.id === "anomalias" && anomalias > 0
         ? anomalias
         : undefined,
   }));
@@ -66,8 +68,9 @@ export function SidebarNavContent({
   function go(id: string) {
     const routableIds = [
       "dashboard","conciliacao","upload","matchers","guias","contratos",
-      "clientes","relatorios","configuracoes",
+      "clientes","anomalias","relatorios","configuracoes",
       "conformidade-fiscal","gaps-fiscais","risco-tributario","cartas-fiscais",
+      "laudo",
       "auditoria-forense",
     ];
     if (routableIds.includes(id)) navigate(`/${id}`);

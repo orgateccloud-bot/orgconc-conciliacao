@@ -18,7 +18,7 @@ import uuid
 import zipfile
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from api.core.config import (
@@ -113,36 +113,6 @@ def _separar_arquivos_fiscal(arquivos: list[tuple[str, bytes]]) -> tuple[Optiona
     return ofx_bytes, xmls
 
 
-@router.post("/apurar")
-@limiter.limit("30/minute")
-async def apurar_cbs_ibs(
-    request: Request,
-    operacao: OperacaoFiscalInput,
-    user: TokenPayload = Depends(current_user),
-):
-    """Apura CBS/IBS de uma operação (contrato IC-02 §3.2).
-
-    Orquestra o motor de cálculo (stub PILOTO em dev; SERPRO hospedado/offline em
-    prod — o OrgConc não recalcula) e persiste o resultado + memória de cálculo.
-    Resposta = ApuracaoCBSIBS com gate de proveniência (versao_base/ambiente/
-    fundamentacao). Em PILOTO os valores são provisórios (§4.2).
-    """
-    try:
-        apuracao = await calculadora_cbs_ibs.apurar(operacao)
-    except NotImplementedError as e:
-        raise HTTPException(501, str(e))
-
-    if DB_DISPONIVEL and SessionLocal is not None:
-        try:
-            async with SessionLocal() as db:
-                await salvar_apuracao(db, apuracao)
-                await db.commit()
-        except Exception:
-            log.exception("Falha ao persistir apuração CBS/IBS (segue sem persistir)")
-
-    return JSONResponse(apuracao.model_dump(mode="json"))
-
-
 @router.post("/processar")
 @limiter.limit("5/minute")
 async def processar_fiscal(
@@ -150,7 +120,6 @@ async def processar_fiscal(
     background: BackgroundTasks,
     cliente_id: str = Form(..., description="UUID do cliente"),
     arquivos: List[UploadFile] = File(..., description="ZIP/OFX/XMLs de NF-e + CT-e + (opcional OFX)"),
-    enrich_all: bool = Form(False, description="enriquecer TODOS os CNPJs (pós-baixa fiel) em vez do top-N"),
     user: TokenPayload = Depends(current_user),
 ):
     """Processa lote de documentos fiscais + (opcional) OFX para cruzamento.
@@ -190,6 +159,15 @@ async def processar_fiscal(
     # Persistência docs
     async with SessionLocal() as db:
         chave_para_id = await salvar_documentos_fiscais(db, cid, documentos)
+
+        # TODO(IC-02 / OrgFiscal): apuração CBS/IBS por documento (Reforma Tributária).
+        # Quando o serviço da Calculadora existir, para cada documento persistido:
+        #   from api.services.calculadora_cbs_ibs import apurar_documento, ORGFISCAL_DISPONIVEL
+        #   from api.services.fiscal_persistence import salvar_apuracao
+        #   if ORGFISCAL_DISPONIVEL:
+        #       ap = await apurar_documento(documento_id=doc_id, xml_path=<path>)
+        #       await salvar_apuracao(db, cid, doc_id, ap)  # idempotente por (documento_id, versao_base)
+        # Persistir SEMPRE com versao_base + ambiente (gate IC-02 §4); em PILOTO, propagar a ressalva.
 
         # Cruzamento (opcional, se OFX fornecido)
         transacoes = []
@@ -259,7 +237,7 @@ async def processar_fiscal(
     if transacoes:
         cadastro = construir_cadastro(transacoes)
         auditoria = resumo_para_dict(analisar_auditoria(transacoes, cadastro=cadastro))
-        background.add_task(enriquecer_cadastro, transacoes, enrich_all=enrich_all)
+        background.add_task(enriquecer_cadastro, transacoes)
 
     return JSONResponse({
         "cliente_id": cliente_id,
@@ -275,6 +253,39 @@ async def processar_fiscal(
 _LAUDO_LOCK = threading.Lock()
 
 
+_FORMATOS_LAUDO = {"xlsx", "html", "pdf"}
+
+
+@router.post("/apurar")
+@limiter.limit("30/minute")
+async def apurar_cbs_ibs(
+    request: Request,
+    operacao: OperacaoFiscalInput,
+    user: TokenPayload = Depends(current_user),
+):
+    """Apura CBS/IBS de uma operação (contrato IC-02 §3.2).
+
+    Orquestra o motor de cálculo (stub PILOTO em dev; SERPRO hospedado/offline em
+    prod — o OrgConc não recalcula) e persiste o resultado + memória de cálculo.
+    Resposta = ApuracaoCBSIBS com gate de proveniência (versao_base/ambiente/
+    fundamentacao). Em PILOTO os valores são provisórios (§4.2).
+    """
+    try:
+        apuracao = await calculadora_cbs_ibs.apurar(operacao)
+    except NotImplementedError as e:
+        raise HTTPException(501, str(e))
+
+    if DB_DISPONIVEL and SessionLocal is not None:
+        try:
+            async with SessionLocal() as db:
+                await salvar_apuracao(db, apuracao)
+                await db.commit()
+        except Exception:
+            log.exception("Falha ao persistir apuração CBS/IBS (segue sem persistir)")
+
+    return JSONResponse(apuracao.model_dump(mode="json"))
+
+
 def _t_data_str(t) -> str:
     d = getattr(t, "data", "") or ""
     return d if isinstance(d, str) else d.isoformat()
@@ -282,7 +293,7 @@ def _t_data_str(t) -> str:
 
 async def _ler_dedup_ofx(arquivos: List[UploadFile], conta: str) -> list:
     """Lê 1+ OFX, deduplica por (conta, fitid) e filtra por conta. Compartilhado
-    por POST /fiscal/laudo (XLSX) e POST /fiscal/laudo/resumo (JSON)."""
+    por POST /fiscal/laudo/resumo (JSON)."""
     if not arquivos:
         raise HTTPException(400, "Envie ao menos 1 arquivo OFX.")
 
@@ -323,39 +334,102 @@ async def _ler_dedup_ofx(arquivos: List[UploadFile], conta: str) -> list:
 async def gerar_laudo(
     request: Request,
     empresa_cnpj: str = Form(..., description="CNPJ da entidade auditada (14 dígitos)"),
-    conta: str = Form("", description="escopar a uma conta (substring do ID, ex: 158083)"),
-    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX"),
+    conta: str = Form("", description="escopar a uma conta (substring do ID da conta no OFX)"),
+    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX + (opcional) XMLs/ZIPs de NF-e/CT-e"),
+    formato: str = Query("xlsx", description="xlsx | html | pdf"),
     user: TokenPayload = Depends(current_user),
 ):
-    """Gera o Laudo Integrado de Auditoria Bancária (11 abas, XLSX) a partir de
-    extratos OFX, usando o MESMO núcleo do CLI (api.services.laudo_forense).
+    """Laudo Integrado de Auditoria (núcleo único de api.services.laudo_forense).
 
-    Usa o cache de CNPJ existente (sem rede em-request) — rode POST /fiscal/processar
-    antes para popular o enriquecimento cadastral (situação/pós-baixa).
+    Aceita extratos OFX e, opcionalmente, XMLs/ZIPs de NF-e/CT-e — quando enviados,
+    o MESMO documento ganha as abas/seções fiscais (12. Documentos Fiscais e
+    13. Conformidade Fiscal). Formatos: xlsx (abas), html, pdf (Playwright).
+    Usa o cache de CNPJ existente (sem rede em-request).
     """
-    dedup = await _ler_dedup_ofx(arquivos, conta)
+    formato = (formato or "xlsx").lower()
+    if formato not in _FORMATOS_LAUDO:
+        raise HTTPException(400, f"formato invalido: use {sorted(_FORMATOS_LAUDO)}")
+    if not arquivos:
+        raise HTTPException(400, "Envie ao menos 1 arquivo OFX.")
+
+    transacoes = []
+    fiscais: list[tuple[str, bytes]] = []
+    total = 0
+    for up in arquivos:
+        conteudo = await read_limited(up, MAX_UPLOAD_BYTES)
+        total += len(conteudo)
+        if total > MAX_UPLOAD_TOTAL_BYTES:
+            raise HTTPException(413, f"Total de uploads excede {MAX_UPLOAD_TOTAL_MB} MB.")
+        nome = (up.filename or "").lower()
+        if nome.endswith(".ofx"):
+            try:
+                transacoes.extend(await asyncio.to_thread(ler_ofx, conteudo))
+            except Exception:
+                raise HTTPException(400, f"Falha ao ler OFX: {up.filename}")
+        elif nome.endswith(".xml") or nome.endswith(".zip"):
+            fiscais.append((_sanitize_filename(up.filename or "doc"), conteudo))
+    if not transacoes:
+        raise HTTPException(400, "Nenhum arquivo OFX válido fornecido.")
+
+    # dedup por (conta, fitid) + filtro de conta
+    vistos: set = set()
+    dedup = []
+    for t in transacoes:
+        k = (t.conta, t.fitid) if t.fitid else (t.conta, t.data, round(t.valor, 2), t.memo, t.nome)
+        if k in vistos:
+            continue
+        vistos.add(k)
+        dedup.append(t)
+    if conta:
+        dedup = [t for t in dedup if conta in (t.conta or "")]
+    if not dedup:
+        raise HTTPException(400, "Nenhuma transação para a conta informada.")
 
     def _build():
         from io import BytesIO
 
         from api.matchers.cnpj_enricher import _carregar_cache
         cache = _carregar_cache()
+        # NF-e/CT-e pela própria engine (alimenta as abas/seções fiscais).
+        nfes, ctes, _n = laudo.carregar_docs_xmls(fiscais) if fiscais else ([], [], 0)
         todos, saldos = laudo.montar_dados(dedup)
         # EMPRESA é global do módulo laudo — serializa a geração para evitar race.
         with _LAUDO_LOCK:
             laudo.EMPRESA = laudo.construir_empresa(empresa_cnpj, cache)
             razao = laudo.EMPRESA.get("razao_social", "laudo")
-            wb, _stats = laudo.gerar_laudo_workbook(todos, saldos, cache)
-            buf = BytesIO()
-            wb.save(buf)
-        return buf.getvalue(), razao
+            wb, stats = laudo.gerar_laudo_workbook(todos, saldos, cache, nfes, ctes)
+            if formato == "xlsx":
+                buf = BytesIO()
+                wb.save(buf)
+                return buf.getvalue(), razao
+            # html / pdf usam o mesmo stats -> gerar_md -> gerar_html
+            md, _totais = laudo.gerar_md(stats)
+            html = laudo.gerar_html(md, stats.get("periodo_str", ""))
+            return html, razao
 
-    blob, razao = await asyncio.to_thread(_build)
+    saida, razao = await asyncio.to_thread(_build)
     fname = re.sub(r"[^\w]+", "_", razao).strip("_")[:40] or "laudo"
+
+    if formato == "xlsx":
+        return Response(
+            content=saida,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.xlsx"'},
+        )
+    if formato == "html":
+        return Response(
+            content=saida,
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": f'inline; filename="laudo_{fname}.html"'},
+        )
+    # pdf
+    blob = await laudo.html_para_pdf_bytes(saida, landscape=True)
+    if not blob:
+        raise HTTPException(500, "Falha ao gerar PDF.")
     return Response(
         content=blob,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.xlsx"'},
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.pdf"'},
     )
 
 

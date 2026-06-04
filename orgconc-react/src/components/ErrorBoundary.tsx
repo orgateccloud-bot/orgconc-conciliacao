@@ -8,12 +8,13 @@ interface Props {
 interface State {
   hasError: boolean;
   error?: Error;
+  retries: number;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false };
+  state: State = { hasError: false, retries: 0 };
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
 
@@ -30,12 +31,20 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-sm text-muted-foreground max-w-sm">
               {this.state.error?.message ?? "Erro inesperado. Recarregue a página."}
             </p>
-            <button
-              className="mt-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-              onClick={() => this.setState({ hasError: false, error: undefined })}
-            >
-              Tentar novamente
-            </button>
+            {this.state.retries >= 3 ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Número máximo de tentativas atingido. Recarregue a página.
+              </p>
+            ) : (
+              <button
+                className="mt-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+                onClick={() =>
+                  this.setState((s) => ({ hasError: false, error: undefined, retries: s.retries + 1 }))
+                }
+              >
+                Tentar novamente
+              </button>
+            )}
           </div>
         )
       );

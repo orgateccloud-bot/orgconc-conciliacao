@@ -15,8 +15,8 @@ def _dados_mock(risco_total=5_000_000.0, n_fornecedores=50):
 
     class _Cliente:
         id = "uuid-1"
-        nome = "LOCAR TRANSPORTE DE BOVINOS LTDA"
-        cnpj = "05.509.396/0001-10"
+        nome = "TRANSPORTADORA EXEMPLO LTDA"
+        cnpj = "12.345.678/0001-90"
 
     class _ConfRow:
         def __init__(self, cnpj, razao, vol_pago, vol_nf, conf, risco):
@@ -52,7 +52,7 @@ def test_fmt_brl():
 
 def test_renderizar_carta_md_contem_cliente_e_risco():
     md = renderizar_carta_md(_dados_mock(risco_total=3_363_620), versao="auto-7")
-    assert "LOCAR TRANSPORTE DE BOVINOS" in md
+    assert "TRANSPORTADORA EXEMPLO" in md
     assert "auto-7" in md
     assert "R$ 3.363.620,00" in md
     assert "CRITICO" in md

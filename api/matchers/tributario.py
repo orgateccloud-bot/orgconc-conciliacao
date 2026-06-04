@@ -13,19 +13,38 @@ Modelo de cálculo:
 - Pagamento sem NF-e (RIR/2018 art. 311) → despesa indedutível → 34% LALUR
 - Pagamento a MEI caminhoneiro sem CT-e → IRPJ+CSLL adicional + ICMS-ST
 - Retenção não recolhida → multa 75-150% + juros SELIC
+
+ATENÇÃO — VIGÊNCIA DAS ALÍQUOTAS:
+- ALIQUOTA_IRPJ_CSLL: vigente conforme RIR/2018 (sem alteração até 2025-06)
+- ALIQUOTA_ICMS_ST: estimativa média nacional; varia por UF e NCM.
+  SP ~18%, MG ~7%, CE ~0%. Usar tabela por UF/produto para precisão.
+- ALIQUOTA_RETENCAO_PJ: mix simplificado. Reforma Tributária (PL 68/2024)
+  altera CBS/IBS a partir de 2026 — revisar antes da entrada em vigor.
+- Todas as alíquotas têm data de última verificação: 2025-06.
+  Acrescentar teste automatizado de vigência ou revisar a cada trimestre.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Iterable
 
 from api.matchers.conformidade import ConformidadeScore
 
-ALIQUOTA_IRPJ_CSLL = 0.34  # 25% + 9%
-ALIQUOTA_ICMS_ST = 0.05    # transporte sem CT-e
-ALIQUOTA_RETENCAO_PJ = 0.0615  # PIS+COFINS+CSLL+IRRF
-ALIQUOTA_RETENCAO_PF = 0.275   # IRRF máximo
+# Vigência verificada em 2025-06. Revisar trimestralmente.
+ALIQUOTA_IRPJ_CSLL = 0.34      # 25% IRPJ + 9% CSLL — RIR/2018
+ALIQUOTA_ICMS_ST = 0.05        # estimativa média; varia por UF/NCM
+ALIQUOTA_RETENCAO_PJ = 0.0615  # PIS+COFINS+CSLL+IRRF retidos (serviços)
+ALIQUOTA_RETENCAO_PF = 0.275   # IRRF máximo PF autônomo
 ALIQUOTA_INSS_PF = 0.11
+
+
+def _dec(v: float) -> Decimal:
+    return Decimal(str(v))
+
+
+def _round2(d: Decimal) -> float:
+    return float(d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 @dataclass
@@ -71,13 +90,14 @@ def estimar_risco_fornecedor(
         aliquota += ALIQUOTA_ICMS_ST
         metodologia = "IRPJ+CSLL+ICMS-ST (Decreto 8.324/2014)"
 
-    risco = base_anual * aliquota
+    base_dec = _dec(base_anual)
+    risco_dec = base_dec * _dec(aliquota)
     return RiscoTributario(
         cnpj_fornecedor=score.cnpj_fornecedor,
         razao_social=score.razao_social,
-        base_calculo=round(base_anual, 2),
+        base_calculo=_round2(base_dec),
         aliquota_aplicada=round(aliquota, 4),
-        risco_anual=round(risco, 2),
+        risco_anual=_round2(risco_dec),
         metodologia=metodologia,
     )
 
@@ -101,14 +121,16 @@ def estimar_retencoes_nao_recolhidas(
     """
     base_pj_anual = _anualizar(volume_pago_pj, meses_observados)
     base_pf_anual = _anualizar(volume_pago_pf, meses_observados)
-    retencao_pj = base_pj_anual * ALIQUOTA_RETENCAO_PJ
-    retencao_pf = base_pf_anual * (ALIQUOTA_RETENCAO_PF + ALIQUOTA_INSS_PF) / 2  # média
+    pj_dec = _dec(base_pj_anual)
+    pf_dec = _dec(base_pf_anual)
+    retencao_pj_dec = pj_dec * _dec(ALIQUOTA_RETENCAO_PJ)
+    retencao_pf_dec = pf_dec * (_dec(ALIQUOTA_RETENCAO_PF) + _dec(ALIQUOTA_INSS_PF)) / _dec(2)
     return {
-        "base_pj_anual": round(base_pj_anual, 2),
-        "base_pf_anual": round(base_pf_anual, 2),
-        "retencao_pj_anual": round(retencao_pj, 2),
-        "retencao_pf_anual": round(retencao_pf, 2),
-        "total_anual": round(retencao_pj + retencao_pf, 2),
+        "base_pj_anual": _round2(pj_dec),
+        "base_pf_anual": _round2(pf_dec),
+        "retencao_pj_anual": _round2(retencao_pj_dec),
+        "retencao_pf_anual": _round2(retencao_pf_dec),
+        "total_anual": _round2(retencao_pj_dec + retencao_pf_dec),
         "aliquotas": {
             "pj_servicos_pct": ALIQUOTA_RETENCAO_PJ * 100,
             "pf_irrf_max_pct": ALIQUOTA_RETENCAO_PF * 100,

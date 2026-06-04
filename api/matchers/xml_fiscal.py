@@ -12,6 +12,7 @@ Diferenças em relação a `api/matchers/nfe.py`:
 from __future__ import annotations
 
 import io
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
@@ -43,14 +44,95 @@ class DocumentoFiscalLido:
     valor_pis: float = 0.0
     valor_cofins: float = 0.0
     valor_iss: float = 0.0
-    cfop: str = ""
+    cfop: str = ""               # CFOPs distintos juntados por vírgula (compat)
+    cfops: list[str] = field(default_factory=list)  # CFOPs por item (det/prod/CFOP)
     natureza_operacao: str = ""
     municipio_emit: str = ""
+    # True/False para NF-e/CT-e (44 díg + DV mod-11); None = não-aplicável (NFS-e).
+    chave_valida: Optional[bool] = None
+    # Situação fiscal do documento (do protocolo cStat ou de evento de cancelamento):
+    # AUTORIZADA | CANCELADA | DENEGADA. Documentos sem validade não contam como cobertura.
+    situacao: str = "AUTORIZADA"
     erros: list[str] = field(default_factory=list)
 
 
 def _local(tag: str) -> str:
     return tag.split("}")[-1]
+
+
+# Prefixos do atributo Id em NF-e/NFC-e/CT-e (ex.: "NFe3520..." → "3520...").
+_PREFIXOS_CHAVE = ("NFCe", "NFe", "CTeOS", "CTe")
+
+
+def _strip_prefixo_chave(raw: str) -> str:
+    """Remove o prefixo textual do Id, devolvendo apenas os dígitos da chave.
+
+    Correto onde o antigo `.lstrip("NFe")` falhava: lstrip remove QUALQUER
+    caractere do conjunto {N,F,e}, não o prefixo. Aqui removemos só o prefixo.
+    """
+    s = (raw or "").strip()
+    for pref in _PREFIXOS_CHAVE:
+        if s.startswith(pref):
+            return s[len(pref):]
+    return s
+
+
+# cStat do protocolo de autorização (infProt/cStat).
+_CSTAT_CANCELADA = {"101", "151", "155"}      # cancelamento homologado
+_CSTAT_DENEGADA = {"110", "301", "302", "303"}  # uso denegado
+# tpEvento de evento autônomo de cancelamento (procEventoNFe/CTe).
+_TPEVENTO_CANCELAMENTO = {"110111", "110112"}
+
+
+def _situacao_de_cstat(cstat: str) -> str:
+    """Mapeia o cStat do protocolo para a situação fiscal do documento."""
+    if cstat in _CSTAT_CANCELADA:
+        return "CANCELADA"
+    if cstat in _CSTAT_DENEGADA:
+        return "DENEGADA"
+    return "AUTORIZADA"
+
+
+def _situacao_do_root(root) -> str:
+    """Lê a situação a partir do protocolo (infProt/cStat) embutido no XML."""
+    prot = _achar_inf(root, "infProt")
+    cstat = _texto(prot, "cStat") if prot is not None else ""
+    return _situacao_de_cstat(cstat)
+
+
+def _chave_cancelada_de_evento(conteudo: bytes) -> Optional[str]:
+    """Se o XML for um evento de cancelamento (procEventoNFe/CTe, tpEvento 1101xx),
+    retorna a chave (44 díg) do documento cancelado; caso contrário None."""
+    try:
+        root = _safe_fromstring(conteudo)
+    except Exception:  # noqa: BLE001 — XML inválido/malicioso: ignora
+        return None
+    inf = _achar_inf(root, "infEvento")
+    if inf is None:
+        return None
+    if _texto(inf, "tpEvento") not in _TPEVENTO_CANCELAMENTO:
+        return None
+    ch = _texto(inf, "chNFe") or _texto(inf, "chCTe")
+    return re.sub(r"\D", "", ch) if ch else None
+
+
+def validar_chave_acesso(chave: str) -> bool:
+    """Valida chave de acesso de NF-e/CT-e: 44 dígitos + dígito verificador mod-11.
+
+    Detecta chaves estruturalmente inválidas (forjadas/corrompidas) na ingestão.
+    NÃO prova autenticidade (isso exige consulta à SEFAZ) — apenas consistência.
+    """
+    ch = re.sub(r"\D", "", chave or "")
+    if len(ch) != 44:
+        return False
+    corpo, dv = ch[:43], int(ch[43])
+    peso, soma = 2, 0
+    for d in reversed(corpo):
+        soma += int(d) * peso
+        peso = 2 if peso == 9 else peso + 1
+    resto = soma % 11
+    dv_calc = 0 if resto in (0, 1) else 11 - resto
+    return dv_calc == dv
 
 
 def _filho(elem, nome: str):
@@ -86,6 +168,17 @@ def _achar_inf(root, *nomes: str):
     return None
 
 
+def _cfops_dos_itens(root) -> list[str]:
+    """Coleta os CFOPs distintos dos itens da NF-e (det/prod/CFOP), em ordem."""
+    cfops: list[str] = []
+    for elem in root.iter():
+        if _local(elem.tag) == "CFOP" and elem.text:
+            c = elem.text.strip()
+            if c and c not in cfops:
+                cfops.append(c)
+    return cfops
+
+
 def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     """Parser NF-e (modelo 55) ou NFC-e (modelo 65)."""
     try:
@@ -110,11 +203,12 @@ def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     modelo = _texto(ide, "mod") or "55"
     tipo = "NFC-e" if modelo == "65" else "NF-e"
 
-    chave = (inf.get("Id") or "").lstrip("NFe").lstrip("NFCe")
+    chave = _strip_prefixo_chave(inf.get("Id") or "")
     data = (_texto(ide, "dhEmi") or _texto(ide, "dEmi"))[:10]
 
     emit_uf = _texto(emit, "enderEmit", "UF")
     mun_emit = _texto(emit, "enderEmit", "xMun")
+    cfops = _cfops_dos_itens(inf)
 
     return DocumentoFiscalLido(
         tipo=tipo,
@@ -132,8 +226,12 @@ def parse_nfe(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
         valor_icms=_to_float(_texto(icms_tot, "vICMS") if icms_tot is not None else ""),
         valor_pis=_to_float(_texto(icms_tot, "vPIS") if icms_tot is not None else ""),
         valor_cofins=_to_float(_texto(icms_tot, "vCOFINS") if icms_tot is not None else ""),
+        cfop=",".join(cfops),
+        cfops=cfops,
         natureza_operacao=_texto(ide, "natOp"),
         municipio_emit=mun_emit,
+        chave_valida=validar_chave_acesso(chave),
+        situacao=_situacao_do_root(root),
     )
 
 
@@ -160,7 +258,7 @@ def parse_cte(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
     imposto = _filho(inf, "imp")
     icms = _filho(imposto, "ICMS") if imposto is not None else None
 
-    chave = (inf.get("Id") or "").lstrip("CTe")
+    chave = _strip_prefixo_chave(inf.get("Id") or "")
     data = (_texto(ide, "dhEmi") or _texto(ide, "dEmi"))[:10]
     modelo = _texto(ide, "mod") or "57"
 
@@ -180,7 +278,11 @@ def parse_cte(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
         dest_nome=_texto(dest, "xNome") if dest is not None else (_texto(rem, "xNome") if rem is not None else ""),
         valor_total=_to_float(_texto(vprest, "vTPrest") if vprest is not None else ""),
         valor_icms=_to_float(_texto(_filho(icms, "ICMS00") or _filho(icms, "ICMS20") or _filho(icms, "ICMS60") or icms, "vICMS") if icms is not None else ""),
+        cfop=_texto(ide, "CFOP"),
+        cfops=[c] if (c := _texto(ide, "CFOP")) else [],
         natureza_operacao=_texto(ide, "natOp"),
+        chave_valida=validar_chave_acesso(chave),
+        situacao=_situacao_do_root(root),
     )
 
 
@@ -252,12 +354,26 @@ def detectar_e_parsear(conteudo: bytes) -> Optional[DocumentoFiscalLido]:
 
 
 def parse_lote_xmls(xmls: Iterable[tuple[str, bytes]]) -> list[DocumentoFiscalLido]:
-    """Parseia lote de XMLs e retorna lista de DocumentoFiscalLido (descarta inválidos)."""
+    """Parseia lote de XMLs e retorna lista de DocumentoFiscalLido (descarta inválidos).
+
+    Dois passos: XMLs de evento de cancelamento (procEventoNFe/CTe, tpEvento 1101xx)
+    não viram documento, mas marcam o documento original (mesma chave) como CANCELADA.
+    A situação também é lida do protocolo (cStat) embutido no próprio XML do documento.
+    """
     docs: list[DocumentoFiscalLido] = []
+    canceladas: set[str] = set()
     for _filename, conteudo in xmls:
+        chave_cancelada = _chave_cancelada_de_evento(conteudo)
+        if chave_cancelada:
+            canceladas.add(chave_cancelada)
+            continue
         doc = detectar_e_parsear(conteudo)
         if doc is not None and doc.chave:
             docs.append(doc)
+    if canceladas:
+        for d in docs:
+            if d.situacao == "AUTORIZADA" and re.sub(r"\D", "", d.chave) in canceladas:
+                d.situacao = "CANCELADA"
     return docs
 
 

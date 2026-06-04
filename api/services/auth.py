@@ -22,7 +22,7 @@ from typing import Optional
 
 from passlib.context import CryptContext
 import jwt
-from fastapi import Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 
 log = logging.getLogger("orgconc.auth")
@@ -207,13 +207,39 @@ def autorizar_cliente(
 ) -> None:
     """Verifica se o usuario tem acesso ao cliente solicitado.
 
-    Roles privilegiados (admin, auditor, anonymous) acessam qualquer cliente.
+    Roles privilegiados (admin, auditor, service) acessam qualquer cliente.
     User so acessa o proprio cliente_id; token sem cliente_id (legado) passa.
+
+    'anonymous' NAO e privilegiado: so existe em dev/staging sem auth
+    (current_user nunca o emite em producao). Em producao, por defesa em
+    profundidade, anonymous e explicitamente negado para recursos com dono.
     """
-    if user.role in ("admin", "auditor", "anonymous"):
+    if user.role in ("admin", "auditor", "service"):
         return
+    if user.role == "anonymous":
+        if _IS_PROD:
+            raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
+        return  # dev/staging: conveniencia de acesso sem token
     if not user.cliente_id:
-        return
+        return  # token legado sem cliente_id (compat)
     if user.cliente_id == cliente_id:
         return
     raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
+
+
+def require_role(*roles: str):
+    """Dependency factory: exige que o usuario autenticado tenha um dos `roles`.
+
+    A autenticacao (401) ja e garantida por current_user; aqui aplicamos a
+    autorizacao por papel (403). Uso:
+        dependencies=[Depends(require_role("admin", "auditor", "service"))]
+    ou como parametro: user = Depends(require_role("admin"))
+    """
+    permitidos = set(roles)
+
+    def _dep(user: "TokenPayload" = Depends(current_user)) -> "TokenPayload":
+        if user.role not in permitidos:
+            raise HTTPException(status_code=403, detail="Acesso restrito")
+        return user
+
+    return _dep

@@ -13,13 +13,14 @@ export function ConfiguracoesPage() {
   const { user } = useAuth();
   const { tema, toggle } = useTheme();
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [healthError, setHealthError] = useState(false);
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmSenha, setConfirmSenha] = useState("");
 
   useEffect(() => {
     fetchHealth()
       .then(setHealth)
-      .catch(() => {});
+      .catch(() => { setHealthError(true); });
   }, []);
 
   const senhasOk = novaSenha.length >= 8 && novaSenha === confirmSenha;
@@ -164,6 +165,8 @@ export function ConfiguracoesPage() {
               </div>
             ))}
           </div>
+        ) : healthError ? (
+          <p className="text-sm text-muted-foreground">Servidor indisponível.</p>
         ) : (
           <div className="space-y-2">
             {[1, 2, 3, 4].map((i) => (

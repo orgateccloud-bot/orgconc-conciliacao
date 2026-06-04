@@ -10,7 +10,7 @@ const RAIO = 65;
 const CIRCUNFERENCIA = 2 * Math.PI * RAIO;
 
 export function SecurityRing({ data, loading }: Props) {
-  const score = data?.score ?? 0;
+  const score = data === null ? 0 : Math.round(data.score);
   const corStroke = corPorScore(score);
   const dashOffset = CIRCUNFERENCIA - (score / 100) * CIRCUNFERENCIA;
 
@@ -37,16 +37,16 @@ export function SecurityRing({ data, loading }: Props) {
             strokeWidth="10"
             strokeLinecap="round"
             strokeDasharray={CIRCUNFERENCIA}
-            strokeDashoffset={loading ? CIRCUNFERENCIA : dashOffset}
+            strokeDashoffset={loading || data === null ? CIRCUNFERENCIA : dashOffset}
             style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.16,1,0.3,1)" }}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-4xl font-bold font-jakarta tabular leading-none">
-            {loading ? "—" : score}
+            {loading || data === null ? "—" : score}
           </span>
           <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mt-1">
-            Score
+            {loading || data === null ? "Sem dados" : "Score"}
           </span>
         </div>
       </div>
@@ -84,3 +84,4 @@ function corPorScore(score: number): string {
   if (score >= 50) return "#f59e0b"; // amber
   return "#dc2626"; // vermelho
 }
+

@@ -11,7 +11,7 @@ from api.domain.exceptions import RegraViolada, ValorInvalido
 from api.infra.repositories.clientes import ClienteRepositorySQL
 from api.schemas import ClienteCreate, ClienteUpdate
 from api.services.audit import gravar_audit_independente
-from api.services.auth import TokenPayload, current_user
+from api.services.auth import TokenPayload, autorizar_cliente, current_user
 from api.usecases.criar_cliente import CriarClienteInput, CriarClienteUseCase
 from api.usecases.listar_clientes import ListarClientesInput, ListarClientesUseCase
 
@@ -73,7 +73,13 @@ async def criar_cliente(
 
 @router.get("")
 @limiter.limit("30/minute")
-async def listar_clientes(request: Request, apenas_ativos: bool = True):
+async def listar_clientes(
+    request: Request,
+    apenas_ativos: bool = True,
+    user: TokenPayload = Depends(current_user),
+):
+    if user.role not in ("admin", "service", "auditor"):
+        raise HTTPException(403, "Listagem de clientes restrita a administradores")
     if not DB_DISPONIVEL or SessionLocal is None:
         raise HTTPException(503, "Banco de dados nao configurado")
     async with SessionLocal() as db:
@@ -87,13 +93,18 @@ async def listar_clientes(request: Request, apenas_ativos: bool = True):
 
 @router.get("/{cliente_id}")
 @limiter.limit("30/minute")
-async def buscar_cliente(request: Request, cliente_id: str):
+async def buscar_cliente(
+    request: Request,
+    cliente_id: str,
+    user: TokenPayload = Depends(current_user),
+):
     # fix(#6): validar UUID antes de checar DB_DISPONIVEL para retornar 400
     # corretamente para IDs invalidos independente do estado do banco.
     try:
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "ID invalido")
+    autorizar_cliente(user, cliente_id)
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
     async with SessionLocal() as db:
@@ -126,6 +137,7 @@ async def atualizar_cliente(
         cid = uuid.UUID(cliente_id)
     except ValueError:
         raise HTTPException(400, "ID invalido")
+    autorizar_cliente(user, cliente_id)
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
     campos = {k: v for k, v in payload.model_dump().items() if v is not None}

@@ -10,6 +10,18 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) return 'vendor-charts'
+          if (id.includes('node_modules/@radix-ui')) return 'vendor-radix'
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react-router')) return 'vendor-react'
+          if (id.includes('node_modules/@tanstack')) return 'vendor-query'
+        }
+      }
+    }
+  },
   server: {
     port: 5176,
     host: "127.0.0.1",

@@ -269,7 +269,7 @@ class DocumentoFiscal(Base):
     """Documento fiscal eletrônico (NF-e / CT-e / NFS-e) persistido após parsing.
 
     Centraliza os 3 tipos de documentos fiscais brasileiros que a auditoria
-    precisa cruzar contra pagamentos no extrato (cf. Constatação VIII LOCAR).
+    precisa cruzar contra pagamentos no extrato.
     """
     __tablename__ = "documento_fiscal"
     __table_args__ = (
@@ -392,6 +392,10 @@ class RefreshToken(Base):
 
     id:              Mapped[uuid.UUID]       = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     sub:             Mapped[str]             = mapped_column(Text, nullable=False, index=True)
+    # role/cliente_id da sessao: preservam a identidade real ao rotacionar o
+    # refresh, evitando que /auth/refresh reemita um access token com role fixo.
+    role:            Mapped[str]             = mapped_column(String(32), nullable=False, default="user", server_default="user")
+    cliente_id:      Mapped[str | None]      = mapped_column(Text)
     token_hash:      Mapped[str]             = mapped_column(String(64), unique=True, nullable=False)
     emitido_em:      Mapped[datetime]        = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
     expira_em:       Mapped[datetime]        = mapped_column(TIMESTAMPTZ, nullable=False)

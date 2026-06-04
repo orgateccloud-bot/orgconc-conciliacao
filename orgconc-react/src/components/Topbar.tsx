@@ -62,14 +62,6 @@ export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }
 
       {/* Right: badges + actions */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {/* Compliance badges */}
-        <span className="hidden lg:inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-bold text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-          ✓ LGPD
-        </span>
-        <span className="hidden lg:inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
-          ✓ SOC 2
-        </span>
-
         {/* DB status */}
         <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold font-mono ${dbColor}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${
@@ -79,7 +71,12 @@ export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }
         </span>
 
         {/* Bell */}
-        <button className="relative p-1.5 rounded-md hover:bg-secondary text-muted-foreground">
+        <button
+          aria-label="Notificações"
+          disabled
+          title="Em breve"
+          className="relative p-1.5 rounded-md hover:bg-secondary text-muted-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           <Bell className="h-4 w-4" />
         </button>
 

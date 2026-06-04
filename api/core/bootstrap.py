@@ -124,7 +124,18 @@ def criar_app(
     version: str = "0.5.0",
 ) -> FastAPI:
     """Cria o FastAPI com todos os middlewares + handlers configurados."""
-    app = FastAPI(title=title, description=description, version=version, lifespan=lifespan)
+    # Em producao, desabilita Swagger/ReDoc/OpenAPI — nao expor o mapa de
+    # endpoints fiscais e de auditoria publicamente.
+    _is_prod = os.environ.get("ORGCONC_ENV", "").strip().lower() in ("production", "prod")
+    app = FastAPI(
+        title=title,
+        description=description,
+        version=version,
+        lifespan=lifespan,
+        docs_url=None if _is_prod else "/docs",
+        redoc_url=None if _is_prod else "/redoc",
+        openapi_url=None if _is_prod else "/openapi.json",
+    )
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(PrometheusMiddleware)

@@ -19,7 +19,7 @@ from api.core.config import (
 )
 from api.core.rate_limit import limiter
 from api.parsers import _detectar_anomalias, _fmt_csv, _parse_arquivo
-from api.services.auth import TokenPayload, current_user
+from api.services.auth import TokenPayload, autorizar_cliente, current_user
 from api.services.conciliacao_llm import (
     chamar_modelo_async,
     friendly_anthropic_error,
@@ -202,6 +202,8 @@ async def conciliar_ofx(
 ):
     if modelo not in _MODELOS_VALIDOS:
         raise HTTPException(400, detail=f"modelo invalido: {modelo}")
+    if cliente_id:
+        autorizar_cliente(user, cliente_id)
     if not (1 <= len(arquivos) <= 50):
         raise HTTPException(400, detail="Envie entre 1 e 50 arquivos")
 
@@ -364,6 +366,8 @@ async def conciliar_csv(
 ):
     if modelo not in _MODELOS_VALIDOS:
         raise HTTPException(400, detail=f"modelo invalido: {modelo}")
+    if cliente_id:
+        autorizar_cliente(user, cliente_id)
 
     extrato_bytes = await read_limited(extrato, MAX_UPLOAD_BYTES)
     razao_bytes = await read_limited(razao, MAX_UPLOAD_BYTES)

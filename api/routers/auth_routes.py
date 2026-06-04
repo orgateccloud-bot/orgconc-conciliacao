@@ -66,14 +66,26 @@ def _client_ua(request: Request) -> str | None:
     return request.headers.get("user-agent")
 
 
-async def _emitir_refresh_persistido(sub: str, request: Request) -> str:
-    """Cria e persiste um refresh token. Retorna o token plain (vai p/ o cliente)."""
+async def _emitir_refresh_persistido(
+    sub: str,
+    request: Request,
+    *,
+    role: str = "user",
+    cliente_id: str | None = None,
+) -> str:
+    """Cria e persiste um refresh token. Retorna o token plain (vai p/ o cliente).
+
+    role/cliente_id sao persistidos para que /auth/refresh reemita o access token
+    preservando a identidade real da sessao (sem escalar para admin).
+    """
     token_plain = gerar_refresh_token()
     expira = datetime.now(timezone.utc) + timedelta(days=REFRESH_TTL_DAYS)
     async with _config.SessionLocal() as db:
         await refresh_repo.criar(
             db,
             sub=sub,
+            role=role,
+            cliente_id=cliente_id,
             token_hash=hash_refresh_token(token_plain),
             expira_em=expira,
             ip=_client_ip(request),
@@ -103,7 +115,9 @@ async def auth_login(request: Request, response: Response, payload: LoginPayload
     resp_body = {"access_token": token, "token_type": "bearer"}
     # Refresh token: só emite se há DB para persistir (revogação server-side).
     if _config.DB_DISPONIVEL and _config.SessionLocal is not None:
-        refresh_plain = await _emitir_refresh_persistido(admin_email, request)
+        refresh_plain = await _emitir_refresh_persistido(
+            admin_email, request, role="admin", cliente_id=None
+        )
         _set_refresh_cookie(response, refresh_plain)
         resp_body["refresh_emitted"] = True
         resp_body["refresh_ttl_days"] = REFRESH_TTL_DAYS
@@ -140,11 +154,16 @@ async def auth_refresh(request: Request, response: Response):
         if not row:
             raise HTTPException(401, "Refresh invalido ou expirado")
         sub = row.sub
+        # Preserva a identidade real da sessao — NUNCA reemitir admin fixo.
+        role = row.role or "user"
+        cliente_id = row.cliente_id
         old_id = row.id
         novo_plain = gerar_refresh_token()
         novo_row = await refresh_repo.criar(
             db,
             sub=sub,
+            role=role,
+            cliente_id=cliente_id,
             token_hash=hash_refresh_token(novo_plain),
             expira_em=datetime.now(timezone.utc) + timedelta(days=REFRESH_TTL_DAYS),
             ip=_client_ip(request),
@@ -152,7 +171,7 @@ async def auth_refresh(request: Request, response: Response):
         )
         await refresh_repo.revogar(db, old_id, substituido_por=novo_row.id)
 
-    novo_access = emitir_token(sub=sub, email=sub, role="admin")
+    novo_access = emitir_token(sub=sub, email=sub, role=role, cliente_id=cliente_id)
     _set_auth_cookie(response, novo_access)
     _set_refresh_cookie(response, novo_plain)
     return {"access_token": novo_access, "token_type": "bearer", "refresh_emitted": True}

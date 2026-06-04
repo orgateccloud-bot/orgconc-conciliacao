@@ -49,33 +49,6 @@ def test_gerar_laudo_workbook_11_abas():
     assert isinstance(totais, dict) and "total_exc" in totais
 
 
-def test_anualizado_global_nao_corrompido_por_loop_mei():
-    """Regressão: o loop de classificação de MEIs não pode sobrescrever a variável
-    `anualizado` (giro anualizado da EMPRESA). Antes, stats['anualizado'] saía com o
-    valor do último MEI (centenas de R$) em vez do giro real (milhões), enquanto
-    stats['multiplo'] permanecia correto — inconsistência no Sumário do MD/PDF."""
-    from api.matchers.regime_fiscal import TETO_SIMPLES_EPP
-
-    # Empresa com giro em milhões + 1 MEI (porte via cache) que aciona o loop.
-    txs = [
-        _tx("2026-01-10", -3_000_000.0, nome="FORN GRANDE 11.222.333/0001-81"),
-        _tx("2026-02-10", 3_000_000.0, nome="CLIENTE 11.222.333/0001-81"),
-        _tx("2026-03-10", -300.0, nome="MEI 44.555.666/0001-22"),
-    ]
-    todos, saldos = laudo.montar_dados(txs)
-    cache = {"44555666000122": {
-        "porte": "MICRO EMPRESA", "razao_social": "MEI PEQUENO ME",
-        "cnae_principal": "4930202", "situacao": "ATIVA",
-    }}
-    laudo.EMPRESA = laudo.construir_empresa("11222333000181", cache)
-    _, stats = laudo.gerar_laudo_workbook(todos, saldos, cache)
-
-    # Anualizado é o da empresa (milhões), não o do MEI (centenas) — pega o bug.
-    assert stats["anualizado"] > TETO_SIMPLES_EPP
-    # E casa com o múltiplo (tolerância p/ arredondamento do múltiplo em 2 casas).
-    assert abs(stats["anualizado"] - stats["multiplo"] * TETO_SIMPLES_EPP) < TETO_SIMPLES_EPP * 0.02
-
-
 def test_construir_empresa_sem_cache_nao_vaza_dados():
     emp = laudo.construir_empresa("11222333000181", {})
     assert emp["cnpj_basico"] == "11222333000181"

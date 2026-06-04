@@ -14,7 +14,7 @@ from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
 from api.db.models import GuiaTributo
 from api.services.audit import gravar_audit_independente
-from api.services.auth import TokenPayload, current_user
+from api.services.auth import TokenPayload, autorizar_cliente, current_user
 
 router = APIRouter(prefix="/guias", tags=["guias"], dependencies=[Depends(current_user)])
 
@@ -70,6 +70,7 @@ async def criar_guia(
 ):
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
+    autorizar_cliente(user, str(payload.cliente_id))
     async with SessionLocal() as db:
         guia = GuiaTributo(
             cliente_id=payload.cliente_id,
@@ -100,9 +101,16 @@ async def listar_guias(
     request: Request,
     cliente_id: Optional[str] = None,
     apenas_ativos: bool = True,
+    user: TokenPayload = Depends(current_user),
 ):
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
+    # Isolamento por tenant: usuário não-privilegiado só vê o próprio cliente.
+    if user.role not in ("admin", "service", "auditor", "anonymous"):
+        if not cliente_id:
+            cliente_id = user.cliente_id
+        elif user.cliente_id and cliente_id != user.cliente_id:
+            raise HTTPException(403, "Acesso negado a este cliente")
     async with SessionLocal() as db:
         stmt = select(GuiaTributo)
         if cliente_id:
@@ -142,15 +150,13 @@ async def atualizar_guia(
         raise HTTPException(400, "Nada para atualizar")
 
     async with SessionLocal() as db:
-        result = await db.execute(
-            update(GuiaTributo)
-            .where(GuiaTributo.id == gid)
-            .values(**campos)
-            .returning(GuiaTributo)
-        )
-        guia = result.scalar_one_or_none()
+        guia = (
+            await db.execute(select(GuiaTributo).where(GuiaTributo.id == gid))
+        ).scalar_one_or_none()
         if not guia:
             raise HTTPException(404, "Guia não encontrada")
+        autorizar_cliente(user, str(guia.cliente_id))
+        await db.execute(update(GuiaTributo).where(GuiaTributo.id == gid).values(**campos))
         await db.commit()
         await db.refresh(guia)
 

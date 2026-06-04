@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   fiscalConformidade,
   listarClientes,
@@ -15,23 +15,9 @@ import {
 } from "@/components/ui/select";
 import { HeroCard } from "@/components/HeroCard";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, formatBRL } from "@/lib/utils";
+import { corBadge } from "@/lib/risco-cores";
 import { Filter, FileWarning } from "lucide-react";
-
-const CLASSE_COLOR: Record<string, string> = {
-  BAIXO: "bg-green-100 text-green-700 border-green-200",
-  MEDIO: "bg-blue-100 text-blue-700 border-blue-200",
-  ALTO: "bg-orange-100 text-orange-700 border-orange-200",
-  CRITICO: "bg-red-100 text-red-700 border-red-200",
-};
-
-function formatBRL(v: number): string {
-  return v.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 2,
-  });
-}
 
 export function GapsFiscaisPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -51,21 +37,34 @@ export function GapsFiscaisPage() {
       setDados(null);
       return;
     }
-    fiscalConformidade(clienteId, classe || undefined)
-      .then(setDados)
-      .catch((err) =>
-        toast.error(err instanceof Error ? err.message : "Falha ao carregar gaps"),
-      );
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fiscalConformidade(clienteId, classe || undefined);
+        if (!cancelled) setDados(r);
+      } catch (e) {
+        if (!cancelled)
+          toast.error(e instanceof Error ? e.message : "Falha ao carregar gaps");
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [clienteId, classe]);
 
-  const fornecedoresFiltrados = (dados?.fornecedores ?? []).filter((f) => {
-    if (!search) return true;
-    const s = search.toLowerCase();
-    return (
-      f.cnpj.toLowerCase().includes(s) ||
-      (f.razao_social ?? "").toLowerCase().includes(s)
-    );
-  });
+  const fornecedoresFiltrados = useMemo(
+    () =>
+      (dados?.fornecedores ?? []).filter((f) => {
+        if (!search) return true;
+        const s = search.toLowerCase();
+        return (
+          f.cnpj.toLowerCase().includes(s) ||
+          (f.razao_social ?? "").toLowerCase().includes(s)
+        );
+      }),
+    [dados, search],
+  );
 
   return (
     <div className="space-y-8">
@@ -171,7 +170,7 @@ export function GapsFiscaisPage() {
                     <td className="py-2 px-2">
                       <span className={cn(
                         "inline-block px-2 py-0.5 rounded text-xs font-semibold border",
-                        CLASSE_COLOR[f.risco_classe] ?? "",
+                        corBadge(f.risco_classe),
                       )}>
                         {f.risco_classe}
                       </span>

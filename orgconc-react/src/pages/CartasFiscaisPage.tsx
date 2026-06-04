@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   fiscalGerarCarta,
   fiscalListarCartas,
   listarClientes,
-  type Cliente,
   type FiscalCartaItem,
   type FiscalCartaResponse,
 } from "@/lib/api";
@@ -19,14 +19,7 @@ import {
 import { HeroCard } from "@/components/HeroCard";
 import { toast } from "sonner";
 import { FileText, Download, RefreshCw } from "lucide-react";
-
-function formatBRL(v: number): string {
-  return v.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 2,
-  });
-}
+import { formatBRL } from "@/lib/utils";
 
 function formatDate(iso: string | null) {
   if (!iso) return "—";
@@ -34,17 +27,11 @@ function formatDate(iso: string | null) {
 }
 
 export function CartasFiscaisPage() {
-  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const { data: clientes = [] } = useQuery({ queryKey: ["clientes"], queryFn: listarClientes });
   const [clienteId, setClienteId] = useState<string>("");
   const [cartas, setCartas] = useState<FiscalCartaItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [ultimaGerada, setUltimaGerada] = useState<FiscalCartaResponse | null>(null);
-
-  useEffect(() => {
-    listarClientes()
-      .then(setClientes)
-      .catch(() => toast.error("Falha ao carregar clientes"));
-  }, []);
 
   const loadCartas = useCallback(async () => {
     if (!clienteId) {

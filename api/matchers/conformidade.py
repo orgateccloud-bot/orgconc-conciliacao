@@ -16,7 +16,8 @@ Algoritmo:
 4. Detecta flags:
    - REDE_FROTA_TYPE: vol >= 100k e NF == 0 (cartão de frota sem NF)
    - MEI_SEM_CTE: fornecedor classificado como MEI sem CT-e
-   - PARTE_RELACIONADA: contém "LOCAR" ou nome do sócio no nome
+   - PARTE_RELACIONADA: nome do fornecedor casa com um sócio do quadro
+     societário do cliente (data-driven — sem nomes de empresa hardcoded)
 """
 from __future__ import annotations
 
@@ -85,18 +86,19 @@ def _detectar_flags(
     if volume_pago >= 100_000 and volume_nf == 0:
         flags.append("REDE_FROTA_TYPE")
 
-    # MEI sem CT-e (Constatação VIII caso 2)
+    # MEI de transporte sem CT-e: pagamento a MEI caminhoneiro sem documento
     if is_mei and cnae.startswith("4930") and n_ctes == 0:
         flags.append("MEI_SEM_CTE")
 
-    # Parte relacionada (heurística)
+    # Parte relacionada (data-driven): o nome do fornecedor casa com um sócio
+    # do quadro societário do cliente. Match por palavra (\b) com guarda de
+    # comprimento (>=4) para evitar falso positivo de substring curta
+    # (ex.: sócio "ANA" casando "BANANA TRANSPORTES").
     for socio in nomes_socios:
-        if socio and socio.upper() in nome_up:
+        socio_up = (socio or "").strip().upper()
+        if len(socio_up) >= 4 and re.search(rf"\b{re.escape(socio_up)}\b", nome_up):
             flags.append("PARTE_RELACIONADA")
             break
-    if "LOCAR" in nome_up and "BOVINOS" not in nome_up:
-        if "PARTE_RELACIONADA" not in flags:
-            flags.append("PARTE_RELACIONADA")
 
     return flags
 
@@ -136,10 +138,14 @@ def calcular_conformidade_fornecedor(
         if isinstance(d, date):
             pag_por_cnpj[cnpj]["datas"].append(d)
 
-    # Agrega NF-es por CNPJ emitente
+    # Agrega NF-es por CNPJ emitente. Documentos CANCELADA/DENEGADA não têm
+    # validade fiscal — não contam como cobertura (senão inflam volume_nf e
+    # mascaram o gap real).
     nfe_por_cnpj: dict[str, dict] = defaultdict(lambda: {"vol": 0.0, "n": 0, "n_ctes": 0, "nome": ""})
     for d in documentos:
         if not d.emit_cnpj:
+            continue
+        if getattr(d, "situacao", "AUTORIZADA") in ("CANCELADA", "DENEGADA"):
             continue
         nfe_por_cnpj[d.emit_cnpj]["vol"] += d.valor_total
         nfe_por_cnpj[d.emit_cnpj]["n"] += 1

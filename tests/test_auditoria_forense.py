@@ -14,7 +14,7 @@ def _tx(data, valor, memo="", nome=""):
 
 
 def test_regime_caso_referencia_incompativel():
-    # ~R$ 70M em ~4,5 meses → dezenas de vezes o teto EPP (caso LOCAR)
+    # ~R$ 70M em ~4,5 meses → dezenas de vezes o teto EPP (volume incompatível)
     txs = [
         _tx("2026-01-02", 35_203_688.26, memo="CREDITOS DO PERIODO"),
         _tx("2026-05-14", -35_049_842.12, memo="DEBITOS DO PERIODO"),

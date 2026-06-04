@@ -216,9 +216,21 @@ export interface Cliente {
   ativo?: boolean;
 }
 
+let _clientesCache: unknown[] | null = null;
+let _clientesCacheAt = 0;
+const CLIENTES_TTL_MS = 60_000;
+
 export async function listarClientes() {
-  return apiFetch<Cliente[]>("/clientes");
+  if (_clientesCache !== null && (performance.now() - _clientesCacheAt) < CLIENTES_TTL_MS) {
+    return _clientesCache as Cliente[];
+  }
+  const result = await apiFetch<Cliente[]>("/clientes");
+  _clientesCache = result;
+  _clientesCacheAt = performance.now();
+  return result;
 }
+
+export function invalidarCacheClientes(): void { _clientesCache = null; _clientesCacheAt = 0; }
 
 export async function criarCliente(data: Partial<Cliente>) {
   return apiFetch<Cliente>("/clientes", { method: "POST", body: JSON.stringify(data) });
@@ -478,6 +490,74 @@ export async function fiscalProcessar(
     method: "POST",
     body: fd,
   });
+}
+
+export type FormatoLaudo = "xlsx" | "html" | "pdf";
+
+/**
+ * Gera o Laudo Integrado (POST /fiscal/laudo) e devolve o arquivo como Blob.
+ * Aceita OFX + (opcional) XMLs/ZIPs de NF-e/CT-e — com XMLs o laudo ganha as
+ * abas/seções fiscais. Faz refresh do token uma vez em 401 (igual ao apiFetch).
+ */
+export async function fiscalLaudo(opts: {
+  empresaCnpj: string;
+  conta?: string;
+  arquivos: File[];
+  formato: FormatoLaudo;
+}): Promise<{ blob: Blob; filename: string }> {
+  const fd = new FormData();
+  fd.append("empresa_cnpj", opts.empresaCnpj);
+  if (opts.conta) fd.append("conta", opts.conta);
+  opts.arquivos.forEach((f) => fd.append("arquivos", f));
+
+  const url = `/fiscal/laudo?formato=${opts.formato}`;
+  const doFetch = (token: string | null) => {
+    const headers = new Headers();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    return fetch(url, { method: "POST", body: fd, headers, credentials: "include" });
+  };
+
+  let res = await doFetch(getToken());
+  if (res.status === 401) {
+    const novo = await apiRefresh();
+    if (novo) {
+      res = await doFetch(novo);
+    } else {
+      setToken(null);
+      window.dispatchEvent(new Event("orgconc:logout"));
+      throw new ApiError("Sessão expirada", 401);
+    }
+  }
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = await res.json();
+    } catch {
+      detail = await res.text();
+    }
+    const msg =
+      typeof detail === "object" && detail && "detail" in detail
+        ? String((detail as { detail: unknown }).detail)
+        : `Erro ${res.status}`;
+    throw new ApiError(msg, res.status, detail);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("content-disposition") || "";
+  const m = cd.match(/filename="?([^"]+)"?/);
+  const filename = m ? m[1] : `laudo.${opts.formato}`;
+  return { blob, filename };
+}
+
+/** Dispara o download de um Blob no browser. */
+export function baixarBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function fiscalConformidade(
