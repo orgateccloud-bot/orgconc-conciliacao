@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6
 
       - name: Setup Python 3.12
         uses: actions/setup-python@v5.6.0
@@ -87,7 +87,7 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6
 
       - name: Setup Python 3.12
         uses: actions/setup-python@v5.6.0
@@ -113,7 +113,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -163,7 +163,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -190,7 +190,7 @@ jobs:
     timeout-minutes: 30
     needs: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
