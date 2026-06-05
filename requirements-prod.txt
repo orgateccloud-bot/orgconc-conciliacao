@@ -7,6 +7,8 @@ openpyxl==3.1.5
 Markdown==3.10.2
 python-dotenv==1.2.2
 slowapi==0.1.9
+# store compartilhado do rate-limit entre replicas (ativado so se REDIS_URL setado)
+redis==5.2.1
 weasyprint==68.0
 jinja2==3.1.6
 pyjwt[crypto]==2.13.0
