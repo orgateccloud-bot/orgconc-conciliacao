@@ -13,6 +13,7 @@ Nucleo reutilizavel pela API em api/services/laudo_forense.py (Fase 2).
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 import re
@@ -2041,26 +2042,33 @@ blockquote { border-left: 3pt solid #1f7fb8; background: #eef6fb; padding: 3mm 4
 </body></html>"""
 
 
-async def html_para_pdf_bytes(html_text, landscape=True):
-    """Renderiza HTML em PDF (Playwright/chromium) e retorna os bytes.
+def _block_url_fetcher(url, **_kwargs):
+    """Bloqueia fetch de URLs externas pelo WeasyPrint (anti-SSRF)."""
+    return {"string": b"", "mime_type": "text/plain", "encoding": "utf-8"}
 
-    Motor unificado de PDF do projeto — funciona cross-platform (só precisa do
-    chromium), ao contrário do WeasyPrint que exige libs GTK nativas. Retorna
-    None em falha (chamador decide o fallback / erro HTTP).
+
+async def html_para_pdf_bytes(html_text, landscape=True):
+    """Renderiza HTML em PDF via WeasyPrint e retorna os bytes.
+
+    A orientacao e o rodape vem do `@page` do proprio HTML (size A4 landscape +
+    contador de paginas); `landscape` permanece por compat de assinatura. WeasyPrint
+    ja e dep de producao (requirements-prod) e o Dockerfile instala as libs nativas
+    (libpango/cairo). write_pdf() e CPU-bound -> roda em thread pool; url_fetcher
+    bloqueia fetch externo (anti-SSRF). Retorna None em falha (chamador decide o
+    fallback / erro HTTP).
     """
-    from playwright.async_api import async_playwright
-    async with async_playwright() as p:
-        browser = await p.chromium.launch()
-        try:
-            page = await browser.new_page()
-            await page.set_content(html_text, wait_until="load")
-            return await page.pdf(
-                format="A4", landscape=landscape,
-                margin={"top": "14mm", "right": "12mm", "bottom": "14mm", "left": "12mm"},
-                print_background=True,
-            )
-        finally:
-            await browser.close()
+    try:
+        import weasyprint
+    except ImportError:
+        return None
+    try:
+        return await asyncio.to_thread(
+            lambda: weasyprint.HTML(
+                string=html_text, base_url=None, url_fetcher=_block_url_fetcher
+            ).write_pdf()
+        )
+    except (OSError, RuntimeError):
+        return None
 
 
 async def gerar_pdf(html_text, out_pdf):

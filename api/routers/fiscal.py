@@ -343,7 +343,7 @@ async def gerar_laudo(
 
     Aceita extratos OFX e, opcionalmente, XMLs/ZIPs de NF-e/CT-e — quando enviados,
     o MESMO documento ganha as abas/seções fiscais (12. Documentos Fiscais e
-    13. Conformidade Fiscal). Formatos: xlsx (abas), html, pdf (Playwright).
+    13. Conformidade Fiscal). Formatos: xlsx (abas), html, pdf (WeasyPrint).
     Usa o cache de CNPJ existente (sem rede em-request).
     """
     formato = (formato or "xlsx").lower()
