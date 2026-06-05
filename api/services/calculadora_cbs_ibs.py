@@ -8,6 +8,7 @@ oficial) para destravar o fluxo end-to-end sem depender do SERPRO (Fase 0).
 
 Config: CALCULADORA_MODO ("stub" | "hospedada" | "offline"), CALCULADORA_BASE_URL.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -66,7 +67,10 @@ def _apurar_stub(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
 
     itens_apurados = [
         ItemApurado(
-            numero=it.numero, ncm=it.ncm, cst=it.cst, cClassTrib=it.cClassTrib,
+            numero=it.numero,
+            ncm=it.ncm,
+            cst=it.cst,
+            cClassTrib=it.cClassTrib,
             base_calculo=it.base_calculo,
             vIBSUF=_round2(it.base_calculo * _PILOTO_P_IBS_UF / 100),
             vIBSMun=_round2(it.base_calculo * _PILOTO_P_IBS_MUN / 100),
@@ -87,15 +91,18 @@ def _apurar_stub(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
         data_fato_gerador=inp.data_fato_gerador,
         base_calculo_total=base_total,
         gIBSUF=GIBSUF(
-            pIBSUF=_PILOTO_P_IBS_UF, vIBSUF=v_ibs_uf,
+            pIBSUF=_PILOTO_P_IBS_UF,
+            vIBSUF=v_ibs_uf,
             memoriaCalculo=f"Base {base_fmt} x {_PILOTO_P_IBS_UF}% (IBS-UF) = {_brl(v_ibs_uf)}. {_RESSALVA}",
         ),
         gIBSMun=GIBSMun(
-            pIBSMun=_PILOTO_P_IBS_MUN, vIBSMun=v_ibs_mun,
+            pIBSMun=_PILOTO_P_IBS_MUN,
+            vIBSMun=v_ibs_mun,
             memoriaCalculo=f"Base {base_fmt} x {_PILOTO_P_IBS_MUN}% (IBS-Mun) = {_brl(v_ibs_mun)}. {_RESSALVA}",
         ),
         gCBS=GCBS(
-            pCBS=_PILOTO_P_CBS, vCBS=v_cbs,
+            pCBS=_PILOTO_P_CBS,
+            vCBS=v_cbs,
             memoriaCalculo=f"Base {base_fmt} x {_PILOTO_P_CBS}% (CBS) = {_brl(v_cbs)}. {_RESSALVA}",
         ),
         gIS=None,
@@ -107,39 +114,137 @@ def _apurar_stub(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
     )
 
 
+# Endpoint da Calculadora p/ regime geral (NCM). NF-e/CT-e de transporte caem aqui.
+_ENDPOINT_REGIME_GERAL = "calculadora/regime-geral"
+
+
+def _num(x) -> float:
+    """SERPRO devolve valores como string ('1000.00'); converte p/ float (0 se vazio)."""
+    if x is None or x == "":
+        return 0.0
+    return float(x)
+
+
 def _ic02_para_serpro(inp: OperacaoFiscalInput) -> dict:
-    """TODO(Fase 1 — spec SERPRO): traduzir OperacaoFiscalInput → payload da
-    Calculadora de Tributos (RTC). O schema exato (campos/estrutura) está na área
-    do cliente cliente.serpro.gov.br — sem ele, não dá para montar o request.
+    """OperacaoFiscalInput (IC-02) → payload OperacaoInput da Calculadora SERPRO.
+
+    Mapeamento confirmado contra o OpenAPI/resposta real (POST /calculadora/regime-geral):
+    documento_id→id, municipio_ibge(str)→municipio(int), uf→uf,
+    data_fato_gerador→dataHoraEmissao (ISO), itens[].base_calculo→baseCalculo.
     """
-    raise NotImplementedError(
-        "Mapeamento IC-02 → payload SERPRO pendente da spec oficial da Calculadora "
-        "de Tributos (cliente.serpro.gov.br). Auth e transporte já prontos em "
-        "api/services/serpro_client.py."
-    )
+    itens = []
+    for it in inp.itens or []:
+        item = {"numero": it.numero, "cst": it.cst, "cClassTrib": it.cClassTrib, "baseCalculo": it.base_calculo}
+        if it.ncm:
+            item["ncm"] = it.ncm
+        if it.nbs:
+            item["nbs"] = it.nbs
+        if it.quantidade is not None:
+            item["quantidade"] = it.quantidade
+        if it.unidade:
+            item["unidade"] = it.unidade
+        itens.append(item)
+    return {
+        "id": inp.documento_id,
+        "versao": config.CBS_IBS_VERSAO_BASE,
+        "dataHoraEmissao": f"{inp.data_fato_gerador.isoformat()}T00:00:00-03:00",
+        "municipio": int(inp.municipio_ibge),
+        "uf": inp.uf,
+        "itens": itens,
+    }
 
 
 def _serpro_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
-    """TODO(Fase 1 — spec SERPRO): achatar a resposta da Calculadora
-    (objetos[].tribCalc.IBSCBS: gIBSUF/gIBSMun/gCBS/gIS) → ApuracaoCBSIBS do IC-02,
-    carimbando versao_base/ambiente/motor_versao/fundamentacao (gate §4)."""
-    raise NotImplementedError(
-        "Parse da resposta SERPRO → ApuracaoCBSIBS pendente da spec oficial."
+    """Resposta ROCDomain da Calculadora SERPRO → ApuracaoCBSIBS (IC-02 §3.2).
+
+    Achata objetos[].tribCalc.IBSCBS.gIBSCBS por item; usa total.tribCalc.IBSCBSTot
+    p/ os valores agregados (fallback p/ soma dos itens). Alíquotas do header vêm do
+    1º item (representativo). Carimba versao_base/ambiente/motor_versao (gate §4).
+    """
+    objetos = resp.get("objetos") or []
+    tot = ((resp.get("total") or {}).get("tribCalc") or {}).get("IBSCBSTot") or {}
+    por_num = {it.numero: it for it in (inp.itens or [])}
+
+    itens_ap: list[ItemApurado] = []
+    soma_uf = soma_mun = soma_cbs = soma_bc = 0.0
+    rep = None  # gIBSCBS do 1º item — alíquotas representativas p/ o header
+    for obj in objetos:
+        ibscbs = (obj.get("tribCalc") or {}).get("IBSCBS") or {}
+        g = ibscbs.get("gIBSCBS") or {}
+        if rep is None:
+            rep = g
+        v_uf = _num(g.get("gIBSUF", {}).get("vIBSUF"))
+        v_mun = _num(g.get("gIBSMun", {}).get("vIBSMun"))
+        v_cbs = _num(g.get("gCBS", {}).get("vCBS"))
+        bc = _num(g.get("vBC"))
+        soma_uf += v_uf
+        soma_mun += v_mun
+        soma_cbs += v_cbs
+        soma_bc += bc
+        src = por_num.get(obj.get("nObj"))
+        itens_ap.append(
+            ItemApurado(
+                numero=obj.get("nObj") or 0,
+                ncm=(src.ncm if src else None),
+                cst=ibscbs.get("CST", ""),
+                cClassTrib=ibscbs.get("cClassTrib", ""),
+                base_calculo=_round2(bc),
+                vIBSUF=_round2(v_uf),
+                vIBSMun=_round2(v_mun),
+                vCBS=_round2(v_cbs),
+                vIS=None,
+            )
+        )
+
+    gibs = tot.get("gIBS") or {}
+    v_uf_tot = _num(gibs.get("gIBSUF", {}).get("vIBSUF")) or soma_uf
+    v_mun_tot = _num(gibs.get("gIBSMun", {}).get("vIBSMun")) or soma_mun
+    v_cbs_tot = _num((tot.get("gCBS") or {}).get("vCBS")) or soma_cbs
+    base_total = _num(tot.get("vBCIBSCBS")) or soma_bc
+    rep = rep or {}
+    return ApuracaoCBSIBS(
+        documento_id=inp.documento_id,
+        versao_base=config.CBS_IBS_VERSAO_BASE,
+        ambiente=config.CBS_IBS_AMBIENTE,
+        motor_versao=f"SERPRO Calculadora RTC (base {config.CBS_IBS_VERSAO_BASE})",
+        uf=inp.uf,
+        municipio_ibge=inp.municipio_ibge,
+        data_fato_gerador=inp.data_fato_gerador,
+        base_calculo_total=_round2(base_total),
+        gIBSUF=GIBSUF(
+            pIBSUF=_num(rep.get("gIBSUF", {}).get("pIBSUF")),
+            vIBSUF=_round2(v_uf_tot),
+            memoriaCalculo=rep.get("gIBSUF", {}).get("memoriaCalculo", ""),
+        ),
+        gIBSMun=GIBSMun(
+            pIBSMun=_num(rep.get("gIBSMun", {}).get("pIBSMun")),
+            vIBSMun=_round2(v_mun_tot),
+            memoriaCalculo=rep.get("gIBSMun", {}).get("memoriaCalculo", ""),
+        ),
+        gCBS=GCBS(
+            pCBS=_num(rep.get("gCBS", {}).get("pCBS")),
+            vCBS=_round2(v_cbs_tot),
+            memoriaCalculo=rep.get("gCBS", {}).get("memoriaCalculo", ""),
+        ),
+        gIS=None,
+        vTotTrib=_round2(v_uf_tot + v_mun_tot + v_cbs_tot),
+        fundamentacao_legal="LC 214/2025 — apuração CBS/IBS via Calculadora SERPRO (RTC).",
+        itens=itens_ap or None,
+        payload_hash=payload_hash_de(inp),
+        obtido_em=datetime.now(timezone.utc),
     )
 
 
 async def apurar_via_serpro(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
-    """Orquestra a apuração no motor oficial SERPRO (Fase 1).
+    """Apura no motor oficial SERPRO (Fase 1): monta payload → chama → achata.
 
-    Auth (token) e transporte (POST autenticado) estão prontos em serpro_client;
-    o mapeamento IC-02↔SERPRO é o único pendente (spec). Levanta SerproConfigError
-    se faltarem credenciais/URL, e NotImplementedError enquanto o mapeamento não
-    for implementado a partir da spec.
+    Auth/transporte em serpro_client (Bearer p/ API hospedada; sem auth p/ a
+    calculadora offline/aberta). Levanta SerproConfigError se faltar URL.
     """
     from api.services import serpro_client
 
-    payload = _ic02_para_serpro(inp)  # NotImplementedError até a spec
-    resp = await serpro_client.chamar_calculadora(payload)
+    payload = _ic02_para_serpro(inp)
+    resp = await serpro_client.chamar_calculadora(payload, caminho=_ENDPOINT_REGIME_GERAL)
     return _serpro_para_ic02(resp, inp)
 
 
