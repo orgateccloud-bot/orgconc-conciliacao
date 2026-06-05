@@ -107,18 +107,50 @@ def _apurar_stub(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
     )
 
 
+def _ic02_para_serpro(inp: OperacaoFiscalInput) -> dict:
+    """TODO(Fase 1 — spec SERPRO): traduzir OperacaoFiscalInput → payload da
+    Calculadora de Tributos (RTC). O schema exato (campos/estrutura) está na área
+    do cliente cliente.serpro.gov.br — sem ele, não dá para montar o request.
+    """
+    raise NotImplementedError(
+        "Mapeamento IC-02 → payload SERPRO pendente da spec oficial da Calculadora "
+        "de Tributos (cliente.serpro.gov.br). Auth e transporte já prontos em "
+        "api/services/serpro_client.py."
+    )
+
+
+def _serpro_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
+    """TODO(Fase 1 — spec SERPRO): achatar a resposta da Calculadora
+    (objetos[].tribCalc.IBSCBS: gIBSUF/gIBSMun/gCBS/gIS) → ApuracaoCBSIBS do IC-02,
+    carimbando versao_base/ambiente/motor_versao/fundamentacao (gate §4)."""
+    raise NotImplementedError(
+        "Parse da resposta SERPRO → ApuracaoCBSIBS pendente da spec oficial."
+    )
+
+
+async def apurar_via_serpro(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
+    """Orquestra a apuração no motor oficial SERPRO (Fase 1).
+
+    Auth (token) e transporte (POST autenticado) estão prontos em serpro_client;
+    o mapeamento IC-02↔SERPRO é o único pendente (spec). Levanta SerproConfigError
+    se faltarem credenciais/URL, e NotImplementedError enquanto o mapeamento não
+    for implementado a partir da spec.
+    """
+    from api.services import serpro_client
+
+    payload = _ic02_para_serpro(inp)  # NotImplementedError até a spec
+    resp = await serpro_client.chamar_calculadora(payload)
+    return _serpro_para_ic02(resp, inp)
+
+
 async def apurar(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
     """Apura CBS/IBS de uma operação. Despacha por CALCULADORA_MODO.
 
     - "stub": calculadora interna determinística (PILOTO, sem rede). Fase 0.
-    - "hospedada"/"offline": motor oficial SERPRO via CALCULADORA_BASE_URL (Fase 1).
+    - "hospedada"/"offline": motor oficial SERPRO via serpro_client (Fase 1).
     """
     modo = config.CALCULADORA_MODO
     if modo == "stub":
         return _apurar_stub(inp)
-    # Fase 1: traduzir IC-02 → payload SERPRO e chamar via httpx (mesma API
-    # hospedada/offline); achatar objetos[].tribCalc.IBSCBS de volta ao IC-02.
-    raise NotImplementedError(
-        f"CALCULADORA_MODO='{modo}' requer integração SERPRO (Fase 1). "
-        "Use CALCULADORA_MODO=stub no ambiente atual."
-    )
+    # Fase 1 — SERPRO-ready: auth/transporte prontos; mapeamento pendente da spec.
+    return await apurar_via_serpro(inp)
