@@ -190,6 +190,14 @@ CNPJ_ENRICH_TIMEOUT_S: float = float(os.environ.get("CNPJ_ENRICH_TIMEOUT_S", "10
 CALCULADORA_MODO: str = os.environ.get("CALCULADORA_MODO", "stub").strip().lower()
 CALCULADORA_BASE_URL: str = os.environ.get("CALCULADORA_BASE_URL", "").strip()
 CALCULADORA_TIMEOUT_S: float = float(os.environ.get("CALCULADORA_TIMEOUT_S", "15"))
+# Credenciais SERPRO (Fase 1) — área do cliente cliente.serpro.gov.br. Sem elas,
+# o modo hospedada/offline falha com erro de config claro (apurar continua no
+# stub se CALCULADORA_MODO=stub). Token via OAuth2 client_credentials.
+SERPRO_CONSUMER_KEY: str = os.environ.get("SERPRO_CONSUMER_KEY", "").strip()
+SERPRO_CONSUMER_SECRET: str = os.environ.get("SERPRO_CONSUMER_SECRET", "").strip()
+SERPRO_TOKEN_URL: str = os.environ.get(
+    "SERPRO_TOKEN_URL", "https://gateway.apiserpro.serpro.gov.br/token"
+).strip()
 # Gate de proveniência (IC-02 §4): versão da base de regras + ambiente.
 CBS_IBS_VERSAO_BASE: str = os.environ.get("CBS_IBS_VERSAO_BASE", "V0033").strip()
 CBS_IBS_AMBIENTE: str = os.environ.get("CBS_IBS_AMBIENTE", "PILOTO").strip().upper()
