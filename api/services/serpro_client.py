@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import base64
 import time
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -78,30 +78,30 @@ async def obter_token(*, forcar: bool = False) -> str:
 
 
 async def chamar_calculadora(payload: dict, *, caminho: str = "") -> dict:
-    """POST autenticado ao endpoint da Calculadora (CALCULADORA_BASE_URL[+caminho]).
+    """POST ao endpoint da Calculadora (CALCULADORA_BASE_URL[+caminho]).
 
     Genérico de transporte — recebe o payload (dict, já no formato SERPRO montado
-    pelo caller) e devolve o JSON da resposta. Renova o token 1x em 401.
+    pelo caller) e devolve o JSON da resposta.
+
+    Auth condicional: com Consumer Key/Secret (API hospedada SERPRO via gateway)
+    usa Bearer + renova 1x em 401; SEM credenciais trata como instância ABERTA
+    (calculadora offline local ou ambiente de teste) e chama sem Authorization.
     """
     base = config.CALCULADORA_BASE_URL
     if not base:
         raise SerproConfigError("CALCULADORA_BASE_URL ausente — defina o endpoint da Calculadora SERPRO.")
     url = base.rstrip("/") + (("/" + caminho.lstrip("/")) if caminho else "")
+    autenticado = credenciais_ok()
 
-    async def _post(token: str) -> httpx.Response:
+    async def _post(token: Optional[str]) -> httpx.Response:
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         async with httpx.AsyncClient(timeout=config.CALCULADORA_TIMEOUT_S) as cli:
-            return await cli.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                },
-                json=payload,
-            )
+            return await cli.post(url, headers=headers, json=payload)
 
-    resp = await _post(await obter_token())
-    if resp.status_code == 401:  # token expirado/revogado -> renova e tenta 1x
+    resp = await _post(await obter_token() if autenticado else None)
+    if autenticado and resp.status_code == 401:  # token expirado -> renova e tenta 1x
         resp = await _post(await obter_token(forcar=True))
     resp.raise_for_status()
     return resp.json()
