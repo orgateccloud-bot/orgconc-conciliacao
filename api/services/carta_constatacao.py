@@ -9,6 +9,7 @@ Saída: dict com chaves 'markdown', 'html' (preparado para PDF via Playwright).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime
@@ -244,21 +245,29 @@ async def gerar_carta_automatica(
     }
 
 
+def _block_url_fetcher(url, **_kwargs):
+    """Bloqueia fetch de URLs externas pelo WeasyPrint (anti-SSRF)."""
+    return {"string": b"", "mime_type": "text/plain", "encoding": "utf-8"}
+
+
 async def renderizar_pdf_async(html: str) -> Optional[bytes]:
-    """Gera PDF via Playwright (assíncrono)."""
+    """Gera PDF via WeasyPrint (assíncrono).
+
+    Page size/margens e rodape vem do `@page` do proprio HTML da carta (A4 +
+    contador de paginas). WeasyPrint ja e dep de producao e o Dockerfile instala
+    as libs nativas (libpango/cairo). write_pdf() e CPU-bound -> roda em thread
+    pool; url_fetcher bloqueia fetch externo (anti-SSRF). Retorna None em falha.
+    """
     try:
-        from playwright.async_api import async_playwright
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
-            page = await browser.new_page()
-            await page.set_content(html, wait_until="load")
-            pdf_bytes = await page.pdf(
-                format="A4",
-                margin={"top": "22mm", "right": "18mm", "bottom": "22mm", "left": "18mm"},
-                print_background=True,
-            )
-            await browser.close()
-        return pdf_bytes
-    except Exception:
-        log.exception("Falha ao renderizar PDF")
+        import weasyprint
+    except ImportError:
+        return None
+    try:
+        return await asyncio.to_thread(
+            lambda: weasyprint.HTML(
+                string=html, base_url=None, url_fetcher=_block_url_fetcher
+            ).write_pdf()
+        )
+    except (OSError, RuntimeError):
+        log.exception("Falha ao renderizar PDF (WeasyPrint)")
         return None
