@@ -14,7 +14,8 @@ isolamento de verdade — **mas a ativação tem pré-requisitos** (abaixo).
 | Arquivo | Papel |
 |---|---|
 | `contraparte_org_isolation.sql` | PoC do **mecanismo** numa tabela de demonstração (`contraparte`). Provado em `tests/test_rls_isolation.py`. |
-| `org_isolation.sql` | Aplica o padrão nas **tabelas reais** que já têm `org_id`: `clientes`, `conciliacoes`, `transacoes`, `apuracao_cbs_ibs`. Provado em `tests/test_rls_real_tables.py`. |
+| `org_isolation.sql` | Aplica o padrão nas **tabelas tenant-scoped**: `clientes`, `conciliacoes`, `transacoes`, `apuracao_cbs_ibs` + fiscais (`documento_fiscal`, `cruzamento_fiscal`, `conformidade_fornecedor`, `guia_tributo`, `contrato`, `carta_versao`, `transacao_disposicao` — `org_id` via **migration 020**). Provado em `tests/test_rls_real_tables.py`. |
+| `rollout_grants.sql` | GRANT DML de `app_orgconc` em **todas** as tabelas (auth/infra/fiscais incluídas — senão "permission denied" ao trocar a conexão) + default privileges p/ tabelas futuras. |
 
 Padrão da política (falha-**fechada**): `org_id = NULLIF(current_setting('app.org_id', true), '')::uuid`
 em `USING` (leitura/update/delete) **e** `WITH CHECK` (escrita). Sem `app.org_id`
@@ -48,22 +49,22 @@ setado → comparação vira `NULL` → **zero linhas** (nunca "tudo").
    -- clientes.org_id e apuracao_cbs_ibs.org_id: preencher conforme a origem.
    ```
    Verifique que **não restam** `org_id IS NULL` nas tabelas a isolar.
-3. **Aplicar as policies** (idempotente, como owner/`postgres`):
+3. **Aplicar grants + policies** (idempotente, como owner/`postgres`):
    ```bash
-   psql "$DATABASE_URL" -f db/rls/org_isolation.sql
+   psql "$DATABASE_URL" -f db/rls/rollout_grants.sql   # GRANT em todas as tabelas
+   psql "$DATABASE_URL" -f db/rls/org_isolation.sql     # ENABLE+FORCE+policy nas tenant
    ```
 4. **Senha forte** no role da aplicação:
    ```sql
    ALTER ROLE app_orgconc PASSWORD '<senha-forte>';
    ```
 5. **Backend** passa a conectar como `app_orgconc` (NOBYPASSRLS), **não** `postgres`:
-   - `DATABASE_URL=postgresql://app_orgconc:<senha>@<host>/<db>`
-   - Popular o contexto por request a partir do token:
-     `from api.db.rls_context import set_org_context; set_org_context(user.org_id)`
-     (idealmente num middleware/dependency após `current_user`).
-   - `get_db` já chama `aplicar_rls(session)` (`SET LOCAL app.org_id`). Para
-     **múltiplas transações por request**, prefira um listener `after_begin` no
-     engine — o helper cobre o caso de uma transação.
+   - `DATABASE_URL=postgresql://app_orgconc:<senha>@<host>/<db>` (no flip de prod).
+   - O contexto por request já está fiado: `RLSContextMiddleware`
+     (`api/core/bootstrap.py`) decodifica o JWT e chama `set_org_context(org_id)`;
+     o listener `after_begin` (`api/db/rls_context.py`) emite `SET LOCAL app.org_id`
+     em **cada** transação. Tabelas de auth (`usuarios`, `orgs`, `refresh_tokens`)
+     **não** entram na isolação (login acontece antes do contexto) — enforcement na app.
 6. **Provar**: rodar os testes contra o banco (ver abaixo) e validar manualmente
    que um usuário de uma org não vê dados de outra.
 

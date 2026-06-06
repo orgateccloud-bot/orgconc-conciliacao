@@ -24,7 +24,7 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from api.db.models import Base, Cliente, Org
+from api.db.models import Base, Cliente, DocumentoFiscal, Org
 
 _RAW = os.environ.get("DATABASE_URL", "").strip()
 pytestmark = pytest.mark.skipif(not _RAW, reason="RLS exige DATABASE_URL (Postgres real)")
@@ -114,3 +114,28 @@ async def test_with_check_bloqueia_cliente_cruzado(app_maker):
             await s.execute(text("SELECT set_config('app.org_id', :o, true)"), {"o": ORG_A})
             s.add(Cliente(org_id=uuid.UUID(ORG_B), nome="Intruso"))
             await s.flush()  # dispara o INSERT → WITH CHECK barra a org cruzada
+
+
+@pytest.mark.asyncio
+async def test_org_nao_le_documento_fiscal_de_outro(app_maker):
+    """Tabela fiscal (org_id na migration 020): org A não vê doc fiscal de B."""
+    async with app_maker() as s, s.begin():
+        await s.execute(text("SELECT set_config('app.org_id', :o, true)"), {"o": ORG_A})
+        cli = Cliente(org_id=uuid.UUID(ORG_A), nome="Cliente Doc A")
+        s.add(cli)
+        await s.flush()
+        s.add(DocumentoFiscal(
+            org_id=uuid.UUID(ORG_A), cliente_id=cli.id,
+            tipo="NF-e", modelo="55", chave="A" * 44, valor_total=100,
+        ))
+        await s.flush()
+    # Org B não enxerga o documento de A.
+    async with app_maker() as s, s.begin():
+        await s.execute(text("SELECT set_config('app.org_id', :o, true)"), {"o": ORG_B})
+        n_b = (await s.execute(text("SELECT count(*) FROM public.documento_fiscal"))).scalar_one()
+    assert n_b == 0, "VAZAMENTO entre orgs na tabela documento_fiscal"
+    # Org A enxerga o seu.
+    async with app_maker() as s, s.begin():
+        await s.execute(text("SELECT set_config('app.org_id', :o, true)"), {"o": ORG_A})
+        n_a = (await s.execute(text("SELECT count(*) FROM public.documento_fiscal"))).scalar_one()
+    assert n_a == 1

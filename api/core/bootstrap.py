@@ -101,6 +101,59 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class RLSContextMiddleware:
+    """Popula o contexto de org (RLS) por request a partir do JWT.
+
+    Middleware ASGI puro (não BaseHTTPMiddleware) para garantir que o ContextVar
+    setado aqui propague ao endpoint e às chamadas de banco no MESMO contexto.
+    Extrai o token do header Authorization ou do cookie `orgconc_token`, decodifica
+    best-effort (token ausente/inválido → sem org) e seta `app.org_id` via
+    set_org_context. O listener `after_begin` (api/db/rls_context) aplica o
+    `SET LOCAL` em cada transação. Inócuo enquanto a conexão for `postgres`.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        from api.db.rls_context import reset_org_context, set_org_context
+
+        token = set_org_context(_org_id_do_scope(scope))
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            reset_org_context(token)
+
+
+def _org_id_do_scope(scope) -> str | None:
+    """org_id do JWT no request (header Bearer ou cookie), ou None (best-effort)."""
+    try:
+        headers = {
+            k.decode("latin1").lower(): v.decode("latin1")
+            for k, v in (scope.get("headers") or [])
+        }
+        jwt = None
+        auth = headers.get("authorization")
+        if auth:
+            jwt = auth[7:].strip() if auth.lower().startswith("bearer ") else auth.strip()
+        if not jwt:
+            for part in headers.get("cookie", "").split(";"):
+                name, _, val = part.strip().partition("=")
+                if name == "orgconc_token":
+                    jwt = val.strip()
+                    break
+        if not jwt:
+            return None
+        from api.services.auth import decodificar_token
+
+        return decodificar_token(jwt).org_id
+    except Exception:  # noqa: BLE001 — token ausente/inválido/expirado → sem org
+        return None
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -140,6 +193,8 @@ def criar_app(
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(PrometheusMiddleware)
     app.add_middleware(RequestIdMiddleware)
+    # Contexto de RLS por org (a partir do JWT). No-op até o flip para app_orgconc.
+    app.add_middleware(RLSContextMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,
