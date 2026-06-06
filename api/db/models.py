@@ -201,10 +201,12 @@ class GuiaTributo(Base):
     __tablename__ = "guia_tributo"
     __table_args__ = (
         Index("ix_guia_tributo_cliente", "cliente_id"),
+        Index("ix_guia_tributo_org", "org_id"),
     )
 
     id:              Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:      Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    org_id:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     tipo:            Mapped[str]          = mapped_column(Text, nullable=False)  # DARF/DAS/GPS/GNRE
     codigo_receita:  Mapped[str | None]   = mapped_column(Text)
     valor:           Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False)
@@ -223,10 +225,12 @@ class Contrato(Base):
     __tablename__ = "contrato"
     __table_args__ = (
         Index("ix_contrato_cliente", "cliente_id"),
+        Index("ix_contrato_org", "org_id"),
     )
 
     id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:     Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    org_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     descricao:      Mapped[str]          = mapped_column(Text, nullable=False)
     valor:          Mapped[float]        = mapped_column(Numeric(15, 2), nullable=False)
     periodicidade:  Mapped[str | None]   = mapped_column(String(20))  # mensal/anual/etc.
@@ -245,10 +249,12 @@ class TransacaoDisposicao(Base):
     __tablename__ = "transacao_disposicao"
     __table_args__ = (
         Index("ix_transacao_disposicao_conciliacao", "conciliacao_id"),
+        Index("ix_transacao_disposicao_org", "org_id"),
     )
 
     id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     conciliacao_id: Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("conciliacoes.id", ondelete="CASCADE"), nullable=False)
+    org_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     transacao_idx:  Mapped[int]          = mapped_column(Integer, nullable=False)
     estagio:        Mapped[int]          = mapped_column(Integer, nullable=False)
     disposicao:     Mapped[str]          = mapped_column(Text, nullable=False)
@@ -276,10 +282,12 @@ class DocumentoFiscal(Base):
         Index("ix_docfiscal_cliente_chave", "cliente_id", "chave", unique=True),
         Index("ix_docfiscal_cliente_emit", "cliente_id", "emit_cnpj"),
         Index("ix_docfiscal_cliente_data", "cliente_id", "data_emissao"),
+        Index("ix_documento_fiscal_org", "org_id"),
     )
 
     id:                Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:        Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    org_id:            Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     tipo:              Mapped[str]         = mapped_column(String(10), nullable=False)  # "NF-e" | "CT-e" | "NFS-e"
     modelo:            Mapped[str]         = mapped_column(String(3), nullable=False)   # "55" | "57" | "65" | "00"
     chave:             Mapped[str]         = mapped_column(String(44), nullable=False)  # chave de acesso (única)
@@ -313,10 +321,12 @@ class CruzamentoFiscal(Base):
     __tablename__ = "cruzamento_fiscal"
     __table_args__ = (
         Index("ix_cruzfiscal_cliente_status", "cliente_id", "status"),
+        Index("ix_cruzamento_fiscal_org", "org_id"),
     )
 
     id:               Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:       Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    org_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     documento_id:     Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documento_fiscal.id", ondelete="SET NULL"))
     transacao_id:     Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("transacoes.id", ondelete="SET NULL"))
     status:           Mapped[str]         = mapped_column(String(20), nullable=False)
@@ -335,10 +345,12 @@ class CartaVersao(Base):
     __tablename__ = "carta_versao"
     __table_args__ = (
         Index("ix_carta_cliente_gerado", "cliente_id", text("gerado_em DESC")),
+        Index("ix_carta_versao_org", "org_id"),
     )
 
     id:                Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:        Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    org_id:            Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     versao:            Mapped[str]         = mapped_column(String(50), nullable=False)
     risco_total:       Mapped[float]       = mapped_column(Numeric(15, 2), default=0)
     total_fornecedores: Mapped[int]        = mapped_column(Integer, default=0)
@@ -358,10 +370,12 @@ class ConformidadeFornecedor(Base):
         Index("ix_conformidade_cliente_cnpj", "cliente_id", "cnpj_fornecedor", unique=True),
         Index("ix_conformidade_cliente_risco", "cliente_id", "risco_classe",
               text("risco_tributario_anual DESC")),
+        Index("ix_conformidade_fornecedor_org", "org_id"),
     )
 
     id:                       Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     cliente_id:               Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    org_id:                   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     cnpj_fornecedor:          Mapped[str]        = mapped_column(String(14), nullable=False)
     razao_social:             Mapped[str | None] = mapped_column(Text)
     periodo_inicio:           Mapped[date | None] = mapped_column(Date)

@@ -36,7 +36,12 @@ GRANT USAGE ON SCHEMA public TO app_orgconc;
 DO $$
 DECLARE
   t        text;
-  tabelas  text[] := ARRAY['clientes', 'conciliacoes', 'transacoes', 'apuracao_cbs_ibs'];
+  tabelas  text[] := ARRAY[
+    'clientes', 'conciliacoes', 'transacoes', 'apuracao_cbs_ibs',
+    -- Tabelas fiscais + disposição (org_id adicionado na migration 020).
+    'documento_fiscal', 'cruzamento_fiscal', 'conformidade_fornecedor',
+    'guia_tributo', 'contrato', 'carta_versao', 'transacao_disposicao'
+  ];
 BEGIN
   FOREACH t IN ARRAY tabelas LOOP
     IF to_regclass('public.' || t) IS NULL THEN
