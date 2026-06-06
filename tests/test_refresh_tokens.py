@@ -131,6 +131,8 @@ def test_login_com_db_emite_refresh():
     with (
         patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
         patch("api.routers.auth_routes._config.SessionLocal", sl),
+        # login agora consulta usuarios primeiro; sem usuário casando → admin por env.
+        patch("api.routers.auth_routes.usuarios_repo.buscar_por_email", new=AsyncMock(return_value=None)),
         patch("api.routers.auth_routes.refresh_repo.criar", new=AsyncMock(return_value=MagicMock(id=uuid.uuid4()))),
         patch.dict(os.environ, {"ORGCONC_ADMIN_EMAIL": "admin@orgconc.com",
                                 "ORGCONC_ADMIN_SENHA_HASH": h}),
