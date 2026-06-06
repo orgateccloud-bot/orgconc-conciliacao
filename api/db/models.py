@@ -405,6 +405,30 @@ class RefreshToken(Base):
     user_agent:      Mapped[str | None]      = mapped_column(Text)
 
 
+class Usuario(Base):
+    """Usuário de uma organização (tenant). Identidade de login multi-org.
+
+    Liga email/senha a um `org_id` — o que o RLS por organização precisa para
+    isolar (token carrega `org_id`). `role` é o papel DENTRO da org
+    (admin/auditor/user). Email é único globalmente e guardado em lowercase.
+    """
+    __tablename__ = "usuarios"
+    __table_args__ = (
+        Index("ix_usuarios_org", "org_id"),
+    )
+
+    id:              Mapped[uuid.UUID]       = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    org_id:          Mapped[uuid.UUID]       = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=False)
+    email:           Mapped[str]             = mapped_column(Text, unique=True, nullable=False)
+    senha_hash:      Mapped[str]             = mapped_column(Text, nullable=False)
+    nome:            Mapped[str | None]      = mapped_column(Text)
+    role:            Mapped[str]             = mapped_column(String(32), nullable=False, default="user", server_default="user")
+    ativo:           Mapped[bool]            = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    ultimo_login_em: Mapped[datetime | None] = mapped_column(TIMESTAMPTZ)
+    criado_em:       Mapped[datetime]        = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
+    atualizado_em:   Mapped[datetime]        = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # IC-02 — Apuração CBS/IBS (reforma tributária, LC 214/2025)
 # ══════════════════════════════════════════════════════════════════════════

@@ -58,3 +58,35 @@ class LoginPayload(BaseModel):
     # distinguivel de 401), quebrando a propriedade anti-enumeracao. Complexidade
     # de senha e' exigida na criacao do hash, nao no login.
     senha: str = Field(max_length=128)
+
+
+# Papéis válidos de um usuário dentro da sua organização.
+_ROLES_USUARIO = {"admin", "auditor", "user"}
+
+
+class CriarOrgPayload(BaseModel):
+    """Cria uma organização (tenant). Uso: bootstrap por admin/service."""
+    nome: str = Field(max_length=255)
+    cnpj: Optional[str] = None
+    plano: Optional[str] = Field(default="basico", max_length=20)
+
+    def model_post_init(self, __context) -> None:
+        if self.cnpj:
+            self.cnpj = re.sub(r"\D", "", self.cnpj)
+            if not validar_cnpj(self.cnpj):
+                raise ValueError(f"CNPJ inválido: {self.cnpj}")
+        if self.plano is not None and self.plano not in _PLANOS_VALIDOS:
+            raise ValueError(f"Plano inválido: {self.plano}")
+
+
+class CriarUsuarioPayload(BaseModel):
+    """Cria um usuário em uma organização. Uso: bootstrap por admin/service."""
+    email: str = Field(max_length=254)
+    senha: str = Field(min_length=8, max_length=128)
+    org_id: str
+    role: Optional[str] = "user"
+    nome: Optional[str] = Field(default=None, max_length=255)
+
+    def model_post_init(self, __context) -> None:
+        if self.role is not None and self.role not in _ROLES_USUARIO:
+            raise ValueError(f"Role inválido: {self.role} (use {sorted(_ROLES_USUARIO)})")

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy.exc import IntegrityError
 
 from api.core import config as _config
 from api.core.rate_limit import limiter
 from api.db import refresh_tokens as refresh_repo
-from api.schemas import LoginPayload
+from api.db import usuarios as usuarios_repo
+from api.db.models import Org
+from api.schemas import CriarOrgPayload, CriarUsuarioPayload, LoginPayload
 from api.services.audit import gravar_audit_independente
 from api.services.auth import (
     REFRESH_TTL_DAYS,
@@ -18,6 +22,7 @@ from api.services.auth import (
     gerar_refresh_token,
     hash_refresh_token,
     hash_senha,
+    require_role,
     verificar_senha,
 )
 
@@ -66,6 +71,16 @@ def _client_ua(request: Request) -> str | None:
     return request.headers.get("user-agent")
 
 
+def _e_uuid(s: str) -> bool:
+    """True se a string é um UUID — distingue sessão de usuário do DB (sub=uuid)
+    de sessão legada/env-admin (sub=email)."""
+    try:
+        uuid.UUID(str(s))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
 async def _emitir_refresh_persistido(
     sub: str,
     request: Request,
@@ -97,26 +112,59 @@ async def _emitir_refresh_persistido(
 @router.post("/login")
 @limiter.limit("10/minute")
 async def auth_login(request: Request, response: Response, payload: LoginPayload):
+    """Login por usuário (multi-org) com fallback para o admin por env.
+
+    Tenta primeiro um usuário no banco (token leva `org_id` + `role` da org). Se
+    não houver banco ou usuário, cai no ORGCONC_ADMIN_EMAIL/_SENHA_HASH (admin
+    sem org) — bootstrap. Um único verificar_senha (timing constante).
+    """
+    email_norm = payload.email.strip().lower()
     admin_email = os.environ.get("ORGCONC_ADMIN_EMAIL", "").strip().lower()
     admin_hash = os.environ.get("ORGCONC_ADMIN_SENHA_HASH", "").strip()
-    if not admin_email or not admin_hash:
+    db_ok = _config.DB_DISPONIVEL and _config.SessionLocal is not None
+    env_admin_ok = bool(admin_email and admin_hash)
+
+    if not db_ok and not env_admin_ok:
         raise HTTPException(
             status_code=503,
-            detail="Auth nao configurada — defina ORGCONC_ADMIN_EMAIL e ORGCONC_ADMIN_SENHA_HASH no .env",
+            detail="Auth nao configurada — defina ORGCONC_ADMIN_EMAIL e ORGCONC_ADMIN_SENHA_HASH no .env (ou crie usuarios)",
         )
-    email_ok = payload.email.strip().lower() == admin_email
-    hash_a_usar = admin_hash if email_ok else _DUMMY_HASH
-    senha_ok = verificar_senha(payload.senha, hash_a_usar)
-    if not (email_ok and senha_ok):
+
+    user = None
+    if db_ok:
+        async with _config.SessionLocal() as db:
+            user = await usuarios_repo.buscar_por_email(db, email_norm)
+
+    # Hash candidato + identidade — um ÚNICO verificar_senha p/ não vazar
+    # existência de email por timing.
+    if user is not None:
+        candidate_hash, identidade = user.senha_hash, "db"
+    elif env_admin_ok and email_norm == admin_email:
+        candidate_hash, identidade = admin_hash, "env"
+    else:
+        candidate_hash, identidade = _DUMMY_HASH, None
+
+    senha_ok = verificar_senha(payload.senha, candidate_hash)
+    if identidade is None or not senha_ok:
         raise HTTPException(status_code=401, detail="Credenciais invalidas")
-    token = emitir_token(sub=admin_email, email=admin_email, role="admin")
+
+    if identidade == "db":
+        sub, email, role, org_id = str(user.id), user.email, user.role, str(user.org_id)
+    else:  # env admin — superadmin sem org (bootstrap)
+        sub, email, role, org_id = admin_email, admin_email, "admin", None
+
+    token = emitir_token(sub=sub, email=email, role=role, org_id=org_id)
     _set_auth_cookie(response, token)
+
+    if identidade == "db":
+        async with _config.SessionLocal() as db:
+            await usuarios_repo.registrar_login(db, user.id)
 
     resp_body = {"access_token": token, "token_type": "bearer"}
     # Refresh token: só emite se há DB para persistir (revogação server-side).
-    if _config.DB_DISPONIVEL and _config.SessionLocal is not None:
+    if db_ok:
         refresh_plain = await _emitir_refresh_persistido(
-            admin_email, request, role="admin", cliente_id=None
+            sub, request, role=role, cliente_id=None
         )
         _set_refresh_cookie(response, refresh_plain)
         resp_body["refresh_emitted"] = True
@@ -127,9 +175,9 @@ async def auth_login(request: Request, response: Response, payload: LoginPayload
     await gravar_audit_independente(
         action="login.success",
         resource_type="auth",
-        resource_id=admin_email,
-        payload={"role": "admin"},
-        actor=TokenPayload(sub=admin_email, email=admin_email, role="admin"),
+        resource_id=sub,
+        payload={"role": role, "org_id": org_id},
+        actor=TokenPayload(sub=sub, email=email, role=role, org_id=org_id),
     )
     return resp_body
 
@@ -157,6 +205,16 @@ async def auth_refresh(request: Request, response: Response):
         # Preserva a identidade real da sessao — NUNCA reemitir admin fixo.
         role = row.role or "user"
         cliente_id = row.cliente_id
+        email = sub
+        org_id = None
+        # Multi-org: se o sub é um usuário do banco, re-deriva org/role/email
+        # atuais (pega mudança de role/org desde a emissão). Usuário desativado
+        # ou removido → buscar_por_id devolve None: barra a rotação.
+        u = await usuarios_repo.buscar_por_id(db, sub)
+        if u is not None:
+            org_id, role, email, cliente_id = str(u.org_id), u.role, u.email, None
+        elif _e_uuid(sub):
+            raise HTTPException(401, "Usuario inativo ou inexistente")
         old_id = row.id
         novo_plain = gerar_refresh_token()
         novo_row = await refresh_repo.criar(
@@ -171,7 +229,7 @@ async def auth_refresh(request: Request, response: Response):
         )
         await refresh_repo.revogar(db, old_id, substituido_por=novo_row.id)
 
-    novo_access = emitir_token(sub=sub, email=sub, role=role, cliente_id=cliente_id)
+    novo_access = emitir_token(sub=sub, email=email, role=role, cliente_id=cliente_id, org_id=org_id)
     _set_auth_cookie(response, novo_access)
     _set_refresh_cookie(response, novo_plain)
     return {"access_token": novo_access, "token_type": "bearer", "refresh_emitted": True}
@@ -203,7 +261,100 @@ async def auth_logout_all(response: Response, user: TokenPayload = Depends(curre
 
 @router.get("/me")
 async def auth_me(user: TokenPayload = Depends(current_user)):
-    return {"sub": user.sub, "email": user.email, "role": user.role}
+    return {"sub": user.sub, "email": user.email, "role": user.role, "org_id": user.org_id}
+
+
+# ── Gestão de organizações e usuários (bootstrap; admin/service) ──────────────
+
+
+def _db_obrigatorio() -> None:
+    if not (_config.DB_DISPONIVEL and _config.SessionLocal is not None):
+        raise HTTPException(503, "Banco nao configurado")
+
+
+@router.post("/orgs")
+async def auth_criar_org(
+    payload: CriarOrgPayload,
+    user: TokenPayload = Depends(require_role("admin", "service")),
+):
+    """Cria uma organização (tenant). Bootstrap por admin/service."""
+    _db_obrigatorio()
+    plano = payload.plano or "basico"
+    async with _config.SessionLocal() as db:
+        org = Org(nome=payload.nome, cnpj=payload.cnpj, plano=plano)
+        db.add(org)
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(409, "CNPJ ja cadastrado")
+        await db.refresh(org)
+        org_id = str(org.id)
+    await gravar_audit_independente(
+        action="org.create", resource_type="org", resource_id=org_id,
+        payload={"nome": payload.nome}, actor=user,
+    )
+    return {"id": org_id, "nome": payload.nome, "plano": plano}
+
+
+@router.post("/usuarios")
+async def auth_criar_usuario(
+    payload: CriarUsuarioPayload,
+    user: TokenPayload = Depends(require_role("admin", "service")),
+):
+    """Cria um usuário numa organização. Bootstrap por admin/service."""
+    _db_obrigatorio()
+    try:
+        org_uuid = uuid.UUID(payload.org_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(400, "org_id invalido")
+    async with _config.SessionLocal() as db:
+        if await db.get(Org, org_uuid) is None:
+            raise HTTPException(404, "Organizacao nao encontrada")
+        try:
+            novo = await usuarios_repo.criar(
+                db,
+                email=payload.email,
+                senha_hash=hash_senha(payload.senha),
+                org_id=org_uuid,
+                role=payload.role or "user",
+                nome=payload.nome,
+            )
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(409, "Email ja cadastrado")
+        uid, uemail, urole = str(novo.id), novo.email, novo.role
+    await gravar_audit_independente(
+        action="usuario.create", resource_type="usuario", resource_id=uid,
+        payload={"email": uemail, "org_id": payload.org_id, "role": urole}, actor=user,
+    )
+    return {"id": uid, "email": uemail, "org_id": payload.org_id, "role": urole}
+
+
+@router.get("/usuarios")
+async def auth_listar_usuarios(
+    org_id: str,
+    user: TokenPayload = Depends(require_role("admin", "service")),
+):
+    """Lista usuários de uma organização (sem o hash de senha)."""
+    _db_obrigatorio()
+    try:
+        org_uuid = uuid.UUID(org_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(400, "org_id invalido")
+    async with _config.SessionLocal() as db:
+        us = await usuarios_repo.listar_por_org(db, org_uuid)
+        return [
+            {
+                "id": str(u.id),
+                "email": u.email,
+                "nome": u.nome,
+                "role": u.role,
+                "ativo": u.ativo,
+                "criado_em": u.criado_em.isoformat() if u.criado_em else None,
+            }
+            for u in us
+        ]
 
 
 @router.post("/hash", include_in_schema=False)
