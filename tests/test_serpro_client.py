@@ -3,6 +3,7 @@
 Cobrem o que está implementado (gate de credenciais + fluxo OAuth2 de token com
 httpx mockado). O mapeamento IC-02↔SERPRO é spec-pending e não é testado aqui.
 """
+import logging
 from datetime import date
 
 import pytest
@@ -75,6 +76,75 @@ async def test_obter_token_fluxo_oauth(monkeypatch):
     # 2ª chamada usa o cache (sem nova requisição precisaria de outro fake; aqui só
     # garantimos que retorna o mesmo token)
     assert await serpro_client.obter_token() == "tok-123"
+
+
+# ── Pre-flight de versão da base (GET /versao/status) ──
+
+
+class _FakeVersaoClient:
+    """Fake do httpx.AsyncClient que responde ao GET /versao/status."""
+
+    versao = "V0033"
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def get(self, url, headers=None, **k):
+        return _FakeResp({"versaoDbLocal": _FakeVersaoClient.versao})
+
+
+@pytest.mark.asyncio
+async def test_obter_versao_db_parseia(monkeypatch):
+    monkeypatch.setattr(config, "SERPRO_CONSUMER_KEY", "")
+    monkeypatch.setattr(config, "SERPRO_CONSUMER_SECRET", "")
+    monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "http://x/api")
+    _FakeVersaoClient.versao = "V0029"
+    monkeypatch.setattr(serpro_client.httpx, "AsyncClient", _FakeVersaoClient)
+    serpro_client._reset_versao_cache()
+    assert await serpro_client.obter_versao_db() == "V0029"
+
+
+@pytest.mark.asyncio
+async def test_obter_versao_db_sem_url_devolve_none(monkeypatch):
+    monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "")
+    serpro_client._reset_versao_cache()
+    assert await serpro_client.obter_versao_db() is None
+
+
+@pytest.mark.asyncio
+async def test_checar_versao_base_avisa_em_mismatch(monkeypatch, caplog):
+    monkeypatch.setattr(config, "SERPRO_CONSUMER_KEY", "")
+    monkeypatch.setattr(config, "SERPRO_CONSUMER_SECRET", "")
+    monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "http://x/api")
+    monkeypatch.setattr(config, "CBS_IBS_VERSAO_BASE", "V0033")
+    _FakeVersaoClient.versao = "V0029"
+    monkeypatch.setattr(serpro_client.httpx, "AsyncClient", _FakeVersaoClient)
+    serpro_client._reset_versao_cache()
+    with caplog.at_level(logging.WARNING):
+        v = await serpro_client.checar_versao_base()
+    assert v == "V0029"
+    assert "divergente" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_checar_versao_base_silencioso_em_match(monkeypatch, caplog):
+    monkeypatch.setattr(config, "SERPRO_CONSUMER_KEY", "")
+    monkeypatch.setattr(config, "SERPRO_CONSUMER_SECRET", "")
+    monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "http://x/api")
+    monkeypatch.setattr(config, "CBS_IBS_VERSAO_BASE", "V0033")
+    _FakeVersaoClient.versao = "V0033"
+    monkeypatch.setattr(serpro_client.httpx, "AsyncClient", _FakeVersaoClient)
+    serpro_client._reset_versao_cache()
+    with caplog.at_level(logging.WARNING):
+        v = await serpro_client.checar_versao_base()
+    assert v == "V0033"
+    assert "divergente" not in caplog.text
 
 
 # ── Mapeamento IC-02 ↔ SERPRO (resposta ROCDomain REAL gravada da Calculadora) ──

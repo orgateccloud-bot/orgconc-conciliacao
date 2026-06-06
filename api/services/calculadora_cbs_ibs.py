@@ -244,6 +244,9 @@ async def apurar_via_serpro(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
     from api.services import serpro_client
 
     payload = _ic02_para_serpro(inp)
+    # Pre-flight (best-effort): avisa em log se a versão da base configurada divergir
+    # da que o motor reporta — não bloqueia a apuração.
+    await serpro_client.checar_versao_base()
     resp = await serpro_client.chamar_calculadora(payload, caminho=_ENDPOINT_REGIME_GERAL)
     return _serpro_para_ic02(resp, inp)
 
