@@ -23,8 +23,12 @@ from api.db import models  # noqa: F401 — registra tabelas no metadata
 
 config = context.config
 
-# Sobrescreve sqlalchemy.url com DATABASE_URL do .env (driver async)
-_db_url = os.getenv("DATABASE_URL", "").strip()
+# URL das migrations. Preferir ALEMBIC_DATABASE_URL quando definido: sob RLS, o
+# app conecta como `app_orgconc` (NOBYPASSRLS, só DML) via DATABASE_URL, mas as
+# migrations precisam do owner (postgres, DDL). Defina ALEMBIC_DATABASE_URL com a
+# conexão owner para o passo `alembic upgrade head` do deploy. Sem ela, cai na
+# DATABASE_URL (comportamento atual em dev/local e antes do flip de RLS).
+_db_url = (os.getenv("ALEMBIC_DATABASE_URL") or os.getenv("DATABASE_URL", "")).strip()
 if _db_url:
     # Normaliza prefixo postgres:// (Heroku/Railway/Render) -> postgresql://
     if _db_url.startswith("postgres://"):
