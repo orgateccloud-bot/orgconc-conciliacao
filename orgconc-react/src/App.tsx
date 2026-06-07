@@ -58,6 +58,8 @@ const TITULOS: Record<string, string> = {
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
+  // DEV: tela de login removida (vamos refazê-la). O gate só vale no build de prod.
+  if (import.meta.env.DEV) return <Outlet />;
   if (loading) return <AppBootSkeleton />;
   if (!user) return <Navigate to="/login" replace />;
   return <Outlet />;

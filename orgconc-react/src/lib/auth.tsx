@@ -27,8 +27,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const me = await fetchMe();
       setUser(me);
     } catch {
-      if (!getToken()) setUser(null);
-      else {
+      // DEV (sem tela de login): mantém o app utilizável com um usuário sintético
+      // mesmo se /auth/me falhar. Em prod, comportamento normal.
+      if (import.meta.env.DEV) {
+        setUser({ sub: "dev", email: "dev@orgconc.local", role: "admin" });
+      } else if (!getToken()) {
+        setUser(null);
+      } else {
         setUser(null);
         setToken(null);
       }
@@ -38,6 +43,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // DEV: auto-login com o service token (VITE_DEV_AUTH_TOKEN em .env.local) para
+    // as chamadas autenticarem enquanto a tela de login é refeita. No-op em prod.
+    if (import.meta.env.DEV) {
+      const devTok = import.meta.env.VITE_DEV_AUTH_TOKEN as string | undefined;
+      if (devTok && !getToken()) setToken(devTok);
+    }
     refresh();
     const onLogout = () => {
       setUser(null);
