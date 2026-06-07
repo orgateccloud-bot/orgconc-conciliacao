@@ -156,10 +156,12 @@ async def auth_login(request: Request, response: Response, payload: LoginPayload
 
     if identidade == "db":
         sub, email, role, org_id = str(user.id), user.email, user.role, str(user.org_id)
-    else:  # env admin — superadmin sem org (bootstrap)
+        superadmin = False
+    else:  # env admin — superadmin sem org (bootstrap): leitura cross-org
         sub, email, role, org_id = admin_email, admin_email, "admin", None
+        superadmin = True
 
-    token = emitir_token(sub=sub, email=email, role=role, org_id=org_id)
+    token = emitir_token(sub=sub, email=email, role=role, org_id=org_id, superadmin=superadmin)
     _set_auth_cookie(response, token)
 
     if identidade == "db":
@@ -213,6 +215,7 @@ async def auth_refresh(request: Request, response: Response):
         cliente_id = row.cliente_id
         email = sub
         org_id = None
+        superadmin = False
         # Multi-org: se o sub é um usuário do banco, re-deriva org/role/email
         # atuais (pega mudança de role/org desde a emissão). Usuário desativado
         # ou removido → buscar_por_id devolve None: barra a rotação.
@@ -221,6 +224,10 @@ async def auth_refresh(request: Request, response: Response):
             org_id, role, email, cliente_id = str(u.org_id), u.role, u.email, None
         elif _e_uuid(sub):
             raise HTTPException(401, "Usuario inativo ou inexistente")
+        else:
+            # Sessão legada/env-admin (sub=email). O env-admin reganha superadmin.
+            admin_email = os.environ.get("ORGCONC_ADMIN_EMAIL", "").strip().lower()
+            superadmin = bool(admin_email and sub.strip().lower() == admin_email)
         old_id = row.id
         novo_plain = gerar_refresh_token()
         novo_row = await refresh_repo.criar(
@@ -235,7 +242,8 @@ async def auth_refresh(request: Request, response: Response):
         )
         await refresh_repo.revogar(db, old_id, substituido_por=novo_row.id)
 
-    novo_access = emitir_token(sub=sub, email=email, role=role, cliente_id=cliente_id, org_id=org_id)
+    novo_access = emitir_token(sub=sub, email=email, role=role, cliente_id=cliente_id,
+                               org_id=org_id, superadmin=superadmin)
     _set_auth_cookie(response, novo_access)
     _set_refresh_cookie(response, novo_plain)
     return {"access_token": novo_access, "token_type": "bearer", "refresh_emitted": True}

@@ -107,6 +107,7 @@ def test_login_usuario_db_emite_token_com_org_id():
     assert claims.org_id == str(user.org_id)
     assert claims.role == "auditor"
     assert claims.sub == str(user.id)
+    assert claims.superadmin is False  # usuário do DB nunca é superadmin
     mock_reg.assert_awaited_once()  # ultimo_login_em carimbado
 
 
@@ -149,6 +150,7 @@ def test_login_fallback_admin_env_quando_db_sem_usuario():
     assert r.status_code == 200, r.text
     claims = decodificar_token(r.json()["access_token"])
     assert claims.role == "admin" and claims.org_id is None
+    assert claims.superadmin is True  # admin por env é superadmin (leitura cross-org)
 
 
 # ── Refresh re-deriva org/role do usuário ────────────────────────────────────

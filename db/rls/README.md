@@ -21,6 +21,13 @@ Padrão da política (falha-**fechada**): `org_id = NULLIF(current_setting('app.
 em `USING` (leitura/update/delete) **e** `WITH CHECK` (escrita). Sem `app.org_id`
 setado → comparação vira `NULL` → **zero linhas** (nunca "tudo").
 
+**Superadmin (leitura cross-org, leitura-só):** uma policy SEPARADA `superadmin_read`
+`FOR SELECT USING (current_setting('app.superadmin', true) = 'on')` permite que o
+**admin por env** leia todas as orgs. Como é só `FOR SELECT`, INSERT/UPDATE/DELETE
+continuam governados pela `org_isolation` estrita → escrita cross-org barrada
+(leitura-só **estrutural**). O GUC `app.superadmin` só é setado pelo backend a partir
+de um token com o claim `superadmin` (emitido apenas no login do env-admin).
+
 ## ⚠️ Pré-requisitos (por que ainda não ativamos)
 
 1. **Multi-org no auth.** Hoje o login é um **admin único** (`ORGCONC_ADMIN_EMAIL`),
