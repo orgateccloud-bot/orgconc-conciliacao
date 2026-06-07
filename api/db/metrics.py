@@ -261,12 +261,12 @@ async def calcular_trust_score(db: AsyncSession, periodo_dias: int = 30) -> dict
 
 def _descricao_score(score: int) -> str:
     if score >= 90:
-        return "Excelente — operacao estavel e auditada"
+        return "Excelente — operação estável e auditada"
     if score >= 75:
-        return "Saudavel — pequenos ajustes recomendados"
+        return "Saudável — pequenos ajustes recomendados"
     if score >= 50:
-        return "Atencao — revisar anomalias recentes"
-    return "Critico — auditoria manual recomendada"
+        return "Atenção — revisar anomalias recentes"
+    return "Crítico — auditoria manual recomendada"
 
 
 async def custo_llm_resumo(db: AsyncSession, periodo_dias: int = 30) -> dict[str, Any]:

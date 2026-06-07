@@ -26,7 +26,7 @@ export function IndicadoresGoals({ trust }: Props) {
       <div className="space-y-3">
         <Goal label="Taxa de sucesso" valor={taxaSucesso} cor="success" sufixo="%" />
         <Goal label="Cobertura operacional" valor={cobertura} cor="primary" sufixo="%" />
-        <Goal label="Controle de risco" valor={controleRisco} cor="info" sufixo="" />
+        <Goal label="Controle de risco" valor={controleRisco} cor="info" sufixo="%" />
       </div>
 
       {!trust && (
