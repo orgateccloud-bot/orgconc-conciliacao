@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session
 
 # org_id (uuid em str) do request atual. None = sem tenant (estado atual).
 _org_atual: ContextVar[Optional[str]] = ContextVar("orgconc_org_id", default=None)
+# Superadmin (leitura cross-org): só o admin por env. Default False.
+_superadmin_atual: ContextVar[bool] = ContextVar("orgconc_superadmin", default=False)
 
 
 def set_org_context(org_id: Optional[str]) -> Token:
@@ -40,6 +42,19 @@ def reset_org_context(token: Token) -> None:
 def get_org_context() -> Optional[str]:
     """org_id do request atual, ou None se sem tenant."""
     return _org_atual.get()
+
+
+def set_superadmin_context(valor: bool) -> Token:
+    """Marca o request como superadmin (leitura cross-org). Par: reset_superadmin_context."""
+    return _superadmin_atual.set(bool(valor))
+
+
+def reset_superadmin_context(token: Token) -> None:
+    _superadmin_atual.reset(token)
+
+
+def get_superadmin_context() -> bool:
+    return _superadmin_atual.get()
 
 
 async def aplicar_rls(session: AsyncSession) -> None:
@@ -66,3 +81,6 @@ def _set_org_no_begin(session, transaction, connection) -> None:
     org = _org_atual.get()
     if org:
         connection.execute(text("SELECT set_config('app.org_id', :o, true)"), {"o": org})
+    if _superadmin_atual.get():
+        # Habilita a policy superadmin_read (FOR SELECT) — leitura cross-org.
+        connection.execute(text("SELECT set_config('app.superadmin', 'on', true)"))

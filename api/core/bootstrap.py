@@ -119,17 +119,29 @@ class RLSContextMiddleware:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
-        from api.db.rls_context import reset_org_context, set_org_context
+        from api.db.rls_context import (
+            reset_org_context,
+            reset_superadmin_context,
+            set_org_context,
+            set_superadmin_context,
+        )
 
-        token = set_org_context(_org_id_do_scope(scope))
+        org_id, superadmin = _ctx_do_scope(scope)
+        t_org = set_org_context(org_id)
+        t_super = set_superadmin_context(superadmin)
         try:
             await self.app(scope, receive, send)
         finally:
-            reset_org_context(token)
+            reset_superadmin_context(t_super)
+            reset_org_context(t_org)
 
 
-def _org_id_do_scope(scope) -> str | None:
-    """org_id do JWT no request (header Bearer ou cookie), ou None (best-effort)."""
+def _ctx_do_scope(scope) -> tuple[str | None, bool]:
+    """(org_id, superadmin) do JWT no request (header Bearer ou cookie); best-effort.
+
+    Token ausente/inválido/expirado → (None, False). O claim `superadmin` só é
+    emitido no login do admin por env (api/routers/auth_routes), nunca p/ usuário comum.
+    """
     try:
         headers = {
             k.decode("latin1").lower(): v.decode("latin1")
@@ -146,12 +158,13 @@ def _org_id_do_scope(scope) -> str | None:
                     jwt = val.strip()
                     break
         if not jwt:
-            return None
+            return None, False
         from api.services.auth import decodificar_token
 
-        return decodificar_token(jwt).org_id
-    except Exception:  # noqa: BLE001 — token ausente/inválido/expirado → sem org
-        return None
+        claims = decodificar_token(jwt)
+        return claims.org_id, bool(claims.superadmin)
+    except Exception:  # noqa: BLE001 — token ausente/inválido/expirado → sem contexto
+        return None, False
 
 
 @contextlib.asynccontextmanager

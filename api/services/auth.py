@@ -107,6 +107,7 @@ class TokenPayload(BaseModel):
     email: Optional[str] = None
     cliente_id: Optional[str] = None
     org_id: Optional[str] = None  # tenant (firma) — RLS por organização
+    superadmin: bool = False  # acesso cross-org (leitura) — só o admin por env
     role: str = "user"
     exp: Optional[int] = None
     iat: Optional[int] = None
@@ -118,6 +119,7 @@ def emitir_token(
     cliente_id: Optional[str] = None,
     org_id: Optional[str] = None,
     role: str = "user",
+    superadmin: bool = False,
     ttl_min: Optional[int] = None,
 ) -> str:
     """Cria um JWT assinado. Default expira em ORGCONC_JWT_TTL_MIN minutos."""
@@ -137,6 +139,8 @@ def emitir_token(
         payload["cliente_id"] = cliente_id
     if org_id:
         payload["org_id"] = org_id
+    if superadmin:
+        payload["superadmin"] = True
     return jwt.encode(payload, _JWT_SECRET, algorithm=_JWT_ALG)
 
 

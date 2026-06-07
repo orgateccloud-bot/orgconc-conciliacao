@@ -117,6 +117,33 @@ async def test_with_check_bloqueia_cliente_cruzado(app_maker):
 
 
 @pytest.mark.asyncio
+async def test_superadmin_le_cross_org_mas_nao_escreve(app_maker):
+    """app.superadmin='on' (sem app.org_id): LÊ as duas orgs; escrita cross-org barrada."""
+    async with app_maker() as s, s.begin():
+        await _criar_cliente(s, ORG_A, "Super Alfa")
+        await _criar_cliente(s, ORG_B, "Super Beta")
+    # Leitura cross-org como superadmin (sem app.org_id setado).
+    async with app_maker() as s, s.begin():
+        await s.execute(text("SELECT set_config('app.superadmin', 'on', true)"))
+        nomes = (await s.execute(text("SELECT nome FROM public.clientes"))).scalars().all()
+    assert "Super Alfa" in nomes and "Super Beta" in nomes, "superadmin deveria ver as duas orgs"
+    # Escrita como superadmin (sem org) é barrada (org_isolation FOR ALL, WITH CHECK).
+    with pytest.raises(Exception):
+        async with app_maker() as s, s.begin():
+            await s.execute(text("SELECT set_config('app.superadmin', 'on', true)"))
+            s.add(Cliente(org_id=uuid.UUID(ORG_A), nome="Super Intruso"))
+            await s.flush()
+    # DELETE cross-org como superadmin também é barrado (não some nada).
+    async with app_maker() as s, s.begin():
+        await s.execute(text("SELECT set_config('app.superadmin', 'on', true)"))
+        await s.execute(text("DELETE FROM public.clientes"))
+    async with app_maker() as s, s.begin():
+        await s.execute(text("SELECT set_config('app.superadmin', 'on', true)"))
+        n = (await s.execute(text("SELECT count(*) FROM public.clientes"))).scalar_one()
+    assert n == 2, "superadmin não deve conseguir apagar (leitura-só)"
+
+
+@pytest.mark.asyncio
 async def test_org_nao_le_documento_fiscal_de_outro(app_maker):
     """Tabela fiscal (org_id na migration 020): org A não vê doc fiscal de B."""
     async with app_maker() as s, s.begin():

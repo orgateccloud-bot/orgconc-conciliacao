@@ -73,6 +73,16 @@ BEGIN
       'WITH CHECK (org_id = NULLIF(current_setting(''app.org_id'', true), '''')::uuid)',
       t);
 
+    -- Superadmin (leitura cross-org): policy SEPARADA e só FOR SELECT. Permissiva
+    -- (OR com a org_isolation) → superadmin LÊ todas as orgs; como NÃO cobre
+    -- INSERT/UPDATE/DELETE, escrita cross-org continua barrada pela org_isolation
+    -- (leitura-só estrutural). Inerte sem `app.superadmin='on'` (fail-closed).
+    EXECUTE format('DROP POLICY IF EXISTS superadmin_read ON public.%I', t);
+    EXECUTE format(
+      'CREATE POLICY superadmin_read ON public.%I FOR SELECT '
+      'USING (current_setting(''app.superadmin'', true) = ''on'')',
+      t);
+
     EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO app_orgconc', t);
   END LOOP;
 END $$;
