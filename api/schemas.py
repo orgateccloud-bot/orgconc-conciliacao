@@ -79,6 +79,17 @@ class CriarOrgPayload(BaseModel):
             raise ValueError(f"Plano inválido: {self.plano}")
 
 
+class TrocarSenhaPayload(BaseModel):
+    """Troca da própria senha (self-service): exige a senha atual."""
+    senha_atual: str = Field(max_length=128)
+    senha_nova: str = Field(min_length=8, max_length=128)
+
+
+class ResetSenhaPayload(BaseModel):
+    """Reset de senha de um usuário por admin/service."""
+    senha_nova: str = Field(min_length=8, max_length=128)
+
+
 class CriarUsuarioPayload(BaseModel):
     """Cria um usuário em uma organização. Uso: bootstrap por admin/service."""
     email: str = Field(max_length=254)
