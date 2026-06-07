@@ -78,6 +78,18 @@ async def registrar_login(db: AsyncSession, usuario_id: str | uuid.UUID) -> None
     await db.commit()
 
 
+async def atualizar_senha(db: AsyncSession, usuario_id: str | uuid.UUID, senha_hash: str) -> int:
+    """Define um novo senha_hash. Retorna nº de linhas afetadas (0 se id inexistente)."""
+    stmt = (
+        update(Usuario)
+        .where(Usuario.id == usuario_id)
+        .values(senha_hash=senha_hash, atualizado_em=datetime.now(timezone.utc))
+    )
+    res = await db.execute(stmt)
+    await db.commit()
+    return res.rowcount or 0
+
+
 async def listar_por_org(db: AsyncSession, org_id: str | uuid.UUID) -> list[Usuario]:
     q = select(Usuario).where(Usuario.org_id == org_id).order_by(Usuario.criado_em)
     result = await db.execute(q)

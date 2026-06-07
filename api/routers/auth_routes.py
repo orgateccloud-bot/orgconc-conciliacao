@@ -12,7 +12,13 @@ from api.core.rate_limit import limiter
 from api.db import refresh_tokens as refresh_repo
 from api.db import usuarios as usuarios_repo
 from api.db.models import Org
-from api.schemas import CriarOrgPayload, CriarUsuarioPayload, LoginPayload
+from api.schemas import (
+    CriarOrgPayload,
+    CriarUsuarioPayload,
+    LoginPayload,
+    ResetSenhaPayload,
+    TrocarSenhaPayload,
+)
 from api.services.audit import gravar_audit_independente
 from api.services.auth import (
     REFRESH_TTL_DAYS,
@@ -329,6 +335,61 @@ async def auth_criar_usuario(
         payload={"email": uemail, "org_id": payload.org_id, "role": urole}, actor=user,
     )
     return {"id": uid, "email": uemail, "org_id": payload.org_id, "role": urole}
+
+
+@router.post("/senha")
+@limiter.limit("10/minute")
+async def auth_trocar_senha(
+    request: Request,
+    payload: TrocarSenhaPayload,
+    user: TokenPayload = Depends(current_user),
+):
+    """Troca a própria senha (exige a senha atual). Só p/ usuários do banco.
+
+    Ao trocar, revoga todos os refresh tokens do usuário (re-login nas outras
+    sessões). O admin por env (sub=email) usa senha por variável de ambiente —
+    não dá para trocar aqui.
+    """
+    _db_obrigatorio()
+    if not _e_uuid(user.sub):
+        raise HTTPException(400, "Troca de senha indisponivel para esta conta (admin por env)")
+    async with _config.SessionLocal() as db:
+        u = await usuarios_repo.buscar_por_id(db, user.sub)
+        if u is None:
+            raise HTTPException(401, "Usuario inativo ou inexistente")
+        if not verificar_senha(payload.senha_atual, u.senha_hash):
+            raise HTTPException(401, "Senha atual incorreta")
+        await usuarios_repo.atualizar_senha(db, u.id, hash_senha(payload.senha_nova))
+        await refresh_repo.revogar_todos_do_sub(db, str(u.id))
+    await gravar_audit_independente(
+        action="usuario.senha.trocar", resource_type="usuario", resource_id=user.sub,
+        payload={"self": True}, actor=user,
+    )
+    return {"detail": "Senha alterada. Faça login novamente nas outras sessões."}
+
+
+@router.post("/usuarios/{usuario_id}/senha")
+async def auth_reset_senha(
+    usuario_id: str,
+    payload: ResetSenhaPayload,
+    user: TokenPayload = Depends(require_role("admin", "service")),
+):
+    """Reset de senha de um usuário por admin/service. Revoga os refresh dele."""
+    _db_obrigatorio()
+    try:
+        uid = uuid.UUID(usuario_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(400, "usuario_id invalido")
+    async with _config.SessionLocal() as db:
+        n = await usuarios_repo.atualizar_senha(db, uid, hash_senha(payload.senha_nova))
+        if not n:
+            raise HTTPException(404, "Usuario nao encontrado")
+        await refresh_repo.revogar_todos_do_sub(db, str(uid))
+    await gravar_audit_independente(
+        action="usuario.senha.reset", resource_type="usuario", resource_id=usuario_id,
+        payload={"by": user.sub}, actor=user,
+    )
+    return {"detail": "Senha redefinida; sessões do usuário revogadas."}
 
 
 @router.get("/usuarios")

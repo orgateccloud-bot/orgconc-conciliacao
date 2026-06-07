@@ -283,3 +283,93 @@ def test_criar_org_sucesso():
                         headers=_bearer("admin"))
     assert r.status_code == 200, r.text
     assert r.json()["nome"] == "ACME LTDA" and r.json()["plano"] == "basico"
+
+
+# ── Troca de senha (self-service) ────────────────────────────────────────────
+
+def _bearer_uuid(uid: str, role: str = "user") -> dict:
+    return {"Authorization": f"Bearer {emitir_token(sub=uid, email='u@e.com', role=role)}"}
+
+
+def test_trocar_senha_self_sucesso():
+    uid = str(uuid.uuid4())
+    user = types.SimpleNamespace(id=uid, senha_hash=_HASH)
+    sl, _db = _mock_session_cm()
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.usuarios_repo.buscar_por_id", new=AsyncMock(return_value=user)),
+        patch("api.routers.auth_routes.usuarios_repo.atualizar_senha", new=AsyncMock(return_value=1)) as mock_upd,
+        patch("api.routers.auth_routes.refresh_repo.revogar_todos_do_sub", new=AsyncMock(return_value=2)) as mock_rev,
+    ):
+        r = client.post("/auth/senha", json={"senha_atual": _SENHA, "senha_nova": "nova-senha-123"},
+                        headers=_bearer_uuid(uid))
+    assert r.status_code == 200, r.text
+    mock_upd.assert_awaited_once()
+    mock_rev.assert_awaited_once()  # sessões revogadas
+
+
+def test_trocar_senha_self_atual_errada_401():
+    uid = str(uuid.uuid4())
+    user = types.SimpleNamespace(id=uid, senha_hash=_HASH)
+    sl, _db = _mock_session_cm()
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.usuarios_repo.buscar_por_id", new=AsyncMock(return_value=user)),
+    ):
+        r = client.post("/auth/senha", json={"senha_atual": "errada", "senha_nova": "nova-senha-123"},
+                        headers=_bearer_uuid(uid))
+    assert r.status_code == 401
+
+
+def test_trocar_senha_env_admin_400():
+    """sub = email (admin por env) → não há usuário no DB para trocar."""
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", _mock_session_cm()[0]),
+    ):
+        r = client.post("/auth/senha", json={"senha_atual": "x", "senha_nova": "nova-senha-123"},
+                        headers=_bearer("admin"))  # sub='x' (não-uuid)
+    assert r.status_code == 400
+
+
+def test_trocar_senha_curta_422():
+    r = client.post("/auth/senha", json={"senha_atual": "x", "senha_nova": "curta"},
+                    headers=_bearer_uuid(str(uuid.uuid4())))
+    assert r.status_code == 422
+
+
+# ── Reset de senha (admin) ───────────────────────────────────────────────────
+
+def test_reset_senha_admin_sucesso():
+    uid = str(uuid.uuid4())
+    sl, _db = _mock_session_cm()
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.usuarios_repo.atualizar_senha", new=AsyncMock(return_value=1)),
+        patch("api.routers.auth_routes.refresh_repo.revogar_todos_do_sub", new=AsyncMock(return_value=0)),
+    ):
+        r = client.post(f"/auth/usuarios/{uid}/senha", json={"senha_nova": "nova-senha-123"},
+                        headers=_bearer("admin"))
+    assert r.status_code == 200, r.text
+
+
+def test_reset_senha_inexistente_404():
+    uid = str(uuid.uuid4())
+    sl, _db = _mock_session_cm()
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.usuarios_repo.atualizar_senha", new=AsyncMock(return_value=0)),
+    ):
+        r = client.post(f"/auth/usuarios/{uid}/senha", json={"senha_nova": "nova-senha-123"},
+                        headers=_bearer("admin"))
+    assert r.status_code == 404
+
+
+def test_reset_senha_nao_admin_403():
+    r = client.post(f"/auth/usuarios/{uuid.uuid4()}/senha", json={"senha_nova": "nova-senha-123"},
+                    headers=_bearer_uuid(str(uuid.uuid4()), role="user"))
+    assert r.status_code == 403
