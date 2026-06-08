@@ -16,6 +16,7 @@ isolamento de verdade — **mas a ativação tem pré-requisitos** (abaixo).
 | `contraparte_org_isolation.sql` | PoC do **mecanismo** numa tabela de demonstração (`contraparte`). Provado em `tests/test_rls_isolation.py`. |
 | `org_isolation.sql` | Aplica o padrão nas **tabelas tenant-scoped**: `clientes`, `conciliacoes`, `transacoes`, `apuracao_cbs_ibs` + fiscais (`documento_fiscal`, `cruzamento_fiscal`, `conformidade_fornecedor`, `guia_tributo`, `contrato`, `carta_versao`, `transacao_disposicao` — `org_id` via **migration 020**). Provado em `tests/test_rls_real_tables.py`. |
 | `rollout_grants.sql` | GRANT DML de `app_orgconc` em **todas** as tabelas (auth/infra/fiscais incluídas — senão "permission denied" ao trocar a conexão) + default privileges p/ tabelas futuras. |
+| `infra_allow_all.sql` | Policy `allow_all` (USING true / WITH CHECK true) nas tabelas de **infra/auth NÃO tenant-scoped** com RLS habilitada: `ai_insights_cache`, `audit_events`, `llm_cost_daily`, `orgs`, `refresh_tokens`. Sem ela, RLS-habilitada-sem-policy = **nega tudo** ao `app_orgconc` (quebra AI insights, login/refresh, orgs, auditoria, custo LLM). O isolamento dessas fica na app. |
 
 Padrão da política (falha-**fechada**): `org_id = NULLIF(current_setting('app.org_id', true), '')::uuid`
 em `USING` (leitura/update/delete) **e** `WITH CHECK` (escrita). Sem `app.org_id`
