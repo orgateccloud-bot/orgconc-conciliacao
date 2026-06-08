@@ -8,10 +8,18 @@ import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { TrustGrid } from "@/components/dashboard/TrustGrid";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
+import { AuthProvider } from "@/lib/auth";
 import type { ActivityFeedItem, TrustScore } from "@/lib/api";
 
 vi.mock("@/lib/theme", () => ({
   useTheme: () => ({ tema: "light", toggle: vi.fn() }),
+}));
+
+// O Sidebar usa useAuth() (gating do item admin "Usuários"); no app vive sempre
+// dentro do AuthProvider. fetchMe falha cedo (sem rede) → user=null, sem item admin.
+vi.mock("@/lib/api", async (orig) => ({
+  ...(await orig<typeof import("@/lib/api")>()),
+  fetchMe: vi.fn().mockRejectedValue(new Error("sem sessão")),
 }));
 
 describe("KpiCard", () => {
@@ -71,9 +79,11 @@ describe("TrustGrid", () => {
 describe("Sidebar", () => {
   function renderSidebar(props?: { anomalias?: number; clientes?: number }) {
     return render(
-      <MemoryRouter>
-        <Sidebar {...props} />
-      </MemoryRouter>,
+      <AuthProvider>
+        <MemoryRouter>
+          <Sidebar {...props} />
+        </MemoryRouter>
+      </AuthProvider>,
     );
   }
 
