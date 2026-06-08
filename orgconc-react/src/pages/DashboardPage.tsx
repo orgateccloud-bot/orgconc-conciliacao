@@ -133,6 +133,11 @@ export function DashboardPage() {
       <DashboardShell
         main={
           <>
+            {/* Onboarding: sem nenhum dado, o CTA de primeira análise vem primeiro */}
+            {!loading && kpis && kpis.conciliacoes === 0 && (
+              <EmptyState onAction={() => navigate("/conciliacao")} />
+            )}
+
             {/* Trust grid */}
             <TrustGrid data={trust} />
 
@@ -152,12 +157,12 @@ export function DashboardPage() {
               <KpiCard
                 label="Taxa conciliação"
                 value={
-                  kpis
+                  kpis && kpis.transacoes > 0
                     ? `${(100 - kpis.taxa_anomalias_pct).toFixed(1)}%`
                     : "—"
                 }
-                desc="SLA 97% · acima da meta"
-                delta={kpis?.delta.conciliacoes_pct ?? null}
+                desc={kpis && kpis.transacoes > 0 ? "SLA 97% · acima da meta" : "sem transações ainda"}
+                delta={kpis && kpis.transacoes > 0 ? kpis.delta.conciliacoes_pct : null}
                 icon={LineChartIcon}
                 accent="blue"
               />
@@ -198,11 +203,6 @@ export function DashboardPage() {
 
             {/* Trilha de auditoria */}
             <AuditTimeline data={auditTimeline} />
-
-            {/* Empty state quando não há nenhum dado */}
-            {!loading && kpis && kpis.conciliacoes === 0 && (
-              <EmptyState onAction={() => navigate("/conciliacao")} />
-            )}
           </>
         }
         rightbar={

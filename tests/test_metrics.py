@@ -176,10 +176,11 @@ def test_buscar_cliente_idor_cross_tenant_403():
 
 def test_descricao_score_faixas():
     from api.db.metrics import _descricao_score
+    # asserts em fragmentos sem acento (robustos a mudança de acentuação)
     assert "Excelente" in _descricao_score(95)
-    assert "Saudavel" in _descricao_score(80)
-    assert "Atencao" in _descricao_score(60)
-    assert "Critico" in _descricao_score(20)
+    assert "ajustes recomendados" in _descricao_score(80)
+    assert "revisar anomalias" in _descricao_score(60)
+    assert "auditoria manual" in _descricao_score(20)
 
 
 # ── Audit: mascaramento PII no endpoint ─────────────────────────────────
