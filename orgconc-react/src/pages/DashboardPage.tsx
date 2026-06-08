@@ -65,6 +65,7 @@ export function DashboardPage() {
   const carregarTudo = useCallback(async () => {
     setLoading(true);
     setErro(false);
+    setBundle(null); // limpa stale: garante skeleton no retry e ErroCard se falhar de novo
     const [bundleRes, trustRes, insightsRes, activityRes, auditRes] = await Promise.allSettled([
       fetchDashboardBundle(PERIODO_DIAS),
       fetchTrustScore(PERIODO_DIAS),

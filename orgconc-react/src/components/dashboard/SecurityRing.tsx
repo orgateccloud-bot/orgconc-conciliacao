@@ -68,7 +68,7 @@ export function SecurityRing({ data, loading }: Props) {
           Trust Score
         </div>
         <h3 className="text-lg font-semibold mb-1 leading-tight">
-          {data?.descricao ?? "Calculando indicadores…"}
+          {data?.descricao ?? (loading === false ? "Indicadores indisponíveis" : "Calculando indicadores…")}
         </h3>
         {data && !semDados ? (
           <p className="text-xs text-muted-foreground mb-4">

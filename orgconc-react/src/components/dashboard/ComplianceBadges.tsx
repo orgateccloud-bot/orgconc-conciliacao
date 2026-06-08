@@ -23,6 +23,7 @@ export function ComplianceBadges() {
         <span
           key={b.sigla}
           title={b.desc}
+          aria-label={`${b.sigla} — ${b.desc}`}
           className={`${BASE} border-green-200 dark:border-green-900/60 bg-green-50/80 dark:bg-green-950/30 text-green-700 dark:text-green-400`}
         >
           <ShieldCheck className="h-3 w-3" aria-hidden="true" />
@@ -33,6 +34,7 @@ export function ComplianceBadges() {
         <span
           key={b.sigla}
           title={b.desc}
+          aria-label={`${b.sigla} — ${b.desc}`}
           className={`${BASE} border-amber-200 dark:border-amber-900/60 bg-amber-50/80 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400`}
         >
           <Clock className="h-3 w-3" aria-hidden="true" />
@@ -43,6 +45,7 @@ export function ComplianceBadges() {
         <span
           key={b.sigla}
           title={b.desc}
+          aria-label={`${b.sigla} — ${b.desc}`}
           className={`${BASE} border-border bg-muted/50 text-muted-foreground`}
         >
           <Info className="h-3 w-3" aria-hidden="true" />

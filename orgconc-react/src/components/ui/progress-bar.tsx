@@ -11,8 +11,9 @@ interface ProgressBarProps {
   trackClassName?: string;
   /** Classe extra no preenchimento (ex.: "rounded-full duration-700"). */
   fillClassName?: string;
-  /** Rótulo acessível — vira aria-label do progressbar (ex.: "Taxa de sucesso: 98%"). */
-  label?: string;
+  /** Rótulo acessível (OBRIGATÓRIO) — vira aria-label do progressbar. role=progressbar
+   *  sem nome é inválido (WCAG 4.1.2); por isso o tipo força todo chamador a passar. */
+  label: string;
 }
 
 /**
