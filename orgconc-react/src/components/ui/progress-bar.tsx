@@ -11,13 +11,14 @@ interface ProgressBarProps {
   trackClassName?: string;
   /** Classe extra no preenchimento (ex.: "rounded-full duration-700"). */
   fillClassName?: string;
+  /** Rótulo acessível — vira aria-label do progressbar (ex.: "Taxa de sucesso: 98%"). */
+  label?: string;
 }
 
 /**
  * Barra de progresso horizontal: trilha + preenchimento por largura %.
- * Primitivo extraído de 3 cópias idênticas (SecurityRing.Goal,
- * AuditoriaForensePage, RiscoTributarioPage). Os rótulos e os mapas de cor
- * ficam no chamador — só a mecânica trilha+fill é compartilhada aqui.
+ * Primitivo compartilhado (SecurityRing.Goal, AuditoriaForensePage,
+ * RiscoTributarioPage). Acessível: role="progressbar" + aria-valuenow/min/max.
  */
 export function ProgressBar({
   value,
@@ -25,13 +26,22 @@ export function ProgressBar({
   size = "md",
   trackClassName = "bg-muted",
   fillClassName,
+  label,
 }: ProgressBarProps) {
   const pct = Math.max(0, Math.min(100, value));
   return (
-    <div className={cn("w-full overflow-hidden rounded-full", size === "sm" ? "h-1.5" : "h-2", trackClassName)}>
+    <div
+      role="progressbar"
+      aria-valuenow={Math.round(pct)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={label}
+      className={cn("w-full overflow-hidden rounded-full", size === "sm" ? "h-1.5" : "h-2", trackClassName)}
+    >
       <div
         className={cn("h-full transition-all", colorClass, fillClassName)}
         style={{ width: `${pct}%` }}
+        aria-hidden="true"
       />
     </div>
   );

@@ -11,8 +11,6 @@ const RAIO = 65;
 const CIRCUNFERENCIA = 2 * Math.PI * RAIO;
 
 // Bloco ÚNICO do Trust Score: gauge + descrição + indicadores derivados.
-// Consolida o que antes estava espalhado em TrustGrid + SecurityRing +
-// IndicadoresGoals (os três liam o mesmo TrustScore e repetiam os números).
 export function SecurityRing({ data, loading }: Props) {
   // "Sem dados" cobre data nula (carregando) E conta zerada (backend devolve
   // total_conciliacoes=0). Sem este guard, taxa de sucesso/controle de risco
@@ -29,11 +27,16 @@ export function SecurityRing({ data, loading }: Props) {
   const controleRisco = data && !semDados ? Math.max(0, 100 - data.metricas.taxa_anomalias_pct) : 0;
 
   return (
-    <div className="rounded-3xl border glass p-6 flex flex-col md:flex-row gap-6 items-center">
+    <div className="rounded-3xl border glass p-6 flex flex-col md:flex-row gap-6 items-center h-full">
       {/* Gauge */}
       <div className="relative shrink-0">
-        <svg viewBox="0 0 150 150" className="w-36 h-36 -rotate-90">
-          <circle cx="75" cy="75" r={RAIO} fill="none" stroke="hsl(var(--muted))" strokeWidth="10" opacity="0.4" />
+        <svg
+          viewBox="0 0 150 150"
+          className="w-36 h-36 -rotate-90"
+          role="img"
+          aria-label={vazio ? "Trust Score: sem dados" : `Trust Score: ${score} de 100`}
+        >
+          <circle cx="75" cy="75" r={RAIO} fill="none" stroke="hsl(var(--muted))" strokeWidth="10" opacity="0.4" aria-hidden="true" />
           <circle
             cx="75"
             cy="75"
@@ -45,9 +48,10 @@ export function SecurityRing({ data, loading }: Props) {
             strokeDasharray={CIRCUNFERENCIA}
             strokeDashoffset={vazio ? CIRCUNFERENCIA : dashOffset}
             style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.16,1,0.3,1)" }}
+            aria-hidden="true"
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center" aria-hidden="true">
           <span className="text-4xl font-bold font-jakarta tabular leading-none">
             {vazio ? "—" : score}
           </span>
@@ -60,7 +64,7 @@ export function SecurityRing({ data, loading }: Props) {
       {/* Descrição + indicadores derivados */}
       <div className="flex-1 min-w-0 w-full text-center md:text-left">
         <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-muted-foreground mb-2">
-          <ShieldCheck className="h-3 w-3" />
+          <ShieldCheck className="h-3 w-3" aria-hidden="true" />
           Trust Score
         </div>
         <h3 className="text-lg font-semibold mb-1 leading-tight">
@@ -115,6 +119,7 @@ function Goal({ label, valor, cor }: { label: string; valor: number; cor: keyof 
         size="sm"
         trackClassName="bg-muted/40"
         fillClassName="rounded-full duration-700"
+        label={`${label}: ${valor.toFixed(1)}%`}
       />
     </div>
   );

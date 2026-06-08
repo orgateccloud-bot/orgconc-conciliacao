@@ -72,7 +72,7 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Anomalias detectadas")).toBeInTheDocument();
   });
 
-  it("permanece estavel mesmo se todas as chamadas falharem", async () => {
+  it("mostra estado de erro (nao o onboarding) se o bundle falhar", async () => {
     vi.mocked(api.fetchDashboardBundle).mockRejectedValue(new Error("500"));
     vi.mocked(api.fetchTrustScore).mockRejectedValue(new Error("500"));
     vi.mocked(api.fetchAiInsights).mockRejectedValue(new Error("500"));
@@ -80,8 +80,12 @@ describe("DashboardPage", () => {
     vi.mocked(api.fetchAuditTimeline).mockRejectedValue(new Error("500"));
 
     renderDash();
+    // Falha de API NÃO pode virar "Importe o primeiro extrato" (onboarding) —
+    // mostra erro com retry, sem quebrar.
     await waitFor(() =>
-      expect(screen.getByText("Volume processado")).toBeInTheDocument(),
+      expect(screen.getByText("Não foi possível carregar o dashboard")).toBeInTheDocument(),
     );
+    expect(screen.getByText("Tentar novamente")).toBeInTheDocument();
+    expect(screen.queryByText(/Importe o primeiro extrato/i)).not.toBeInTheDocument();
   });
 });
