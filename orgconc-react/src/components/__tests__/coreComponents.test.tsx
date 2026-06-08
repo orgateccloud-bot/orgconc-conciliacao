@@ -64,6 +64,8 @@ describe("SecurityRing (Trust Score)", () => {
     render(<SecurityRing data={null} />);
     expect(screen.getByText("Calculando indicadores…")).toBeInTheDocument();
     expect(screen.getByText("Sem dados")).toBeInTheDocument();
+    // Regressão: sem dados, "Controle de risco" não pode aparecer cheio (100%).
+    expect(screen.queryByText("100.0%")).not.toBeInTheDocument();
   });
 
   it("mostra score, descrição e indicadores quando há dados", () => {

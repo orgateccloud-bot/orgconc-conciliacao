@@ -22,7 +22,8 @@ export function SecurityRing({ data, loading }: Props) {
   const taxaSucesso = data?.breakdown.taxa_sucesso_pct ?? 0;
   const cobertura = data?.breakdown.cobertura_pct ?? 0;
   // Menor taxa de anomalias = controle de risco melhor (barra mais alta).
-  const controleRisco = Math.max(0, 100 - (data?.metricas.taxa_anomalias_pct ?? 0));
+  // Sem dados → 0 (não 100): senão a barra apareceria CHEIA no estado vazio.
+  const controleRisco = data ? Math.max(0, 100 - data.metricas.taxa_anomalias_pct) : 0;
 
   return (
     <div className="rounded-3xl border glass p-6 flex flex-col md:flex-row gap-6 items-center">
@@ -90,7 +91,9 @@ function corPorScore(score: number): string {
   return "#dc2626"; // vermelho
 }
 
-const COR_FILL: Record<string, string> = {
+// Sem anotação Record<string,string> de propósito: deixa `keyof typeof COR_FILL`
+// inferir a união literal ("success"|"primary"|"info") e travar o tipo de `cor`.
+const COR_FILL = {
   success: "bg-green-500",
   primary: "bg-primary",
   info: "bg-cyan-500",
