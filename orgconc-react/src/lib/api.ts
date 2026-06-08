@@ -839,3 +839,59 @@ export async function fetchAiInsights(periodo = 30, refresh = false) {
     `/ai/insights/dashboard?periodo=${periodo}&refresh=${refresh}`
   );
 }
+
+// ── Administração de organizações e usuários (admin/service) ──────────────
+
+export interface OrgAdmin {
+  id: string;
+  nome: string;
+  cnpj: string | null;
+  plano: string;
+  ativo: boolean;
+  criado_em: string | null;
+}
+
+export interface UsuarioAdmin {
+  id: string;
+  email: string;
+  nome: string | null;
+  role: string;
+  ativo: boolean;
+  criado_em: string | null;
+}
+
+export async function listarOrgs(): Promise<OrgAdmin[]> {
+  return apiFetch<OrgAdmin[]>("/auth/orgs");
+}
+
+export async function criarOrg(data: {
+  nome: string;
+  cnpj?: string;
+  plano?: string;
+}): Promise<{ id: string; nome: string; plano: string }> {
+  return apiFetch("/auth/orgs", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function listarUsuarios(orgId: string): Promise<UsuarioAdmin[]> {
+  return apiFetch<UsuarioAdmin[]>(`/auth/usuarios?org_id=${encodeURIComponent(orgId)}`);
+}
+
+export async function criarUsuario(data: {
+  email: string;
+  senha: string;
+  org_id: string;
+  role?: string;
+  nome?: string;
+}): Promise<{ id: string; email: string; org_id: string; role: string }> {
+  return apiFetch("/auth/usuarios", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function resetarSenhaUsuario(
+  usuarioId: string,
+  senhaNova: string,
+): Promise<{ detail: string }> {
+  return apiFetch(`/auth/usuarios/${usuarioId}/senha`, {
+    method: "POST",
+    body: JSON.stringify({ senha_nova: senhaNova }),
+  });
+}

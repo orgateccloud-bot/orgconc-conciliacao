@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from api.core import config as _config
@@ -309,6 +310,27 @@ async def auth_criar_org(
         payload={"nome": payload.nome}, actor=user,
     )
     return {"id": org_id, "nome": payload.nome, "plano": plano}
+
+
+@router.get("/orgs")
+async def auth_listar_orgs(
+    user: TokenPayload = Depends(require_role("admin", "service")),
+):
+    """Lista as organizações (tenants). Bootstrap por admin/service."""
+    _db_obrigatorio()
+    async with _config.SessionLocal() as db:
+        orgs = (await db.execute(select(Org).order_by(Org.criado_em))).scalars().all()
+        return [
+            {
+                "id": str(o.id),
+                "nome": o.nome,
+                "cnpj": o.cnpj,
+                "plano": o.plano,
+                "ativo": o.ativo,
+                "criado_em": o.criado_em.isoformat() if o.criado_em else None,
+            }
+            for o in orgs
+        ]
 
 
 @router.post("/usuarios")

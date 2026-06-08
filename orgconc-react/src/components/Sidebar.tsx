@@ -4,8 +4,9 @@ import {
   Users, FileText, LayoutDashboard, LineChart, Settings,
   Upload, AlertTriangle, ShieldCheck, Lock, Activity,
   Network, Receipt, FileSignature, ScrollText, FileWarning, Calculator, Gauge,
-  FileBarChart2,
+  FileBarChart2, UserCog,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 type SidebarItem = {
@@ -40,6 +41,7 @@ const FISCAL_ITEMS: SidebarItem[] = [
 const COMPLIANCE_ITEMS: SidebarItem[] = [
   { id: "auditoria",   label: "Auditoria",    icon: ShieldCheck },
   { id: "seguranca",   label: "Segurança",    icon: Lock },
+  { id: "usuarios",    label: "Usuários",     icon: UserCog },
   { id: "configuracoes", label: "Configurações", icon: Settings },
 ];
 
@@ -54,6 +56,13 @@ export function SidebarNavContent({
 }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const { user } = useAuth();
+
+  // "Usuários" (gestão de acessos) só para admin.
+  const complianceItems =
+    user?.role === "admin"
+      ? COMPLIANCE_ITEMS
+      : COMPLIANCE_ITEMS.filter((i) => i.id !== "usuarios");
 
   const operacaoWithBadges = OPERACAO_ITEMS.map((item) => ({
     ...item,
@@ -68,7 +77,7 @@ export function SidebarNavContent({
   function go(id: string) {
     const routableIds = [
       "dashboard","conciliacao","upload","matchers","guias","contratos",
-      "clientes","anomalias","relatorios","configuracoes",
+      "clientes","usuarios","anomalias","relatorios","configuracoes",
       "conformidade-fiscal","gaps-fiscais","risco-tributario","cartas-fiscais",
       "laudo",
       "auditoria-forense",
@@ -127,7 +136,7 @@ export function SidebarNavContent({
 
         {/* COMPLIANCE */}
         <NavGroup label="Compliance">
-          {COMPLIANCE_ITEMS.map((item) => (
+          {complianceItems.map((item) => (
             <NavItem
               key={item.id}
               active={isActive(item.id, item.label)}
