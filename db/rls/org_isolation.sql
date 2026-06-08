@@ -67,6 +67,11 @@ BEGIN
     -- Substitui qualquer policy anterior (inclusive allow_all) pelo isolamento real.
     EXECUTE format('DROP POLICY IF EXISTS allow_all     ON public.%I', t);
     EXECUTE format('DROP POLICY IF EXISTS org_isolation ON public.%I', t);
+    -- Policies legadas de uma tentativa antiga de RLS nativa do Supabase Auth
+    -- (role `authenticated`, USING org_id = auth.jwt()->>'org_id'). Inertes para o
+    -- backend (que conecta como app_orgconc, fora do role authenticated), mas drift
+    -- do modelo declarado — removidas aqui para manter banco↔script alinhados.
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_org_policy', t);
     EXECUTE format(
       'CREATE POLICY org_isolation ON public.%I FOR ALL '
       'USING      (org_id = NULLIF(current_setting(''app.org_id'', true), '''')::uuid) '
