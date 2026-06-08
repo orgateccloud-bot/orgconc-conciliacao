@@ -6,6 +6,7 @@ import {
   type FiscalRiscoResponse,
 } from "@/lib/api";
 import { Label } from "@/components/ui/label";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import {
   Select,
   SelectContent,
@@ -141,12 +142,7 @@ export function RiscoTributarioPage() {
                       </span>
                       <span className="font-mono">{formatBRL(valor)}</span>
                     </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={cn("h-full transition-all", CLASSE_COLOR_BAR[classe])}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
+                    <ProgressBar value={pct} colorClass={CLASSE_COLOR_BAR[classe]} />
                   </div>
                 );
               })}

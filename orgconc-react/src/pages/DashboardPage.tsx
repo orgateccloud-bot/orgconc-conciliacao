@@ -31,11 +31,9 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { DistribuicaoChart } from "@/components/dashboard/DistribuicaoChart";
 import { Heatmap } from "@/components/dashboard/Heatmap";
-import { IndicadoresGoals } from "@/components/dashboard/IndicadoresGoals";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { SecurityRing } from "@/components/dashboard/SecurityRing";
 import { TrendChart } from "@/components/dashboard/TrendChart";
-import { TrustGrid } from "@/components/dashboard/TrustGrid";
 
 const PERIODO_DIAS = 30;
 
@@ -138,10 +136,7 @@ export function DashboardPage() {
               <EmptyState onAction={() => navigate("/conciliacao")} />
             )}
 
-            {/* Trust grid */}
-            <TrustGrid data={trust} />
-
-            {/* Security ring (resumo do trust score) */}
+            {/* Trust Score — bloco único (gauge + descrição + indicadores) */}
             <SecurityRing data={trust} loading={loading && !trust} />
 
             {/* KPIs */}
@@ -161,7 +156,7 @@ export function DashboardPage() {
                     ? `${(100 - kpis.taxa_anomalias_pct).toFixed(1)}%`
                     : "—"
                 }
-                desc={kpis && kpis.transacoes > 0 ? "SLA 97% · acima da meta" : "sem transações ainda"}
+                desc={kpis && kpis.transacoes > 0 ? "transações sem divergência" : "sem transações ainda"}
                 delta={kpis && kpis.transacoes > 0 ? kpis.delta.conciliacoes_pct : null}
                 icon={LineChartIcon}
                 accent="blue"
@@ -178,7 +173,7 @@ export function DashboardPage() {
               <KpiCard
                 label="Conciliações no período"
                 value={kpis ? fmtNumero(kpis.conciliacoes) : "—"}
-                desc={kpis ? `${kpis.periodo_dias} dias · sem perdas` : undefined}
+                desc={kpis ? `nos últimos ${kpis.periodo_dias} dias` : undefined}
                 delta={kpis?.delta.conciliacoes_pct ?? null}
                 icon={FileText}
                 accent="green"
@@ -205,12 +200,7 @@ export function DashboardPage() {
             <AuditTimeline data={auditTimeline} />
           </>
         }
-        rightbar={
-          <>
-            <ActivityFeed data={activity} />
-            <IndicadoresGoals trust={trust} />
-          </>
-        }
+        rightbar={<ActivityFeed data={activity} />}
       />
     </div>
   );
