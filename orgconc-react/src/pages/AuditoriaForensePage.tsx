@@ -8,6 +8,7 @@ import {
   type RegimeClasse,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -413,12 +414,7 @@ export function AuditoriaForensePage() {
                       </span>
                       <span className="font-mono">{formatBRL(cell.volume)}</span>
                     </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={cn("h-full transition-all", HEAT_COLOR[classe])}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
+                    <ProgressBar value={pct} colorClass={HEAT_COLOR[classe]} />
                   </div>
                 );
               })}

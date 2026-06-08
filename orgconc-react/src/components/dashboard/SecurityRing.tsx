@@ -1,6 +1,6 @@
 import { ShieldCheck } from "lucide-react";
 import type { TrustScore } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { ProgressBar } from "@/components/ui/progress-bar";
 
 interface Props {
   data: TrustScore | null;
@@ -100,19 +100,19 @@ const COR_FILL = {
 };
 
 function Goal({ label, valor, cor }: { label: string; valor: number; cor: keyof typeof COR_FILL }) {
-  const pct = Math.max(0, Math.min(100, valor));
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1">
         <span className="text-xs text-muted-foreground">{label}</span>
         <span className="text-xs font-mono font-semibold tabular">{valor.toFixed(1)}%</span>
       </div>
-      <div className="h-1.5 w-full rounded-full bg-muted/40 overflow-hidden">
-        <div
-          className={cn("h-full rounded-full transition-all duration-700", COR_FILL[cor])}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      <ProgressBar
+        value={valor}
+        colorClass={COR_FILL[cor]}
+        size="sm"
+        trackClassName="bg-muted/40"
+        fillClassName="rounded-full duration-700"
+      />
     </div>
   );
 }
