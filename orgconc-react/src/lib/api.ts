@@ -437,20 +437,6 @@ export interface FiscalConformidadeResponse {
   fornecedores: FiscalFornecedor[];
 }
 
-export interface FiscalGapItem {
-  id: string;
-  status: string;
-  diferenca_valor: number;
-  diferenca_dias: number | null;
-  criado_em: string | null;
-}
-
-export interface FiscalGapResponse {
-  cliente_id: string;
-  total: number;
-  gaps: FiscalGapItem[];
-}
-
 export interface FiscalRiscoResponse {
   cliente_id: string;
   risco_total_anual: number;
@@ -568,12 +554,6 @@ export async function fiscalConformidade(
   return apiFetch<FiscalConformidadeResponse>(
     `/fiscal/conformidade/${clienteId}${q}`,
   );
-}
-
-export async function fiscalGap(
-  clienteId: string,
-): Promise<FiscalGapResponse> {
-  return apiFetch<FiscalGapResponse>(`/fiscal/gap/${clienteId}`);
 }
 
 export async function fiscalRiscoTributario(

@@ -57,28 +57,6 @@ export function ListSkeleton({ items = 5 }: { items?: number }) {
   );
 }
 
-export function TableRowSkeleton({ cols = 5 }: { cols?: number }) {
-  return (
-    <tr>
-      {Array.from({ length: cols }).map((_, i) => (
-        <td key={i} className="px-4 py-3">
-          <Skeleton className="h-4 w-full max-w-[140px]" />
-        </td>
-      ))}
-    </tr>
-  );
-}
-
-export function TableBodySkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: number }) {
-  return (
-    <tbody role="status" aria-label="Carregando tabela">
-      {Array.from({ length: rows }).map((_, i) => (
-        <TableRowSkeleton key={i} cols={cols} />
-      ))}
-    </tbody>
-  );
-}
-
 export function PageSkeleton() {
   return (
     <div
