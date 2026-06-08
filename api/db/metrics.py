@@ -216,7 +216,29 @@ async def calcular_trust_score(db: AsyncSession, periodo_dias: int = 30) -> dict
     anom = int(row.anom or 0)
     tx = int(row.tx or 0)
 
-    taxa_sucesso = (limpas / total * 100) if total else 100.0
+    # Conta sem histórico: NÃO fabricar "saúde". Retorna estado de vazio honesto
+    # (score 0 + descrição própria) em vez de 80/"Saudável" gerado por fallbacks
+    # vácuos (taxa_sucesso=100% e dias_sem_falha=máximo quando não há nenhum ciclo).
+    if total == 0:
+        return {
+            "score": 0,
+            "periodo_dias": periodo_dias,
+            "breakdown": {
+                "taxa_sucesso_pct": 0.0,
+                "dias_sem_falha": 0.0,
+                "cobertura_pct": 0.0,
+            },
+            "metricas": {
+                "total_conciliacoes": 0,
+                "conciliacoes_limpas": 0,
+                "total_transacoes": tx,
+                "total_anomalias": 0,
+                "taxa_anomalias_pct": 0.0,
+            },
+            "descricao": "Sem dados — realize a primeira conciliação",
+        }
+
+    taxa_sucesso = limpas / total * 100
 
     # Dias desde ultima conciliacao com anomalia
     q_ultima_falha = (

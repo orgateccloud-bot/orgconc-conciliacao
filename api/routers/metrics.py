@@ -128,10 +128,13 @@ async def modelos(
 async def trust_score(
     request: Request,
     periodo: int = Query(30, ge=7, le=365),
+    user: TokenPayload = Depends(current_user),
 ):
-    """Score derivado 0-100 (cache 5min global). Sem dados retorna score=0 + descricao."""
+    """Score derivado 0-100 (cache 5min POR USER). Sem dados retorna score=0 + descricao."""
     _check_db()
-    cache_key = f"trust:{periodo}"
+    # Cache keyed por user (como o dashboard-bundle): a chave global `trust:{periodo}`
+    # vazava o score de uma org para outra na janela de TTL — fura a RLS via cache.
+    cache_key = f"trust:{user.sub}:{periodo}"
     agora = time.time()
     cached = _trust_cache.get(cache_key)
     if cached and agora - cached[0] < _TRUST_TTL_S:

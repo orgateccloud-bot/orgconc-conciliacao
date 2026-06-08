@@ -183,6 +183,27 @@ def test_descricao_score_faixas():
     assert "auditoria manual" in _descricao_score(20)
 
 
+def test_trust_score_sem_dados_nao_inventa_saude():
+    """Regressão: conta sem nenhuma conciliação retorna score 0 + 'Sem dados' —
+    NUNCA 80/'Saudável' por fallback vácuo (taxa_sucesso=100% / dias_sem_falha=máx)."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from api.db.metrics import calcular_trust_score
+
+    row = MagicMock(total=0, limpas=0, anom=0, tx=0)
+    result = MagicMock()
+    result.one.return_value = row
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=result)
+
+    out = asyncio.run(calcular_trust_score(db, periodo_dias=30))
+    assert out["score"] == 0
+    assert out["metricas"]["total_conciliacoes"] == 0
+    assert out["breakdown"]["taxa_sucesso_pct"] == 0.0
+    assert out["metricas"]["taxa_anomalias_pct"] == 0.0
+    assert "Sem dados" in out["descricao"]
+
+
 # ── Audit: mascaramento PII no endpoint ─────────────────────────────────
 
 def test_mascarar_payload_aplica_pii_mask_em_emails():

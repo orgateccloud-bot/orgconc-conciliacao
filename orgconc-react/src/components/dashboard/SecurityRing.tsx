@@ -14,16 +14,19 @@ const CIRCUNFERENCIA = 2 * Math.PI * RAIO;
 // Consolida o que antes estava espalhado em TrustGrid + SecurityRing +
 // IndicadoresGoals (os três liam o mesmo TrustScore e repetiam os números).
 export function SecurityRing({ data, loading }: Props) {
-  const vazio = loading || data === null;
-  const score = data === null ? 0 : Math.round(data.score);
+  // "Sem dados" cobre data nula (carregando) E conta zerada (backend devolve
+  // total_conciliacoes=0). Sem este guard, taxa de sucesso/controle de risco
+  // apareceriam como 0%/100% (vácuos) num dashboard sem nenhum ciclo.
+  const semDados = !data || data.metricas.total_conciliacoes === 0;
+  const vazio = loading || semDados;
+  const score = data && !semDados ? Math.round(data.score) : 0;
   const corStroke = corPorScore(score);
   const dashOffset = CIRCUNFERENCIA - (score / 100) * CIRCUNFERENCIA;
 
-  const taxaSucesso = data?.breakdown.taxa_sucesso_pct ?? 0;
-  const cobertura = data?.breakdown.cobertura_pct ?? 0;
+  const taxaSucesso = data && !semDados ? data.breakdown.taxa_sucesso_pct : 0;
+  const cobertura = data && !semDados ? data.breakdown.cobertura_pct : 0;
   // Menor taxa de anomalias = controle de risco melhor (barra mais alta).
-  // Sem dados → 0 (não 100): senão a barra apareceria CHEIA no estado vazio.
-  const controleRisco = data ? Math.max(0, 100 - data.metricas.taxa_anomalias_pct) : 0;
+  const controleRisco = data && !semDados ? Math.max(0, 100 - data.metricas.taxa_anomalias_pct) : 0;
 
   return (
     <div className="rounded-3xl border glass p-6 flex flex-col md:flex-row gap-6 items-center">
@@ -63,7 +66,7 @@ export function SecurityRing({ data, loading }: Props) {
         <h3 className="text-lg font-semibold mb-1 leading-tight">
           {data?.descricao ?? "Calculando indicadores…"}
         </h3>
-        {data ? (
+        {data && !semDados ? (
           <p className="text-xs text-muted-foreground mb-4">
             <span className="font-mono">{data.breakdown.dias_sem_falha}</span> dias sem falha ·{" "}
             <span className="font-mono">{data.metricas.total_conciliacoes}</span> ciclos em {data.periodo_dias}d
