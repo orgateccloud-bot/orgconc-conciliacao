@@ -5,7 +5,7 @@ import { TrendingUp } from "lucide-react";
 
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
-import { TrustGrid } from "@/components/dashboard/TrustGrid";
+import { SecurityRing } from "@/components/dashboard/SecurityRing";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import { AuthProvider } from "@/lib/auth";
@@ -59,20 +59,26 @@ describe("ActivityFeed", () => {
   });
 });
 
-describe("TrustGrid", () => {
-  it("mostra fallback quando não há dados", () => {
-    render(<TrustGrid data={null} />);
-    expect(screen.getByText("Métricas em cálculo")).toBeInTheDocument();
+describe("SecurityRing (Trust Score)", () => {
+  it("mostra estado sem dados", () => {
+    render(<SecurityRing data={null} />);
+    expect(screen.getByText("Calculando indicadores…")).toBeInTheDocument();
+    expect(screen.getByText("Sem dados")).toBeInTheDocument();
   });
 
-  it("mostra taxa de sucesso quando há dados", () => {
+  it("mostra score, descrição e indicadores quando há dados", () => {
     const trust = {
+      score: 80,
+      periodo_dias: 30,
+      descricao: "Saudável",
+      breakdown: { taxa_sucesso_pct: 98, dias_sem_falha: 30, cobertura_pct: 50 },
       metricas: { total_conciliacoes: 12, taxa_anomalias_pct: 1.5 },
-      breakdown: { taxa_sucesso_pct: 98 },
     } as unknown as TrustScore;
-    render(<TrustGrid data={trust} />);
-    expect(screen.getByText(/98% de conciliações limpas/)).toBeInTheDocument();
-    expect(screen.getByText(/12 ciclos/)).toBeInTheDocument();
+    render(<SecurityRing data={trust} />);
+    expect(screen.getByText("80")).toBeInTheDocument();
+    expect(screen.getByText("Saudável")).toBeInTheDocument();
+    expect(screen.getByText("Taxa de sucesso")).toBeInTheDocument();
+    expect(screen.getByText("Cobertura operacional")).toBeInTheDocument();
   });
 });
 
