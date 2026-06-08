@@ -287,6 +287,40 @@ def test_criar_org_sucesso():
     assert r.json()["nome"] == "ACME LTDA" and r.json()["plano"] == "basico"
 
 
+# ── Listar organizações (admin/service) ──────────────────────────────────────
+
+def test_listar_orgs_anonimo_403():
+    r = client.get("/auth/orgs")
+    assert r.status_code == 403
+
+
+def test_listar_orgs_role_user_403():
+    r = client.get("/auth/orgs", headers=_bearer("user"))
+    assert r.status_code == 403
+
+
+def test_listar_orgs_sucesso():
+    org = types.SimpleNamespace(
+        id=uuid.uuid4(), nome="ACME LTDA", cnpj="12.345.678/0001-90",
+        plano="pro", ativo=True, criado_em=None,
+    )
+    sl, db = _mock_session_cm()
+    result = MagicMock()
+    result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[org])))
+    db.execute = AsyncMock(return_value=result)
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+    ):
+        r = client.get("/auth/orgs", headers=_bearer("admin"))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body, list) and len(body) == 1
+    assert body[0]["id"] == str(org.id)
+    assert body[0]["nome"] == "ACME LTDA" and body[0]["plano"] == "pro"
+    assert body[0]["cnpj"] == "12.345.678/0001-90" and body[0]["ativo"] is True
+
+
 # ── Troca de senha (self-service) ────────────────────────────────────────────
 
 def _bearer_uuid(uid: str, role: str = "user") -> dict:

@@ -34,6 +34,7 @@ const GapsFiscaisPage   = lazy(() => import("@/pages/GapsFiscaisPage").then(m =>
 const RiscoTributarioPage = lazy(() => import("@/pages/RiscoTributarioPage").then(m => ({ default: m.RiscoTributarioPage })));
 const CartasFiscaisPage = lazy(() => import("@/pages/CartasFiscaisPage").then(m => ({ default: m.CartasFiscaisPage })));
 const AuditoriaForensePage = lazy(() => import("@/pages/AuditoriaForensePage").then(m => ({ default: m.AuditoriaForensePage })));
+const UsuariosPage      = lazy(() => import("@/pages/UsuariosPage").then(m => ({ default: m.UsuariosPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 60000, retry: 1 } },
@@ -54,6 +55,7 @@ const TITULOS: Record<string, string> = {
   "risco-tributario":     "Risco Tributário",
   "cartas-fiscais":       "Cartas de Constatação",
   "auditoria-forense":    "Auditoria Forense",
+  usuarios:      "Usuários & Organizações",
 };
 
 function ProtectedRoute() {
@@ -150,6 +152,7 @@ export default function App() {
                 <Route path="/cartas-fiscais" element={<CartasFiscaisPage />} />
                 <Route path="/auditoria-forense" element={<AuditoriaForensePage />} />
                 <Route path="/clientes" element={<ClientesPage />} />
+                <Route path="/usuarios" element={<UsuariosPage />} />
                 <Route path="/relatorios" element={<RelatoriosPage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />
               </Route>
