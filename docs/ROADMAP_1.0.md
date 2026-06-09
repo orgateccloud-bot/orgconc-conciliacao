@@ -15,9 +15,9 @@
 ## P0 — Endurecimento & confiança (alto valor, baixo risco)
 | # | Item | Tipo | Entrega |
 |---|------|------|---------|
-| 1 | Cobertura de testes do frontend + gate no CI | 🤖 | `vitest --coverage` com threshold; testes para CommandPalette, AuditEventModal, AIInsightsPanel e páginas sem teste |
-| 2 | Revogação de refresh token no logout | 🤖 | revogação real no DB; logout invalida o token na hora (hoje vale até o TTL) |
-| 3 | Testes de rate-limit + headers `X-RateLimit-*` | 🤖 | cobre o throttle no CI; respostas 429 com `Retry-After`/limite |
+| 1 | ✅ **Cobertura de testes do frontend + gate no CI** (feito 2026-06-09) | 🤖 | 17/17 páginas + CommandPalette/AuditEventModal/AIInsightsPanel + `api.ts`; 249 testes; cobertura ~78% com `coverage.thresholds`; CI roda `test:coverage` |
+| 2 | ✅ **Revogação de refresh token no logout** (verificado 2026-06-09) | 🤖 | já funcional (`revogar_por_hash` no logout; `logout-all`; reset/troca de senha). Adicionados testes (logout-all, idempotência) + docstring do modelo de revogação. *Denylist do access JWT por jti fica p/ P1.* |
+| 3 | ✅ **Testes de rate-limit + headers `X-RateLimit-*`** (feito 2026-06-09) | 🤖 | `tests/test_rate_limit.py` (throttle 429 no CI); handler 429 customizado adiciona `X-RateLimit-Limit/Remaining/Reset` + `Retry-After` (sem `headers_enabled` global, que quebraria 34 endpoints) |
 | 4 | Limpar 3 policies RLS legadas inertes | 🤖 preparo · 🔑 aplicar | migration de `DROP POLICY` revisável; aplicação em prod coordenada |
 | 5 | E2E mais profundo | 🤖 | specs: upload OFX→resultado, fluxo de auditoria, erros de negócio |
 
@@ -45,7 +45,7 @@
 Itens 🔑 (#9, #11, #12, #13 e a parte live do #6) ficam para quando você liberar infra/credenciais/spec.
 
 ## Critério de 1.0 (proposto)
-- [ ] Cobertura: backend ≥ 80%, frontend ≥ 70% (com gate no CI).
+- [ ] Cobertura: backend ≥ 80% (hoje 74%) · ✅ frontend ≥ 70% — ~78% com gate no CI (2026-06-09).
 - [ ] E2E cobrindo os fluxos críticos (conciliação, laudo, auth).
 - [ ] CBS/IBS sem SERPRO, apontando a calculadora oficial + apuração persistida.
 - [ ] Hardening P0 completo (refresh revogável, rate-limit testado, RLS sem drift).

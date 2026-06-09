@@ -5,6 +5,17 @@ Implementa:
 - Geracao e validacao de JWT (HS256)
 - Dependency FastAPI `current_user` com acesso anonimo em dev/staging
 
+Modelo de revogacao de sessao:
+- Refresh token (opaco, persistido): revogado server-side no logout
+  (revogar_por_hash), logout-all e troca/reset de senha (revogar_todos_do_sub).
+  Apresentar um refresh revogado -> 401 (buscar_ativo_por_hash filtra revogado_em).
+- Access token (JWT, TTL curto ~120min): NAO ha denylist por jti hoje. O `jti`
+  e emitido para auditoria e como gancho para uma futura denylist (P1). A janela
+  de sobrevivencia do access apos logout e limitada ao TTL; renovacao indefinida
+  ja e barrada pela revogacao do refresh. Padrao "short-lived access + refresh
+  revogavel" — denylist por request so se o requisito exigir revogacao instantanea
+  do access (custo: lookup por request).
+
 Variaveis de ambiente:
 - ORGCONC_JWT_SECRET    : chave de assinatura (>=32 chars). Se ausente, gera
                           uma random no startup (tokens nao sobrevivem restart)

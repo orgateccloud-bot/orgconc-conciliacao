@@ -1,10 +1,10 @@
 # OrgConc — Mapeamento Completo de Módulos & Relatório de Pontuação
 
-**Data:** 2026-06-02
-**Projeto:** OrgConc (Conciliação Fiscal Bancária — FastAPI + React + Supabase/Postgres)
-**Versão:** 0.5.0
-**Branch:** `claude/peaceful-meninsky-511d61` (PR #50 — laudo forense + aba Auditoria Forense)
-**Remapeamento anterior:** 2026-05-28 (6.4/10)
+**Data:** 2026-06-09
+**Projeto:** OrgConc (Conciliação Bancária + Auditoria Fiscal Forense — FastAPI + React + Supabase/Postgres)
+**Versão:** 0.5.0 — beta avançado **em produção** (Railway + Supabase, RLS real por `org_id`)
+**Branch:** `claude/optimistic-hermann-ffd614`
+**Remapeamento anterior:** 2026-06-02 (7.6/10) · antes: 2026-05-28 (6.4/10)
 
 ---
 
@@ -12,19 +12,39 @@
 
 | Métrica | Valor | Status |
 |---------|-------|--------|
-| **Backend (Python)** | ~14.049 LOC · 9 subpacotes | ✅ Clean Architecture em camadas |
-| **Frontend (React/TS)** | ~9.000 LOC src · 15 páginas | ✅ React 19 + shadcn/ui |
-| **Endpoints HTTP** | 49 rotas em 15 routers | ✅ REST + auth JWT |
-| **Matchers (domínio fiscal)** | 3.022 LOC · 16 arquivos | ✅ Diferencial do produto |
-| **Testes Backend** | **446 testes** · cobertura 74% (bloqueante no CI) | ✅ Forte |
-| **Testes Frontend** | ~10 unit (5 páginas) + 4 specs E2E | ⚠️ 10 páginas sem teste |
+| **Backend (Python)** | ~15.988 LOC · 9 subpacotes | ✅ Clean Architecture em camadas |
+| **Frontend (React/TS)** | ~9.164 LOC src · 17 páginas | ✅ React 19 + Tailwind 4 + shadcn/ui |
+| **Endpoints HTTP** | 56 rotas em 16 routers | ✅ REST + auth JWT multi-org |
+| **Matchers (domínio fiscal)** | 3.205 LOC · 16 arquivos | ✅ Diferencial do produto |
+| **Multi-tenancy** | RLS real por `org_id`, FORCE RLS, fail-closed | ✅ **Enforçado em prod** |
+| **Testes Backend** | **518 funções** · 40 arquivos · gate 74% no CI | ✅ Forte |
+| **Testes Frontend** | **249 testes** · 17/17 páginas + componentes · cobertura ~78% (gate no CI) · 4 E2E | ✅ Gate ativo (2026-06-09) |
 | **Observabilidade** | Prometheus `/metrics` + Sentry + log JSON | ✅ Implementado |
 | **Deploy** | Railway (Docker multi-stage, React same-origin `/app`) | ✅ Seguro e automático |
-| **CI/CD** | 4 jobs (test, security, frontend, e2e) + synthetic monitor | ✅ Lint ruff bloqueante |
-| **Documentação** | README, DEPLOY, RUNBOOK, MONITORING, BACKUP, SCHEMA | ✅ Cobertura DevOps |
-| **Pontuação Geral** | **7.6 / 10** | 🟢 Production-ready (falta staging) |
+| **CI/CD** | test · security · frontend · e2e + synthetic monitor | ✅ Lint ruff bloqueante |
+| **Migrations** | 20 (cadeia linear 001→020, head `020_org_id_fiscais`) | ✅ Sem fork |
+| **Pontuação Geral** | **7.8 / 10** | 🟢 Production-ready multi-tenant (falta staging) |
 
-> **Evolução vs 2026-05-28:** +52% de LOC backend (9.250→14.049), 446 testes (+118), 4 dos 5 P0/P1 críticos resolvidos (deploy seguro, Railway automation, Prometheus, lint bloqueante). Nota geral 6.4 → **7.6**.
+> **Evolução vs 2026-06-02:** +14% LOC backend (14.049→15.988), +7 endpoints, +8 migrations (12→20),
+> +72 testes (446→518). O salto qualitativo foi **multi-tenancy de produção** (RLS real por `org_id`,
+> enforçado e re-auditado live), login ORGATEC, admin de usuários/orgs, e migração de stack
+> (Tailwind 4, bcrypt 5). Nota geral 7.6 → **7.8**.
+
+---
+
+## 0. O QUE MUDOU DESDE 2026-06-02 (PRs #61–#101)
+
+| Eixo | Entregas | PRs |
+|------|----------|-----|
+| **Multi-tenancy / RLS** | `org_id` nas fiscais, usuários multi-org, login por usuário+org no token, RLS Fase A → enforcement, `app_orgconc` NOBYPASSRLS, superadmin cross-org read-only, `ALEMBIC_DATABASE_URL` (owner) separado do runtime | #73–#84 |
+| **Admin** | Página de gestão de usuários e organizações (`UsuariosPage` 368 LOC) | #85 |
+| **Dashboard** | Redesign Fases 0–2: trust score honesto no vazio, empty-first, bento, a11y, command palette ⌘K, Insights IA desacoplados, cache por tenant (fix cross-tenant) | #87–#94 |
+| **Auth/UI** | Nova tela de login na identidade ORGATEC; troca/reset de senha (revoga refresh tokens) | #77, #95 |
+| **Deps (majors)** | GH Actions bump; **bcrypt 5** (passlib removido); **Tailwind 4** (CSS-first `@theme`, sem `tailwind.config.js`) | #96–#100 |
+| **CBS/IBS** | Scaffold + Fase 1 (mapeamento regime-geral) + pre-flight de versão da base | #70–#72 |
+| **Resiliência** | Rate-limit Redis-ready (`REDIS_URL` opcional); PDF via **WeasyPrint** (Playwright proibido) | #66–#68 |
+| **Privacidade** | Remoção de dados/caminhos LOCAR hardcoded e scripts one-off | #61–#62 |
+| **Docs** | Roadmap 1.0 priorizado; runbook de migração fiscal; doc do laudo forense | #101 |
 
 ---
 
@@ -34,35 +54,37 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ HTTP: routers/ (15 arquivos, 49 endpoints, 2.567 LOC)         │
-│ ├─ fiscal.py (692) · conciliacao.py (458) · auth_routes (199) │
+│ HTTP: routers/ (16 arquivos, 56 endpoints, 3.018 LOC)         │
+│ ├─ fiscal.py (799) · conciliacao.py (462) · auth_routes (460) │
 │ └─ metrics · guias · contratos · matchers · clientes · audit  │
+│    · activity · transacoes · ai · conciliacoes_list · exports │
 └───────────────────────────────┬──────────────────────────────┘
                                 ↓
 ┌──────────────────────────────────────────────────────────────┐
-│ Application: services/ (18 arq, 4.919 LOC)                    │
-│ ├─ laudo_forense.py (1.909 ⚠) · excel.py (574)               │
-│ ├─ carta_constatacao · conciliacao_llm · auth · ai_insights  │
-│ └─ fiscal_persistence · audit · storage · logging            │
+│ Application: services/ (20 arq, 5.648 LOC)                    │
+│ ├─ laudo_forense.py (2.089 ⚠) · excel.py (574)               │
+│ ├─ fiscal_persistence · carta_constatacao · calculadora_cbs  │
+│ ├─ auth · conciliacao_llm · ai_insights · serpro_client ⚠    │
+│ └─ fiscal_notifications · fiscal_job · sefaz_distribuicao ... │
 └───────┬──────────────────────────────────────────────┬───────┘
         ↓                                                ↓
 ┌────────────────────────────┐              ┌───────────────────┐
-│ Domínio: matchers/ (3.022)  │              │ parsers/ (700)    │
-│ ├─ cnpj_enricher (476)      │              │ ├─ anomalies (161)│
-│ ├─ forensics (411)          │              │ ├─ pdf (137)      │
-│ ├─ orquestrador (260)       │              │ └─ ofx · xml · csv│
-│ └─ auditoria_forense · ...  │              └───────────────────┘
+│ Domínio: matchers/ (3.205)  │              │ parsers/ (700)    │
+│ ├─ cnpj_enricher (476)      │              │ ├─ anomalies      │
+│ ├─ forensics (411)          │              │ ├─ pdf · ofx      │
+│ ├─ xml_fiscal (391)         │              │ └─ xml · csv      │
+│ └─ orquestrador (260) · ... │              └───────────────────┘
 └──────────────┬──────────────┴───────────────────────┬─────────┘
                ↓                                        ↓
      ┌──────────────────────┐              ┌────────────────────────┐
-     │ domain/ (385) + infra │              │ db/ (1.002 LOC)        │
-     │ value objects, repos  │              │ models.py (16 entid.)  │
-     └──────────────────────┘              │ metrics · audit · CRUD │
+     │ domain/ (385) + infra │              │ db/ (1.311 LOC)        │
+     │ value objects, repos  │              │ models.py (19 entid.)  │
+     └──────────────────────┘              │ metrics · audit · RLS  │
                                            └────────────┬───────────┘
                                                         ↓
                               ┌──────────────────────────────────────┐
-                              │ core/ (986): config · prometheus      │
-                              │ observability · llm_metrics · rate_lim │
+                              │ core/ (1.093): config · prometheus    │
+                              │ observability · llm_metrics · ratelim │
                               └──────────────────────────────────────┘
 ```
 
@@ -70,17 +92,17 @@
 
 | Módulo | LOC | Arq. | Responsabilidade | Pontuação |
 |--------|-----|------|------------------|-----------|
-| **core/** | 986 | 10 | Config, Prometheus, observability (Sentry), llm_metrics, rate-limit | 8/10 |
-| **db/** | 1.002 | 8 | ORM SQLAlchemy async, 16 entidades, CRUD, refresh tokens | 8/10 |
+| **core/** | 1.093 | 10 | Config, Prometheus, observability (Sentry), llm_metrics, rate-limit (Redis-ready) | 8/10 |
+| **db/** | 1.311 | 10 | ORM SQLAlchemy async, 19 entidades, CRUD, refresh tokens, contexto RLS | 8/10 |
 | **domain/** | 385 | 5 | Value objects, entities, repositories (interfaces), exceptions | 8/10 |
 | **infra/** | 162 | 4 | Implementações SQL dos repositórios | 7/10 |
-| **matchers/** | 3.022 | 16 | Pipeline fiscal (forensics, regime, conformidade, enrich) | 8.5/10 |
+| **matchers/** | 3.205 | 16 | Pipeline fiscal (forensics, regime, conformidade, enrich, xml_fiscal) | 8.5/10 |
 | **parsers/** | 700 | 8 | Extração OFX/XML/PDF/CSV + anomalias | 8/10 |
-| **routers/** | 2.567 | 15 | 49 endpoints HTTP REST | 7.5/10 |
-| **services/** | 4.919 | 18 | Orquestração, render (laudo/excel/pdf), auth, LLM | 6.5/10 |
+| **routers/** | 3.018 | 16 | 56 endpoints HTTP REST | 7.5/10 |
+| **services/** | 5.648 | 20 | Orquestração, render (laudo/excel/pdf), auth, LLM, CBS/IBS | 6.5/10 |
 | **usecases/** | 131 | 4 | Use cases (clientes, conciliações) — clean arch parcial | 7/10 |
 
-**Total Backend: ~14.049 LOC** (era 9.250 em 2026-05-28; +52%)
+**Total Backend: ~15.988 LOC** (era 14.049 em 2026-06-02; +14%)
 
 ### 1.3 Pipeline Fiscal — o diferencial do produto
 
@@ -95,37 +117,50 @@ OFX + XMLs (NF-e/CT-e) → parsers/ → cascata.py (6 estágios) → orquestrado
    ↓
   auditoria_forense (regime×teto, heatmap, sinais) + conformidade (vol_nf/vol_pago)
    ↓
-  services/laudo_forense.py → XLSX 11/13 abas + MD + HTML + PDF
+  services/laudo_forense.py → XLSX 11/13 abas + MD + HTML + PDF (WeasyPrint)
 ```
 
-**Endpoints fiscais** (`routers/fiscal.py`): `POST /fiscal/processar`, `POST /fiscal/laudo`, `POST /fiscal/laudo/resumo`, `GET /fiscal/{conformidade,gap,risco-tributario,documentos}/{id}`, `POST /fiscal/gerar-carta/{id}`, `GET /fiscal/cartas/{id}`.
+**CBS/IBS (camada IC-02):** OrgConc **orquestra** a calculadora oficial (não recalcula).
+`services/calculadora_cbs_ibs.py` + transporte genérico (`CALCULADORA_BASE_URL`).
+Persistência em `apuracao_cbs_ibs` (migrations 013/014/018). ⚠️ Há `serpro_client.py` (182 LOC) e
+refs SERPRO em 5 arquivos — **alvo de remoção** (decisão 2026-06-09: SERPRO excluído → API portal
+Tributos `consumo.tributos.gov.br`).
+
+**Endpoints fiscais** (`routers/fiscal.py`, 799 LOC): `POST /fiscal/processar`, `POST /fiscal/laudo`,
+`POST /fiscal/laudo/resumo`, `POST /fiscal/apurar` (CBS/IBS), `GET /fiscal/{conformidade,gap,
+risco-tributario,documentos}/{id}`, `POST /fiscal/gerar-carta/{id}`, `GET /fiscal/cartas/{id}`.
 
 ### 1.4 Padrão Arquitetural
 
-✅ **Clean Architecture em camadas** (routers → services → matchers/parsers → db → core), async/await consistente, Repository Pattern (domain+infra), Value Objects, Chain of Responsibility (cascata de 6 estágios).
+✅ **Clean Architecture em camadas** (routers → services → matchers/parsers → db → core), async/await
+consistente, Repository Pattern (domain+infra), Value Objects, Chain of Responsibility (cascata de 6
+estágios), **multi-tenancy por RLS** (contexto `org_id` injetado por request).
 
 ⚠️ **Pontos de atenção:**
-- **Fat file:** `services/laudo_forense.py` (1.909 LOC) concentra parse + cálculo + render (XLSX/MD/HTML/PDF). Candidato a extrair camada `calculations/`.
-- **`services/` heterogêneo** (4.919 LOC): auth + excel + fiscal + LLM sem namespacing claro.
-- **`matchers/orquestrador.py`** importa todos os estágios (acoplamento por design da cascata).
-- Outros fat files: `routers/fiscal.py` (692), `services/excel.py` (574), `db/models.py` (401).
+- **Fat file:** `services/laudo_forense.py` (2.089 LOC, +180 desde 06-02) concentra parse + cálculo +
+  render (XLSX/MD/HTML/PDF). Candidato a extrair camada `calculations/`.
+- **`services/` heterogêneo** (5.648 LOC, 20 arq): auth + excel + fiscal + LLM + CBS/IBS sem
+  namespacing claro.
+- **Dívida SERPRO:** 5 arquivos com refs a remover (config, infra, fiscal router, calculadora, client).
+- Outros fat files: `routers/fiscal.py` (799), `services/excel.py` (574), `db/models.py` (490).
 
-**Pontuação Backend: 8/10** — Maduro e bem testado; refatoração do laudo_forense pendente.
+**Pontuação Backend: 8/10** — Maduro, multi-tenant e bem testado; refator do laudo_forense + remoção
+SERPRO pendentes.
 
 ---
 
-## 2. ARQUITETURA FRONTEND — React 19 + TypeScript
+## 2. ARQUITETURA FRONTEND — React 19 + TypeScript + Tailwind 4
 
 ### 2.1 Visão Geral
 
 ```
-React 19 + Router v7 (basename /app) + Context API + Tailwind + shadcn/ui
+React 19 + Router v7 (basename /app) + Context API + Tailwind 4 (CSS-first) + shadcn/ui
 │
-├─ Pages: 15 (14 protegidas + Login), todas lazy-loaded
-├─ Components: ~38 (8 ui shadcn + 15 dashboard + 7 core + 8 skeletons)
-├─ State: AuthProvider (JWT + refresh) · ThemeProvider (dark mode)
-├─ API: lib/api.ts (761 LOC) — apiFetch<T> + apiFetchBlob + 50+ endpoints
-└─ Styling: Tailwind + dark mode (CSS vars, localStorage)
+├─ Pages: 17 (16 protegidas + Login), lazy-loaded
+├─ Components: dashboard 12 · ui (shadcn) 9 · core 8
+├─ State: AuthProvider (JWT + refresh + org) · ThemeProvider (dark mode)
+├─ API: lib/api.ts (877 LOC) — apiFetch<T> + apiFetchBlob + 50+ endpoints
+└─ Styling: Tailwind 4 (@theme em index.css, sem tailwind.config.js) + dark mode
 ```
 
 ### 2.2 Páginas por área (Sidebar)
@@ -133,34 +168,28 @@ React 19 + Router v7 (basename /app) + Context API + Tailwind + shadcn/ui
 | Área | Páginas |
 |------|---------|
 | **Operação (8)** | Dashboard · Conciliação · Upload · Matchers · Guias · Contratos · Clientes · Relatórios |
-| **Fiscal (5)** | Conformidade · Gaps Fiscais · Risco Tributário · **Auditoria Forense** (nova) · Cartas |
+| **Fiscal (6)** | Conformidade · Gaps Fiscais · Risco Tributário · Auditoria Forense · Cartas · **Laudo** |
+| **Admin (1)** | **Usuários** (gestão de usuários/orgs — nova) |
 | **Compliance (1)** | Configurações |
-| **Auth (1)** | Login |
+| **Auth (1)** | Login (identidade ORGATEC — nova) |
 
-### 2.3 Componentes
-
-| Categoria | Qtd | Exemplos |
-|-----------|-----|----------|
-| **ui/ (shadcn)** | 8 | button, dialog, input, label, select, sheet, skeleton, sonner |
-| **dashboard/** | 15 | KpiCard, TrustGrid, SecurityRing, ActivityFeed, AuditTimeline, Heatmap, TrendChart |
-| **core** | 7 | Sidebar, Topbar, ErrorBoundary, HeroCard, Logo, Starfield, PaletteStrip |
-| **skeletons** | 8 | KpiGrid, Table, Page, AppBoot (com ARIA role=status) |
-
-### 2.4 lib/ (936 LOC)
+### 2.3 lib/ (1.076 LOC)
 
 | Arquivo | LOC | Responsabilidade |
 |---------|-----|------------------|
-| **api.ts** | 761 | `apiFetch<T>` + `apiFetchBlob` (download autenticado) + 50+ endpoints + ~30 interfaces; token em sessionStorage, refresh-on-401 |
-| auth.tsx | 73 | AuthProvider + useAuth (user/login/logout, evento global de logout) |
-| theme.tsx | 38 | ThemeProvider + useTheme (light/dark, localStorage) |
-| hooks.ts / utils.ts / constants.ts / recharts.ts | ~64 | useClock, cn/formatBytes, mapeamentos, config de charts |
+| **api.ts** | 877 | `apiFetch<T>` + `apiFetchBlob` (download autenticado) + 50+ endpoints; token em sessionStorage, refresh-on-401 |
+| auth.tsx | 74 | AuthProvider + useAuth (user/org/login/logout) |
+| theme.tsx | 39 | ThemeProvider + useTheme (light/dark, localStorage) |
+| constants · utils · hooks · risco-cores · recharts | ~86 | mapeamentos, cn/formatBytes, useClock, cores de risco, config charts |
 
-### 2.5 Padrões
+### 2.4 Padrões
 
-✅ Lazy loading (todas as páginas), ApiError + ErrorBoundary, skeletons por página, dark mode, a11y (axe-core, ARIA).
-⚠️ **TypeScript não-strict** (`noUnusedLocals/Parameters: false`), 10/15 páginas sem teste, hooks customizados mínimos.
+✅ Lazy loading, ApiError + ErrorBoundary, skeletons por página, dark mode, a11y (axe-core, ARIA,
+command palette ⌘K), empty-first honesto, Tailwind 4, **TypeScript strict** (`noUnusedLocals/Parameters: true`
+desde 2026-06-03, `tsc --noEmit` bloqueante no CI).
+✅ **17/17 páginas com teste** + gate de cobertura (2026-06-09).
 
-**Pontuação Frontend: 6.5/10** — Bem organizado; cobertura de testes de página ainda baixa.
+**Pontuação Frontend: 7.5/10** — UX/a11y maduras, TS strict, cobertura com gate.
 
 ---
 
@@ -170,36 +199,34 @@ React 19 + Router v7 (basename /app) + Context API + Tailwind + shadcn/ui
 
 | Métrica | Valor | Status |
 |---------|-------|--------|
-| **Total de testes** | **446** | ✅ Forte |
-| **Cobertura** | 74% (`--cov-fail-under=74`, bloqueante) | ✅ Boa |
-| **Arquivos** | 32 `test_*.py` | ✅ |
+| **Funções de teste** | **518** | ✅ Forte |
+| **Cobertura** | 74% (`--cov-fail-under=74`, bloqueante no CI) | ✅ Boa |
+| **Arquivos** | 40 `test_*.py` | ✅ |
 | **DB em testes** | Postgres NullPool (skip se sem DATABASE_URL) | ✅ Isolado |
-
-Principais: `test_api.py` (68 KB), `test_coverage_boost.py`, `test_fiscal_cluster.py`, `test_matchers_*` (nfe/orquestrador/guia_contrato), `test_laudo_forense.py` + `test_laudo_resumo_endpoint.py` (novos), `test_prometheus_metrics.py`, `test_refresh_tokens.py`.
-
-**Pontuação Backend Tests: 8.5/10**
 
 ### 3.2 Frontend (Vitest + Playwright)
 
 | Métrica | Valor | Status |
 |---------|-------|--------|
-| **Testes de página** | 5/15 (Dashboard, Conciliacao, Clientes, Conformidade, Risco) | ⚠️ Melhorou (era 0) |
-| **Componentes/lib** | ErrorBoundary, a11y, coreComponents, api, auth | ✅ |
+| **Total de testes** | **249** (era ~40) | ✅ |
+| **Páginas testadas** | **17/17** | ✅ Cobertas (2026-06-09) |
+| **Cobertura** | stmts 75.8% · lines 78.1% · funcs 72.5% · branches 65.1% (`api.ts` 94%) | ✅ Gate no CI |
+| **Gate** | `coverage.thresholds` (stmts 73/branches 62/funcs 68/lines 75); CI roda `test:coverage` | ✅ Bloqueante |
+| **Componentes/lib** | ErrorBoundary, a11y, coreComponents, CommandPalette, AIInsightsPanel, AuditEventModal, api, auth | ✅ |
 | **E2E** | 4 specs (login, dashboard, clientes, errors) | ✅ Happy paths |
 
-**Gap:** 10 páginas sem teste (inclui AuditoriaForensePage 528 LOC, CartasFiscais, Upload, Matchers).
-
-**Pontuação Frontend Tests: 5.5/10**
+**Resíduo p/ 80% (critério 1.0):** 4 páginas com testes rasos pré-existentes (Clientes 33%, Conciliacao 35%,
+Conformidade 35%, Risco 45%) e AuditTimeline (31%) — aprofundar.
 
 ### 3.3 Cobertura Geral
 
 ```
-Backend (Python):  ███████░░  74%     ✅ Strong (gate no CI)
-Frontend (React):  ███░░░░░░  ~25%    ⚠️  5 páginas + libs
-E2E:               ████░░░░░  ~40%    ⚠️  Happy paths
+Backend (Python):  ███████░░  74%       ✅ Strong (gate no CI)
+Frontend (React):  ████████░  ~78%      ✅ Gate no CI (era ~25%)
+E2E:               ████░░░░░  ~40%      ⚠️  Happy paths (P0 #5: aprofundar)
 ```
 
-**Pontuação Tests Geral: 7/10**
+**Pontuação Tests Geral: 7.5/10** (era 7.0 — gate frontend ativo)
 
 ---
 
@@ -209,10 +236,10 @@ E2E:               ████░░░░░  ~40%    ⚠️  Happy paths
 
 | Sistema | Status | Detalhes |
 |---------|--------|----------|
-| **Prometheus** | ✅ **NOVO** | `/metrics` — http_requests_total, request_duration, in_progress, llm_tokens, llm_cost_usd (`core/prometheus_metrics.py`) |
+| **Prometheus** | ✅ | `/metrics` — http_requests_total, request_duration, in_progress, llm_tokens, llm_cost_usd |
 | **Sentry** | ✅ | `core/observability.py` — init opcional, PII masking (CPF/CNPJ/email/IP), traces 0.1 |
 | **Logging** | ✅ | JSON estruturado, request_id, PII masking |
-| **Rate limiting** | ✅ | SlowAPI 120/min, key por JWT sub → IP |
+| **Rate limiting** | ✅ | SlowAPI 120/min, key por JWT sub → IP; **Redis-ready** (`REDIS_URL` opcional) |
 | **Health/Synthetic** | ✅ | `/health` + workflow synthetic-monitor (probe 30 min) |
 
 **Pontuação Observabilidade: 8/10**
@@ -225,24 +252,34 @@ E2E:               ████░░░░░  ~40%    ⚠️  Happy paths
 | **security** | pip-audit, bandit, semgrep, Trivy, grep de chaves | ✅ |
 | **frontend** | npm ci, build, tsc --noEmit, vitest, npm audit | ✅ |
 | **e2e** | Playwright com backend :8765 | ✅ |
-| **lint** | ruff **bloqueante** (black informativo) | ✅ Resolvido |
-| **deploy** | Railway nativo (push main → build Docker → deploy) | ✅ Resolvido |
+| **lint** | ruff **bloqueante** (black informativo) | ✅ |
+| **deploy** | Railway nativo (push main → build Docker → `preDeployCommand` alembic → deploy) | ✅ |
+
+**Migrations em deploy:** `railway.json` roda `alembic upgrade head` em `preDeployCommand`, com
+`ALEMBIC_DATABASE_URL` (owner) separado do runtime `app_orgconc` (NOBYPASSRLS).
 
 **Pontuação CI/CD: 8/10** — Só falta ambiente de staging.
 
 ### 4.3 Deploy / Runtime
 
-- **Dockerfile multi-stage:** Node 22 builda o React → estágio Python 3.11 serve `dist` em `/app` (same-origin, `api/main.py:93`).
-- **Railway** nativo (`railway.json`, healthcheck `/health`); GitHub Pages **removido** (era risco de vazamento).
-- Postgres/Supabase; cache de CNPJ e datasets migrados para Postgres (compartilhado entre réplicas).
+- **Dockerfile multi-stage:** Node 22 builda o React → estágio Python 3.12 serve `dist` em `/app`
+  (same-origin, `api/main.py:94`).
+- **Railway** nativo (`railway.json`, healthcheck `/health`); GitHub Pages **removido**.
+- Postgres/Supabase; cache de CNPJ e datasets em Postgres (compartilhado entre réplicas).
+- ⚠️ **Drift de comentário:** `api/main.py:90-91` ainda cita "GitHub Pages (ver deploy.yml)" —
+  desatualizado (Pages removido); corrigir.
 
-### 4.4 Documentação DevOps
+### 4.4 Documentação
 
 | Doc | Cobre |
 |-----|-------|
-| README · DEPLOY · RUNBOOK · MONITORING · BACKUP · SCHEMA | dev setup, Railway, incidentes/rollback, Sentry/Prometheus/SLOs, backup, schema |
+| README · DEPLOY · RUNBOOK · MONITORING · BACKUP · SCHEMA | dev setup, Railway, incidentes, SLOs, backup, schema |
+| docs/ROADMAP_1.0 · FISCAL_MIGRATION_RUNBOOK · LAUDO_FORENSE · PLANEJAMENTO_DASHBOARD_TRUST | roadmap, migração fiscal, laudo, dashboard |
 
-**Pontuação Documentação: 7.5/10** (era 5.0) **· DevOps Geral: 8/10**
+⚠️ **README desatualizado:** cita `static/` (UI legada em `/ui/`) que **não existe mais**; não menciona
+fiscal/laudo/RLS/multi-tenancy. **Corrigido neste ciclo.**
+
+**Pontuação Documentação: 7.5/10**
 
 ---
 
@@ -250,63 +287,64 @@ E2E:               ████░░░░░  ~40%    ⚠️  Happy paths
 
 ```
 Backend:           8.0/10  ████████░
-Frontend:          6.5/10  ██████░░░
+Frontend:          7.0/10  ███████░░
 Testing:           7.0/10  ███████░░
 DevOps:            8.0/10  ████████░
 Documentation:     7.5/10  ███████░░
-Security:          7.5/10  ███████░░
+Security:          8.5/10  ████████▌   ↑ (RLS real enforçado + bcrypt 5 + reset c/ revogação)
 Observability:     8.0/10  ████████░
 Maintainability:   7.0/10  ███████░░
 ─────────────────────────────────────
-📊 PONTUAÇÃO GERAL: 7.6/10  ████████░  (era 6.4)
+📊 PONTUAÇÃO GERAL: 7.8/10  ████████░  (era 7.6)
 ```
 
-**Interpretação:** ✅ MVP-ready · 🟢 Production-ready (deploy/observabilidade resolvidos) · 🟡 Enterprise-ready pendente (staging, cobertura frontend, refator de fat files).
+**Interpretação:** ✅ MVP-ready · 🟢 Production-ready **multi-tenant** (RLS real enforçado, fail-closed) ·
+🟡 Enterprise-ready pendente (staging, cobertura frontend, refator de fat files, dívida SERPRO).
 
 ---
 
-## 6. TOP MELHORIAS PRIORITÁRIAS (atualizado)
+## 6. ACHADOS DESTE REMAPEAMENTO (drift & dívidas)
 
-### ✅ Resolvidas desde 2026-05-28
-- Deploy frontend seguro (same-origin Railway, Pages removido)
-- Railway automation (build Docker + deploy no push main)
-- Prometheus `/metrics` implementado
-- Lint ruff bloqueante no CI
-- 5 páginas frontend agora testadas (eram 0)
-
-### 🔴 P0 — Crítica (0-2 semanas)
-1. **Ambiente de staging** — único P0/P1 antigo ainda pendente; deploy vai direto main→prod. Mitigado por CI + healthcheck + Sentry, mas sem validação de migrations pré-prod.
-2. **Lint `react-hooks/set-state-in-effect`** — erro pré-existente em páginas (padrão de fetch em `useEffect`); destrava o `npm run lint` do frontend.
-
-### 🟠 P1 — Alta (2-4 semanas)
-3. **Cobertura de testes nas 10 páginas restantes** — prioridade AuditoriaForensePage (528 LOC), Upload, Matchers.
-4. **Refatorar `services/laudo_forense.py` (1.909 LOC)** — extrair camada de cálculo (agregação/heatmap) de render.
-5. **Namespacing de `services/`** — agrupar `fiscal_*`, `conciliacao_*`, `ai_*`.
-
-### 🟡 P2 — Média (1-2 meses)
-6. **TypeScript strict** no frontend (`noUnusedLocals/Parameters`).
-7. **Multi-instância plena** — migrar rate-limiter e acumulador de custo LLM (in-memory) para Redis/Postgres (datasets e cnpj_cache já migrados).
-8. **Storybook / design-system docs** para os componentes.
+| # | Achado | Severidade | Ação |
+|---|--------|------------|------|
+| A1 | **SERPRO ainda no código** (5 arquivos) vs decisão de removê-lo (alvo: API portal Tributos) | 🟠 Média | Roadmap P1 #6 |
+| A2 | **README desatualizado** (cita `static/`/`/ui/` inexistente; sem fiscal/RLS) | 🟡 Baixa | ✅ Corrigido neste ciclo |
+| A3 | **Comentário `main.py:90-91`** ainda cita GitHub Pages (removido) | 🟡 Baixa | Corrigir comentário |
+| A4 | **Cobertura frontend** 5/17 páginas (proporção piorou com +2 páginas) | 🟠 Média | ✅ Resolvido (17/17 páginas, ~78%, gate no CI — 2026-06-09) |
+| A5 | **3 policies RLS legadas** `*_org_policy` inertes a limpar | 🟡 Baixa | Roadmap P0 #4 |
+| A6 | **Fat file** `laudo_forense.py` cresceu (2.089 LOC) | 🟡 Baixa | Roadmap P1 (refator) |
+| A7 | ~~Logout não revoga refresh token~~ — **claim incorreto:** `auth_logout` já revoga (`revogar_por_hash`); só o access JWT sobrevive até o TTL | 🟢 Resolvido | Verificado 2026-06-09 (+ testes logout-all; docstring do modelo de revogação) |
 
 ---
 
 ## 7. CONCLUSÕES
 
 ### ✅ Pontos Fortes
-1. **Pipeline fiscal forense** sólido e diferenciado (cascata 6 estágios, regime×teto, forensics, enriquecimento RFB) — reproduz laudo real ao centavo.
-2. **Backend maduro** — 446 testes, 74% cobertura bloqueante, clean architecture.
-3. **DevOps resolvido** — deploy seguro same-origin, Railway automático, Prometheus + Sentry, synthetic monitor.
-4. **Persistência compartilhada** — datasets e cnpj_cache em Postgres (multi-réplica viável).
-5. **Documentação DevOps** completa (RUNBOOK, MONITORING, DEPLOY, BACKUP).
+1. **Multi-tenancy de produção** — RLS real por `org_id`, FORCE RLS, fail-closed, re-auditado live;
+   `app_orgconc` NOBYPASSRLS + owner separado para migrations.
+2. **Pipeline fiscal forense** sólido e diferenciado (cascata 6 estágios, regime×teto, forensics,
+   enriquecimento RFB) — reproduz laudo real ao centavo.
+3. **Backend maduro** — 518 testes, 74% cobertura bloqueante, clean architecture.
+4. **DevOps resolvido** — deploy seguro same-origin, Railway automático, Prometheus + Sentry, migrations
+   em preDeploy com URL de owner separada.
+5. **Segurança em alta** — bcrypt 5 (sem passlib), reset/troca de senha com revogação de refresh,
+   superadmin cross-org read-only por policy.
 
 ### ⚠️ Pontos Fracos
-1. **Cobertura frontend** — 10/15 páginas sem teste; TS não-strict.
-2. **Sem staging** — migrations validadas só em prod.
-3. **Fat files** — laudo_forense.py (1.909), services heterogêneo.
-4. **Multi-instância parcial** — rate-limiter e custo LLM ainda in-memory.
+1. **Sem staging** — migrations validadas só em prod (mitigado por preDeploy + healthcheck + Sentry).
+2. **Fat files** — laudo_forense.py (2.089), services heterogêneo (5.648).
+3. **Dívida SERPRO** — código a remover/generalizar (transporte já é genérico).
+4. **E2E raso** — happy paths; faltam fluxos de upload→resultado e auditoria forense.
+5. **CBS/IBS sem idempotência** — `salvar_apuracao` insere sempre; falta UNIQUE/UPSERT.
+
+> Resolvidos neste ciclo: cobertura frontend (17/17 + gate), TS strict (já estava),
+> revogação de refresh no logout (já funcional + testes), headers de rate-limit no 429.
 
 ### 🎯 Recomendação
-**Status:** Production-ready. Próximos passos: staging + cobertura de páginas + refator do laudo_forense. Nota projetada pós-P0/P1: ~8.5/10.
+**Status:** Production-ready multi-tenant. Próximos passos por ordem de valor/risco: endurecimento P0
+(cobertura frontend + gate, revogação no logout, rate-limit testado, limpeza RLS, E2E profundo) →
+fiscal P1 (remover SERPRO, persistir apuração, catálogo de anomalias) → governança P2 (staging,
+CHANGELOG, versionamento de API). Nota projetada pós-P0/P1: **~8.5/10**.
 
 ---
 
@@ -314,25 +352,26 @@ Maintainability:   7.0/10  ███████░░
 
 ```
 OrgConc/
-├─ api/                         (FastAPI, ~14.049 LOC)
-│  ├─ core/        (986)  config, prometheus, observability, llm_metrics, rate_limit
-│  ├─ db/          (1.002) models (16 entid.), metrics, refresh_tokens, CRUD
+├─ api/                         (FastAPI, ~15.988 LOC)
+│  ├─ core/        (1.093) config, prometheus, observability, llm_metrics, rate_limit
+│  ├─ db/          (1.311) models (19 entid.), metrics, refresh_tokens, contexto RLS
 │  ├─ domain/      (385)  value objects, entities, repositories, exceptions
 │  ├─ infra/       (162)  repositórios SQL
-│  ├─ matchers/    (3.022) forensics, cnpj_enricher, orquestrador, auditoria_forense, cascata...
+│  ├─ matchers/    (3.205) forensics, cnpj_enricher, xml_fiscal, orquestrador, cascata...
 │  ├─ parsers/     (700)  ofx, xml, pdf, csv, anomalies, classifier
-│  ├─ routers/     (2.567) 15 routers, 49 endpoints
-│  ├─ services/    (4.919) laudo_forense (1.909), excel, carta, conciliacao_llm, auth, ai...
+│  ├─ routers/     (3.018) 16 routers, 56 endpoints
+│  ├─ services/    (5.648) laudo_forense (2.089), excel, fiscal_persistence, calculadora_cbs_ibs...
 │  ├─ usecases/    (131)  clientes, conciliações
-│  ├─ main.py · schemas.py
-├─ orgconc-react/               (React 19 + Vite, ~9.000 LOC src)
-│  ├─ src/pages/    (15 páginas + 5 testes)
-│  ├─ src/components/ (ui 8 · dashboard 15 · core 7 · skeletons 8)
-│  ├─ src/lib/      (api.ts 761, auth, theme, hooks, utils)
+│  ├─ main.py · schemas.py · schemas_cbs_ibs.py
+├─ orgconc-react/               (React 19 + Vite + Tailwind 4, ~9.164 LOC src)
+│  ├─ src/pages/    (17 páginas + 5 testes de página)
+│  ├─ src/components/ (dashboard 12 · ui 9 · core 8 · __tests__)
+│  ├─ src/lib/      (api.ts 877, auth, theme, hooks, utils, risco-cores)
 │  └─ e2e/          (4 specs Playwright)
-├─ tests/                       (446 testes, 32 arquivos)
-├─ migrations/versions/         (12 migrations Alembic; última: 012_cnpj_cache)
-├─ scripts/                     (21 scripts; relatorio_integrado.py = CLI do laudo)
+├─ tests/                       (518 funções, 40 arquivos)
+├─ migrations/versions/         (20 migrations Alembic; head: 020_org_id_fiscais)
+├─ scripts/                     (CLI relatorio_integrado.py = laudo)
+├─ db/rls/ · supabase/migrations/   (políticas RLS, org_isolation)
 ├─ docs/ + README · DEPLOY · RUNBOOK · MONITORING · BACKUP · SCHEMA
 ├─ Dockerfile (multi-stage) · docker-compose.yml · railway.json
 └─ .github/workflows/ (ci.yml: test/security/frontend/e2e · synthetic-monitor.yml)
@@ -340,5 +379,5 @@ OrgConc/
 
 ---
 
-**Gerado:** 2026-06-02 · **Remapeamento automático** (3 agentes: backend, frontend, infra) + métricas `git ls-files`/`pytest --collect-only`.
-**Próxima revisão:** após staging + cobertura de páginas.
+**Gerado:** 2026-06-09 · Métricas via `git ls-files`/`wc`/`grep` no estado atual do worktree.
+**Próxima revisão:** após P0 (cobertura frontend + gate) e início do P1 fiscal (remoção SERPRO).
