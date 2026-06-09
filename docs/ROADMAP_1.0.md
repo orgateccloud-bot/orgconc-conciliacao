@@ -45,7 +45,7 @@ Preparado, HOLD (aplicar = 🔑): **P0 #4 + P1 #7** ([#107](https://github.com/o
 Descartado: **P1 #8** (rural). Adiado: **P0 #5**, **2.4** refator laudo, **/v1**. 🔑 infra: **#9, #11, #12, #13** + spec live do #6.
 
 ## Critério de 1.0 (status)
-- [ ] Cobertura: backend ≥ 80% (hoje 74%) · ✅ frontend ≥ 70% — ~78% com gate no CI.
+- [x] ✅ **Cobertura: backend 80.2%** (gate 80, #110) · **frontend 88.6%** (gate 86, #109) — ambos com gate no CI.
 - [~] E2E: happy paths ✅; fluxos profundos (upload→resultado, auditoria) adiados.
 - [~] CBS/IBS sem SERPRO ✅ (#106) + apuração persistida idempotente — preparada (HOLD #107).
 - [~] Hardening P0: ✅ refresh revogável, ✅ rate-limit testado; RLS sem drift preparado (HOLD #107).
