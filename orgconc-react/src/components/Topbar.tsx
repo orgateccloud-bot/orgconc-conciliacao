@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
+import { CommandPalette } from "@/components/CommandPalette";
 import { useTheme } from "@/lib/theme";
 import { Moon, Sun, Menu, Bell, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,19 @@ interface Props {
 
 export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }: Props) {
   const { tema, toggle } = useTheme();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // ⌘K / Ctrl+K abre/fecha a paleta de navegação.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const initials = userEmail
     ? userEmail.slice(0, 2).toUpperCase()
@@ -26,6 +41,7 @@ export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }
   }[dbStatus];
 
   return (
+    <>
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-card/90 backdrop-blur-md px-4 lg:px-6 gap-3 relative">
       <span aria-hidden className="absolute left-0 right-0 bottom-0 h-px coastline-b opacity-60" />
 
@@ -44,20 +60,20 @@ export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }
         <h2 className="text-base font-semibold tracking-tight hidden sm:block">{title}</h2>
       </div>
 
-      {/* Center: search bar */}
+      {/* Center: paleta de navegação (⌘K) */}
       <div className="hidden md:flex flex-1 max-w-md">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar transações, contas, anomalias..."
-            className="w-full h-8 rounded-lg border bg-secondary/60 pl-9 pr-14 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            readOnly
-          />
-          <kbd className="absolute right-2 top-1/2 -translate-y-1/2 hidden lg:inline-flex items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          aria-label="Buscar e navegar (atalho Ctrl ou Cmd + K)"
+          className="relative w-full h-8 rounded-lg border bg-secondary/60 pl-9 pr-14 text-left text-xs text-muted-foreground hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
+        >
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" aria-hidden="true" />
+          Ir para…
+          <kbd className="absolute right-2 top-1/2 -translate-y-1/2 hidden lg:inline-flex items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono" aria-hidden="true">
             ⌘K
           </kbd>
-        </div>
+        </button>
       </div>
 
       {/* Right: badges + actions */}
@@ -103,5 +119,7 @@ export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }
         )}
       </div>
     </header>
+    {paletteOpen && <CommandPalette open onClose={() => setPaletteOpen(false)} />}
+    </>
   );
 }
