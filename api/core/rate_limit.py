@@ -35,7 +35,12 @@ def _get_rate_key(request: Request) -> str:
 # necessario ao escalar horizontalmente (senao cada processo conta o seu limite).
 # Requer o pacote `redis` (em requirements-prod). Sem REDIS_URL, nada muda.
 _redis_url = _os.environ.get("REDIS_URL", "").strip()
-_limiter_kwargs: dict = {"key_func": _get_rate_key, "default_limits": ["120/minute"]}
+_limiter_kwargs: dict = {
+    "key_func": _get_rate_key,
+    "default_limits": ["120/minute"],
+    # Adiciona X-RateLimit-Limit/Remaining/Reset + Retry-After nas respostas 429.
+    "headers_enabled": True,
+}
 if _redis_url:
     _limiter_kwargs["storage_uri"] = _redis_url
 
