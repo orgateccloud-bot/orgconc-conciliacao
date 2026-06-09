@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
@@ -37,6 +37,7 @@ def _serializar(c) -> dict:
 @limiter.limit("30/minute")
 async def listar(
     request: Request,
+    response: Response,
     cliente_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -66,6 +67,7 @@ async def listar(
 @limiter.limit("30/minute")
 async def listar_por_cliente(
     request: Request,
+    response: Response,
     cliente_id: str,
     limit: int = 50,
     offset: int = 0,
@@ -88,6 +90,7 @@ async def listar_por_cliente(
 @limiter.limit("30/minute")
 async def buscar(
     request: Request,
+    response: Response,
     report_id: str,
     user: TokenPayload = Depends(current_user),
 ):
