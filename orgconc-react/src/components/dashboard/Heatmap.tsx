@@ -24,7 +24,7 @@ export function Heatmap({ data, dias = 120 }: Props) {
   return (
     <div className="rounded-3xl border glass p-6">
       <div className="flex items-center gap-2 mb-5">
-        <CalendarDays className="h-4 w-4 text-muted-foreground" />
+        <CalendarDays className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         <h3 className="text-sm font-semibold">Volume diário</h3>
         <span className="ml-auto text-[11px] font-mono text-muted-foreground">
           {dias} dias · pico {max}
@@ -33,6 +33,8 @@ export function Heatmap({ data, dias = 120 }: Props) {
 
       <div className="overflow-x-auto">
         <div
+          role="img"
+          aria-label={`Volume diário — ${dias} dias, pico de ${max} transações/dia`}
           className="grid gap-[3px]"
           style={{
             gridTemplateRows: "repeat(7, minmax(0, 1fr))",
@@ -61,7 +63,7 @@ export function Heatmap({ data, dias = 120 }: Props) {
 
 function Legenda() {
   return (
-    <div className="mt-4 flex items-center gap-2 text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
+    <div className="mt-4 flex items-center gap-2 text-[10px] text-muted-foreground font-mono uppercase tracking-wider" aria-hidden="true">
       <span>Menos</span>
       {INTENSIDADE_CLASSES.map((cls, i) => (
         <div key={i} className={cn("h-2.5 w-2.5 rounded-sm", cls)} />

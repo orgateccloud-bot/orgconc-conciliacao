@@ -31,7 +31,7 @@ export function KpiCard({ label, value, desc, delta, icon: Icon, accent, inverso
           {label}
         </p>
         <div className={cn("rounded-lg p-1.5", a.iconBg)}>
-          <Icon className="h-3.5 w-3.5" />
+          <Icon className="h-3.5 w-3.5" aria-hidden="true" />
         </div>
       </div>
       <p className="text-3xl font-bold font-jakarta tracking-tight leading-none tabular">
@@ -50,8 +50,8 @@ function Delta({ value, inverso }: { value: number | null | undefined; inverso?:
   if (value === 0) {
     return (
       <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-muted-foreground">
-        <Minus className="h-3 w-3" />
-        0%
+        <Minus className="h-3 w-3" aria-hidden="true" />
+        <span className="sr-only">estável: </span>0%
       </span>
     );
   }
@@ -66,7 +66,8 @@ function Delta({ value, inverso }: { value: number | null | undefined; inverso?:
         bom ? "text-green-600 dark:text-green-400" : "text-orange-500 dark:text-orange-400"
       )}
     >
-      <Icon className="h-3 w-3" />
+      <Icon className="h-3 w-3" aria-hidden="true" />
+      <span className="sr-only">{positivo ? "aumento de " : "queda de "}</span>
       {Math.abs(value).toFixed(1)}%
     </span>
   );
