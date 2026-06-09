@@ -371,6 +371,7 @@ async def auth_criar_usuario(
 @limiter.limit("10/minute")
 async def auth_trocar_senha(
     request: Request,
+    response: Response,
     payload: TrocarSenhaPayload,
     user: TokenPayload = Depends(current_user),
 ):
