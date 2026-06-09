@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from api.core.config import DB_DISPONIVEL, SessionLocal, crud_clientes
@@ -27,6 +27,7 @@ router = APIRouter(prefix="/clientes", tags=["clientes"], dependencies=[Depends(
 @limiter.limit("20/minute")
 async def criar_cliente(
     request: Request,
+    response: Response,
     payload: ClienteCreate,
     user: TokenPayload = Depends(current_user),
 ):
@@ -75,6 +76,7 @@ async def criar_cliente(
 @limiter.limit("30/minute")
 async def listar_clientes(
     request: Request,
+    response: Response,
     apenas_ativos: bool = True,
     user: TokenPayload = Depends(current_user),
 ):
@@ -95,6 +97,7 @@ async def listar_clientes(
 @limiter.limit("30/minute")
 async def buscar_cliente(
     request: Request,
+    response: Response,
     cliente_id: str,
     user: TokenPayload = Depends(current_user),
 ):
@@ -127,6 +130,7 @@ async def buscar_cliente(
 @limiter.limit("20/minute")
 async def atualizar_cliente(
     request: Request,
+    response: Response,
     cliente_id: str,
     payload: ClienteUpdate,
     user: TokenPayload = Depends(current_user),
