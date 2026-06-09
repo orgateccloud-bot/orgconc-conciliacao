@@ -193,3 +193,33 @@ def test_logout_revoga_refresh():
         r = client.post("/auth/logout", headers={"Cookie": "orgconc_refresh=algo"})
     assert r.status_code == 200
     mock_rev.assert_awaited_once()
+
+
+def test_logout_sem_refresh_e_idempotente():
+    # Logout sem cookie de refresh: não toca o banco, ainda assim 200 (idempotente).
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", _mock_session_cm()[0]),
+        patch("api.routers.auth_routes.refresh_repo.revogar_por_hash", new=AsyncMock()) as mock_rev,
+    ):
+        r = client.post("/auth/logout")
+    assert r.status_code == 200
+    mock_rev.assert_not_awaited()
+
+
+def test_logout_all_revoga_todos_do_sub():
+    # logout-all exige auth (current_user) e revoga TODOS os refresh do usuário.
+    sl, _db = _mock_session_cm()
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch(
+            "api.routers.auth_routes.refresh_repo.revogar_todos_do_sub",
+            new=AsyncMock(return_value=3),
+        ) as mock_rev_all,
+    ):
+        r = client.post("/auth/logout-all")
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["revogados"] == 3
+    mock_rev_all.assert_awaited_once()

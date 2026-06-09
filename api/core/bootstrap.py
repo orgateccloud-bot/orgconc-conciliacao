@@ -9,7 +9,6 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
@@ -19,7 +18,7 @@ from api.core import config as _config
 from api.core.config import CORS_ORIGINS, engine, log, verificar_db_disponivel
 from api.core.exception_handlers import registrar_handlers
 from api.core.prometheus_metrics import PrometheusMiddleware
-from api.core.rate_limit import limiter
+from api.core.rate_limit import limiter, rate_limit_exceeded_handler
 from api.services.logging_estruturado import RequestIdMiddleware
 
 
@@ -203,7 +202,7 @@ def criar_app(
         openapi_url=None if _is_prod else "/openapi.json",
     )
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
     app.add_middleware(PrometheusMiddleware)
     app.add_middleware(RequestIdMiddleware)
     # Contexto de RLS por org (a partir do JWT). No-op até o flip para app_orgconc.
