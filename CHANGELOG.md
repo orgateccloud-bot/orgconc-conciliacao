@@ -11,13 +11,22 @@ Todas as mudanças relevantes do OrgConc. Formato baseado em
 
 ### Adicionado
 - Cobertura de testes do frontend para 17/17 páginas + componentes
-  (CommandPalette, AIInsightsPanel, AuditEventModal) e cliente `api.ts`
-  (249 testes; ~78% linhas) com **gate de cobertura no CI** (#104).
+  (CommandPalette, AIInsightsPanel, AuditEventModal) e cliente `api.ts` (#104),
+  aprofundada para **~88% linhas** (345 testes) com **gate de cobertura no CI**
+  em 86 (#109).
+- Cobertura de testes do **backend** elevada a **80%** (704 testes; 6 módulos de
+  lógica pura a 100%) com gate `--cov-fail-under` 74 → **80** no CI (#110).
 - Headers `X-RateLimit-Limit/Remaining/Reset` + `Retry-After` nas respostas 429,
   via handler dedicado; testes de throttle no CI (#104).
 - Testes de `logout`/`logout-all`/idempotência e documentação do modelo de
   revogação de sessão (#104).
 - Remapeamento técnico, planejamento de execução e relatório executivo (#104).
+
+### Alterado
+- **CBS/IBS sem SERPRO**: removida a auth OAuth2/Consumer-Key e as vars
+  `SERPRO_*`; `serpro_client.py` → `calculadora_client.py` (transporte aberto p/
+  a calculadora oficial `consumo.tributos.gov.br` / offline). Em prod
+  `CALCULADORA_MODO=stub` o runtime não muda (#106).
 
 ### Corrigido
 - Documentação desatualizada: README citava UI legada `static/` inexistente;

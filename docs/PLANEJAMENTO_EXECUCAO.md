@@ -114,7 +114,7 @@ Varredura read-only (10 agentes) cruzando roadmap × código. Achados que mudam 
 4. Itens 🔑 (staging, jobs, SLO, rotação, validação live da calculadora) conforme infra/credenciais.
 
 ## Critério de 1.0 (do roadmap, com status atual)
-- [ ] Cobertura: backend ≥ 80% (hoje 74%) · ✅ frontend ≥ 70% — ~78% com gate no CI (2026-06-09).
+- [x] ✅ **Cobertura: backend 80.2%** (gate 80, #110) · **frontend 88.6%** (gate 86, #109) — ambos com gate no CI (2026-06-09).
 - [ ] E2E cobrindo conciliação, laudo, auth — *parcial* (happy paths; profundo adiado).
 - [~] CBS/IBS sem SERPRO ✅ (#106) + apuração persistida idempotente — *preparada, HOLD* (#107).
 - [~] Hardening P0: ✅ refresh revogável, ✅ rate-limit testado; RLS sem drift *preparado, HOLD* (#107).
