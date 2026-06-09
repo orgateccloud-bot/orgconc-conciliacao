@@ -9,7 +9,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-from sqlalchemy import String, Boolean, Integer, Date, Numeric, ForeignKey, Text, Index, text
+from sqlalchemy import String, Boolean, Integer, Date, Numeric, ForeignKey, Text, Index, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS, JSONB
 
 TIMESTAMPTZ = _TS(timezone=True)
@@ -462,6 +462,9 @@ class ApuracaoCBSIBSRow(Base):
         Index("ix_apuracao_cbs_ibs_documento", "documento_id"),
         Index("ix_apuracao_cbs_ibs_criado", text("criado_em DESC")),
         Index("ix_apuracao_cbs_ibs_org", "org_id"),
+        # Idempotência IC-02 §3.2: a mesma operação (documento + versão da base)
+        # não duplica. salvar_apuracao faz UPSERT sobre esta constraint.
+        UniqueConstraint("documento_id", "versao_base", name="uq_apuracao_doc_versao"),
     )
 
     id:                  Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
