@@ -39,30 +39,31 @@ fluxos críticos. **Nota projetada: ~8.1/10.**
 
 ## Sprint 2 — Fiscal & abrangência P1 (2–4 semanas) · valor de negócio
 
-| # | Item | Tipo | Esf. | Critério de aceite | Origem |
-|---|------|------|------|--------------------|--------|
-| 2.1 | **Remover SERPRO** + apontar calculadora CBS/IBS p/ API oficial (portal Tributos) | 🤖 remoção · 🔑 spec do endpoint live | G | remove auth OAuth2/Consumer-Key SERPRO e naming dos 5 arquivos (`config.py`, `infra/__init__.py`, `routers/fiscal.py`, `services/calculadora_cbs_ibs.py`, `services/serpro_client.py`); mantém transporte genérico `CALCULADORA_BASE_URL` (`consumo.tributos.gov.br`); atualiza config/testes/docs | Roadmap P1 #6 · Achado A1 |
-| 2.2 | **Persistir apuração CBS/IBS** | 🤖 | M | `POST /fiscal/apurar` grava `documento_id` + `versao_base` + `resultado` + `payload_hash` em `apuracao_cbs_ibs` (migrations 013/014/018 já existem) | Roadmap P1 #7 |
-| 2.3 | **Catálogo de anomalias AN-01..18 no laudo** | 🤖 | G | laudo gera alertas estruturados do catálogo (hoje só 3 flags: MEI_SEM_CTE, REDE_FROTA_TYPE, PARTE_RELACIONADA) | Roadmap P1 #8 |
-| 2.4 | **Refator `services/laudo_forense.py`** (2.089 LOC) | 🤖 | G | extrai camada de cálculo (agregação/heatmap) do render (XLSX/MD/HTML/PDF); comportamento idêntico ao centavo (testes de regressão do laudo LOCAR verdes) | Achado A6 · Mapa §1.4 |
-| 2.5 | **Limpar 3 policies RLS legadas `*_org_policy`** | 🤖 preparo · 🔑 aplicar | P | migration de `DROP POLICY` revisável; aplicação em prod coordenada | Roadmap P0 #4 · Achado A5 |
+| # | Item | Tipo | Esf. | Critério de aceite | Origem | Status |
+|---|------|------|------|--------------------|--------|--------|
+| 2.1 | **Remover SERPRO** + apontar calculadora CBS/IBS p/ API oficial (portal Tributos) | 🤖 remoção · 🔑 spec do endpoint live | G | remove auth OAuth2/Consumer-Key SERPRO e naming; mantém transporte genérico `CALCULADORA_BASE_URL` (`consumo.tributos.gov.br`); atualiza config/testes/docs | Roadmap P1 #6 · Achado A1 | ✅ **Feito** ([#106](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/106)) · validação live = 🔑 |
+| 2.2 | **Persistir apuração CBS/IBS (idempotência)** | 🤖 preparo · 🔑 aplicar | M | UNIQUE `(documento_id, versao_base)` + UPSERT em `salvar_apuracao` (migration 022) | Roadmap P1 #7 | 🟡 **Preparado, HOLD** ([#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107)) |
+| 2.3 | **Catálogo de anomalias AN-01..18 no laudo** | — | G | — | Roadmap P1 #8 | ❌ **Descartado** — taxonomia rural/OrgAudi, não cabe no OrgConc (ver §Verificação) |
+| 2.4 | **Refator `services/laudo_forense.py`** (2.089 LOC) | 🤖 | G | extrai camada de cálculo do render; saída idêntica ao centavo (regressão LOCAR verde) | Achado A6 · Mapa §1.4 | ⚠️ Adiado (risco alto; revisão humana) |
+| 2.5 | **Limpar policies RLS legadas `*_org_policy`** | 🤖 preparo · 🔑 aplicar | P | migration `DROP POLICY` (021); aplicação coordenada | Roadmap P0 #4 · Achado A5 | 🟡 **Preparado, HOLD** ([#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107)) |
 
-**Saída do Sprint 2:** CBS/IBS sem SERPRO e persistida, laudo com catálogo de anomalias, fat file
-desmembrado, RLS sem drift. **Nota projetada: ~8.5/10.**
+**Saída do Sprint 2:** CBS/IBS sem SERPRO (✅ em prod), idempotência + RLS limpa preparadas (HOLD).
+2.3 descartado, 2.4 adiado. **Nota projetada após aplicar #107: ~8.4/10.**
 
 ---
 
 ## Sprint 3 — Governança & escala P2 (1–2 meses) · rumo ao 1.0 formal
 
-| # | Item | Tipo | Esf. | Critério de aceite | Origem |
-|---|------|------|------|--------------------|--------|
-| 3.1 | **CHANGELOG + versionamento de API (`/v1`)** | 🤖 | M | governança de release; rotas sob `/v1`; CHANGELOG mantido | Roadmap P2 #10 |
-| 3.2 | **Staging dedicado** | 🔑 | G | Railway env + Supabase branch; migrations validadas antes de prod (maior lacuna citada por todos) | Roadmap P2 #11 · Mapa §4.2 |
-| 3.3 | **Jobs assíncronos p/ tarefas fiscais longas** | 🔑 | G | worker/fila no Railway; calculadora/laudo deixam de ser bloqueantes | Roadmap P1 #9 |
-| 3.4 | ✅ **TypeScript strict no frontend** (já feito em 2026-06-03, commit 7166a497) | 🤖 | M | `noUnusedLocals/Parameters: true` em ambos tsconfig; `tsc --noEmit` bloqueante no CI | Mapa §2.4 |
-| 3.5 | **SLA/SLO + rotação de segredos** | 🔑 | M | metas documentadas + Sentry/logs confirmados em prod; rotação do JWT secret/chaves | Roadmap P2 #12, #13 |
+| # | Item | Tipo | Esf. | Critério de aceite | Origem | Status |
+|---|------|------|------|--------------------|--------|--------|
+| 3.1a | **CHANGELOG** | 🤖 | P | Keep a Changelog + SemVer; histórico 0.5.0 + [Não lançado] | Roadmap P2 #10 | ✅ **Feito** ([#105](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/105)) |
+| 3.1b | **Versionamento de API (`/v1`)** | 🤖 | M | rotas sob `/v1` (dual-mount p/ não quebrar o frontend) | Roadmap P2 #10 | ⚠️ Adiado (breaking — confirmar abordagem) |
+| 3.2 | **Staging dedicado** | 🔑 | G | Railway env + Supabase branch; migrations validadas antes de prod | Roadmap P2 #11 · Mapa §4.2 | ⛔ 🔑 infra |
+| 3.3 | **Jobs assíncronos p/ tarefas fiscais longas** | 🔑 | G | worker/fila no Railway; calculadora/laudo não-bloqueantes | Roadmap P1 #9 | ⛔ 🔑 infra |
+| 3.4 | **TypeScript strict no frontend** | 🤖 | M | `noUnusedLocals/Parameters: true`; `tsc --noEmit` bloqueante no CI | Mapa §2.4 | ✅ **Já feito** (2026-06-03, commit 7166a497) |
+| 3.5 | **SLA/SLO + rotação de segredos** | 🔑 | M | metas documentadas + Sentry/logs em prod; rotação do JWT/chaves | Roadmap P2 #12, #13 | ⛔ 🔑 infra/decisão |
 
-**Saída do Sprint 3:** release governado, staging com rollback, TS strict, SLO/rotação documentados.
+**Saída do Sprint 3:** CHANGELOG ✅ e TS strict ✅; /v1, staging, jobs, SLO/rotação pendentes (decisão/infra).
 
 ---
 
@@ -81,9 +82,22 @@ Varredura read-only (10 agentes) cruzando roadmap × código. Achados que mudam 
 | 2.5 RLS legadas | DROP já está em `org_isolation.sql`; falta migration Alembic 021 formal | preparo 🤖; **aplicar = 🔑** |
 | 3.1 /v1 + CHANGELOG | **breaking** (16 routers + 40+ paths no frontend). CHANGELOG trivial | CHANGELOG 🤖; **/v1 = confirmar abordagem** (dual-mount p/ não quebrar) |
 
-> **Resumo:** Sprint 1 (P0) entregue e mergeável. Sprint 2–3 têm 3 itens prontos para preparo
-> (2.1, 2.2, 2.5) cuja *aplicação* é 🔑, e 3 que exigem **decisão/spec sua** (2.3 catálogo,
-> 2.4 risco-prod, 3.1 breaking) antes de irem para produção.
+> **Resumo:** Sprint 1 (P0) entregue e mergeado. SERPRO removido (#106) e CHANGELOG (#105) em prod.
+> Idempotência CBS/IBS + RLS legadas preparadas e em HOLD (#107, aplicação 🔑). 2.3 descartado;
+> 2.4 / 3.1-/v1 / 1.4 adiados (risco); staging/jobs/SLO/rotação dependem de você.
+
+## Execução 2026-06-09 — itens → PRs
+
+| Status | Itens | PR |
+|--------|-------|----|
+| ✅ Mergeado em prod | P0 #1,#2,#3 (Sprint 1) | [#104](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/104) |
+| ✅ Mergeado em prod | P2 #10 CHANGELOG | [#105](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/105) |
+| ✅ Mergeado em prod | P1 #6 remoção SERPRO | [#106](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/106) |
+| 🟡 HOLD (aplicar = 🔑) | P0 #4 (RLS 021) + P1 #7 (idempotência 022/UPSERT) | [#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107) (draft) |
+| ✅ Já feito antes | 3.4 TS strict | (2026-06-03) |
+| ❌ Descartado | P1 #8 catálogo AN-01..18 (rural/OrgAudi) | — |
+| ⚠️ Adiado (risco) | P0 #5 E2E profundo · 2.4 refator laudo · 3.1 /v1 | — |
+| ⛔ 🔑 infra/decisão | P1 #9 jobs · P2 #11 staging · #12 SLO · #13 rotação | — |
 
 ---
 
@@ -93,18 +107,19 @@ Varredura read-only (10 agentes) cruzando roadmap × código. Achados que mudam 
 - **3.3 Jobs assíncronos:** worker/fila no Railway.
 - **3.5 SLA/SLO + rotação:** metas de negócio + acesso a key management.
 
-## Sequência recomendada (modo automático)
-`1.1 → 1.2 → 1.3 → 1.4 → 2.1 → 2.2 → 2.5(preparo) → 2.3 → 2.4 → 3.1 → 3.4`
-
-Os itens 🔑 entram conforme você libera infra/credenciais/spec.
+## Próximos passos (ordem sugerida)
+1. **Aplicar #107** (quando você liberar): conferir `alembic heads` × base viva + revisar dedup da 022 → tirar do draft.
+2. **2.4 refator do laudo** (com regressão verde) e **3.1 /v1** (dual-mount) — quando aprovados.
+3. **P0 #5 E2E profundo** — aceitar/mitigar a flakiness no CI.
+4. Itens 🔑 (staging, jobs, SLO, rotação, validação live da calculadora) conforme infra/credenciais.
 
 ## Critério de 1.0 (do roadmap, com status atual)
 - [ ] Cobertura: backend ≥ 80% (hoje 74%) · ✅ frontend ≥ 70% — ~78% com gate no CI (2026-06-09).
-- [ ] E2E cobrindo conciliação, laudo, auth.
-- [ ] CBS/IBS sem SERPRO, apontando calculadora oficial + apuração persistida.
-- [ ] Hardening P0 completo (refresh revogável no logout, rate-limit testado, RLS sem drift).
-- [ ] Staging + rollback + SLA/SLO documentados.
-- [ ] CHANGELOG + versionamento de API.
+- [ ] E2E cobrindo conciliação, laudo, auth — *parcial* (happy paths; profundo adiado).
+- [~] CBS/IBS sem SERPRO ✅ (#106) + apuração persistida idempotente — *preparada, HOLD* (#107).
+- [~] Hardening P0: ✅ refresh revogável, ✅ rate-limit testado; RLS sem drift *preparado, HOLD* (#107).
+- [ ] Staging + rollback + SLA/SLO documentados — 🔑.
+- [~] CHANGELOG ✅ (#105) + versionamento de API `/v1` — *adiado*.
 
 ---
 
