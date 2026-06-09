@@ -66,37 +66,39 @@ export function DashboardPage() {
     setLoading(true);
     setErro(false);
     setBundle(null); // limpa stale: garante skeleton no retry e ErroCard se falhar de novo
-    const [bundleRes, trustRes, insightsRes, activityRes, auditRes] = await Promise.allSettled([
+    const [bundleRes, trustRes, activityRes, auditRes] = await Promise.allSettled([
       fetchDashboardBundle(PERIODO_DIAS),
       fetchTrustScore(PERIODO_DIAS),
-      fetchAiInsights(PERIODO_DIAS),
       fetchActivityFeed(10),
       fetchAuditTimeline(10),
     ]);
     if (bundleRes.status === "fulfilled") setBundle(bundleRes.value);
     else setErro(true);
     if (trustRes.status === "fulfilled") setTrust(trustRes.value);
-    if (insightsRes.status === "fulfilled") setInsights(insightsRes.value);
     if (activityRes.status === "fulfilled") setActivity(activityRes.value);
     if (auditRes.status === "fulfilled") setAuditTimeline(auditRes.value);
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    carregarTudo();
-  }, [carregarTudo]);
-
-  const refreshInsights = useCallback(async () => {
+  // Insights (IA/LLM) carregam SEPARADO do bundle: o skeleton do dashboard não
+  // espera o modelo responder. `refresh=true` ignora o cache (botão Atualizar).
+  const carregarInsights = useCallback(async (refresh = false) => {
     setInsightsLoading(true);
     try {
-      const res = await fetchAiInsights(PERIODO_DIAS, true);
-      setInsights(res);
+      setInsights(await fetchAiInsights(PERIODO_DIAS, refresh));
     } catch {
       /* ignora — UI já mostra estado anterior */
     } finally {
       setInsightsLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    carregarTudo();
+    carregarInsights();
+  }, [carregarTudo, carregarInsights]);
+
+  const refreshInsights = useCallback(() => carregarInsights(true), [carregarInsights]);
 
   if (loading && !bundle) {
     return <DashboardSkeleton />;
