@@ -88,8 +88,9 @@ app.include_router(contratos_router.router)
 app.include_router(fiscal_router.router)
 
 # Frontend React (SPA) — servido em /app quando o build existe (orgconc-react/dist).
-# Em produção o build é publicado via GitHub Pages (ver deploy.yml); este mount
-# cobre o uso local/Docker após `npm run build` em orgconc-react/.
+# Em produção o build é gerado no Dockerfile multi-stage e servido same-origin pela
+# própria API (GitHub Pages foi removido); este mount cobre prod e o uso local/Docker
+# após `npm run build` em orgconc-react/.
 if REACT_DIST.exists():
     app.mount("/app", StaticFiles(directory=str(REACT_DIST), html=True), name="react_app")
 else:
