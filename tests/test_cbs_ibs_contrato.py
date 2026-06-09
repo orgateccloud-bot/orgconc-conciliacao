@@ -83,15 +83,15 @@ def test_input_exige_xml_ou_itens():
 
 
 @pytest.mark.asyncio
-async def test_modo_nao_stub_exige_serpro_config(monkeypatch):
-    # Fase 1 SERPRO-ready: modo hospedada/offline despacha p/ o cliente SERPRO.
-    # Sem CALCULADORA_BASE_URL (nem credenciais), levanta SerproConfigError —
-    # o mapeamento IC-02↔SERPRO já está implementado (não é mais NotImplementedError).
+async def test_modo_nao_stub_exige_calculadora_url(monkeypatch):
+    # Modo hospedada/offline despacha p/ a Calculadora oficial (RTC, sem auth).
+    # Sem CALCULADORA_BASE_URL, levanta CalculadoraConfigError — o mapeamento
+    # IC-02↔RTC já está implementado (não é mais NotImplementedError).
     from api.core import config
     from api.schemas_cbs_ibs import OperacaoFiscalInput
     from api.services import calculadora_cbs_ibs
-    from api.services.serpro_client import SerproConfigError
+    from api.services.calculadora_client import CalculadoraConfigError
     monkeypatch.setattr(config, "CALCULADORA_MODO", "hospedada")
     monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "")
-    with pytest.raises(SerproConfigError):
+    with pytest.raises(CalculadoraConfigError):
         await calculadora_cbs_ibs.apurar(OperacaoFiscalInput(**REQ))

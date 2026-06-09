@@ -265,8 +265,9 @@ async def apurar_cbs_ibs(
 ):
     """Apura CBS/IBS de uma operação (contrato IC-02 §3.2).
 
-    Orquestra o motor de cálculo (stub PILOTO em dev; SERPRO hospedado/offline em
-    prod — o OrgConc não recalcula) e persiste o resultado + memória de cálculo.
+    Orquestra o motor de cálculo (stub PILOTO em dev; Calculadora oficial RTC
+    hospedada/offline em prod — o OrgConc não recalcula) e persiste o resultado +
+    memória de cálculo.
     Resposta = ApuracaoCBSIBS com gate de proveniência (versao_base/ambiente/
     fundamentacao). Em PILOTO os valores são provisórios (§4.2).
     """

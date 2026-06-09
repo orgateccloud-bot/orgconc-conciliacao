@@ -1,7 +1,9 @@
-"""Testes do scaffold SERPRO-ready (auth/transporte; Fase 1, IC-02).
+"""Testes do cliente de transporte da Calculadora oficial (RTC, IC-02).
 
-Cobrem o que está implementado (gate de credenciais + fluxo OAuth2 de token com
-httpx mockado). O mapeamento IC-02↔SERPRO é spec-pending e não é testado aqui.
+SERPRO foi excluído como alvo (2026-06-09): não há mais OAuth2/Consumer-Key.
+O transporte é aberto (instância oficial consumo.tributos.gov.br / offline local,
+sem autenticação). Cobrem transporte (POST), pre-flight de versão e o mapeamento
+IC-02↔RTC. O mapeamento completo valida contra a instância oficial.
 """
 import logging
 from datetime import date
@@ -9,7 +11,7 @@ from datetime import date
 import pytest
 
 from api.core import config
-from api.services import serpro_client
+from api.services import calculadora_client
 from api.services import calculadora_cbs_ibs as calc
 from api.schemas_cbs_ibs import ItemOperacao, OperacaoFiscalInput
 
@@ -26,9 +28,57 @@ class _FakeResp:
         return self._d
 
 
-class _FakeClient:
-    """Fake do httpx.AsyncClient (async context manager) que devolve um token."""
+class _FakePostClient:
+    """Fake do httpx.AsyncClient que captura o POST e devolve um JSON fixo."""
 
+    captured: dict = {}
+    resposta: dict = {"ok": True}
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, headers=None, json=None, **k):
+        _FakePostClient.captured = {"url": url, "headers": headers or {}, "json": json}
+        return _FakeResp(_FakePostClient.resposta)
+
+
+# ── Transporte (POST) — instância aberta, sem auth ──
+
+
+@pytest.mark.asyncio
+async def test_chamar_calculadora_sem_url_levanta_config_error(monkeypatch):
+    monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "")
+    with pytest.raises(calculadora_client.CalculadoraConfigError):
+        await calculadora_client.chamar_calculadora({"x": 1})
+
+
+@pytest.mark.asyncio
+async def test_chamar_calculadora_post_sem_auth(monkeypatch):
+    monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "http://x/api")
+    monkeypatch.setattr(calculadora_client.httpx, "AsyncClient", _FakePostClient)
+    _FakePostClient.resposta = {"total": 1}
+    out = await calculadora_client.chamar_calculadora({"a": 1}, caminho="regime-geral")
+    assert out == {"total": 1}
+    cap = _FakePostClient.captured
+    assert cap["url"] == "http://x/api/regime-geral"
+    assert cap["json"] == {"a": 1}
+    # Instância aberta: NUNCA envia Authorization.
+    assert "Authorization" not in cap["headers"]
+
+
+# ── Pre-flight de versão da base (GET /versao/status) ──
+
+
+class _FakeVersaoClient:
+    """Fake do httpx.AsyncClient que responde ao GET /versao/status."""
+
+    versao = "V0033"
     captured: dict = {}
 
     def __init__(self, *a, **k):
@@ -40,114 +90,56 @@ class _FakeClient:
     async def __aexit__(self, *a):
         return False
 
-    async def post(self, url, headers=None, data=None, **k):
-        _FakeClient.captured = {"url": url, "headers": headers or {}, "data": data}
-        return _FakeResp({"access_token": "tok-123", "token_type": "Bearer", "expires_in": 3600})
-
-
-def test_credenciais_ok_falso_sem_creds(monkeypatch):
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_KEY", "")
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_SECRET", "")
-    assert serpro_client.credenciais_ok() is False
-
-
-@pytest.mark.asyncio
-async def test_obter_token_sem_creds_levanta_config_error(monkeypatch):
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_KEY", "")
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_SECRET", "")
-    serpro_client._reset_token_cache()
-    with pytest.raises(serpro_client.SerproConfigError):
-        await serpro_client.obter_token()
-
-
-@pytest.mark.asyncio
-async def test_obter_token_fluxo_oauth(monkeypatch):
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_KEY", "ck")
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_SECRET", "cs")
-    monkeypatch.setattr(serpro_client.httpx, "AsyncClient", _FakeClient)
-    serpro_client._reset_token_cache()
-
-    token = await serpro_client.obter_token()
-    assert token == "tok-123"
-    # Basic base64(ck:cs) no header + grant_type correto
-    cap = _FakeClient.captured
-    assert cap["headers"]["Authorization"].startswith("Basic ")
-    assert cap["data"]["grant_type"] == "client_credentials"
-    # 2ª chamada usa o cache (sem nova requisição precisaria de outro fake; aqui só
-    # garantimos que retorna o mesmo token)
-    assert await serpro_client.obter_token() == "tok-123"
-
-
-# ── Pre-flight de versão da base (GET /versao/status) ──
-
-
-class _FakeVersaoClient:
-    """Fake do httpx.AsyncClient que responde ao GET /versao/status."""
-
-    versao = "V0033"
-
-    def __init__(self, *a, **k):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *a):
-        return False
-
     async def get(self, url, headers=None, **k):
+        _FakeVersaoClient.captured = {"headers": headers or {}}
         return _FakeResp({"versaoDbLocal": _FakeVersaoClient.versao})
 
 
 @pytest.mark.asyncio
 async def test_obter_versao_db_parseia(monkeypatch):
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_KEY", "")
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_SECRET", "")
     monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "http://x/api")
     _FakeVersaoClient.versao = "V0029"
-    monkeypatch.setattr(serpro_client.httpx, "AsyncClient", _FakeVersaoClient)
-    serpro_client._reset_versao_cache()
-    assert await serpro_client.obter_versao_db() == "V0029"
+    monkeypatch.setattr(calculadora_client.httpx, "AsyncClient", _FakeVersaoClient)
+    calculadora_client._reset_versao_cache()
+    assert await calculadora_client.obter_versao_db() == "V0029"
+    # Instância aberta: sem Authorization no pre-flight.
+    assert "Authorization" not in _FakeVersaoClient.captured["headers"]
 
 
 @pytest.mark.asyncio
 async def test_obter_versao_db_sem_url_devolve_none(monkeypatch):
     monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "")
-    serpro_client._reset_versao_cache()
-    assert await serpro_client.obter_versao_db() is None
+    calculadora_client._reset_versao_cache()
+    assert await calculadora_client.obter_versao_db() is None
 
 
 @pytest.mark.asyncio
 async def test_checar_versao_base_avisa_em_mismatch(monkeypatch, caplog):
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_KEY", "")
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_SECRET", "")
     monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "http://x/api")
     monkeypatch.setattr(config, "CBS_IBS_VERSAO_BASE", "V0033")
     _FakeVersaoClient.versao = "V0029"
-    monkeypatch.setattr(serpro_client.httpx, "AsyncClient", _FakeVersaoClient)
-    serpro_client._reset_versao_cache()
+    monkeypatch.setattr(calculadora_client.httpx, "AsyncClient", _FakeVersaoClient)
+    calculadora_client._reset_versao_cache()
     with caplog.at_level(logging.WARNING):
-        v = await serpro_client.checar_versao_base()
+        v = await calculadora_client.checar_versao_base()
     assert v == "V0029"
     assert "divergente" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_checar_versao_base_silencioso_em_match(monkeypatch, caplog):
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_KEY", "")
-    monkeypatch.setattr(config, "SERPRO_CONSUMER_SECRET", "")
     monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "http://x/api")
     monkeypatch.setattr(config, "CBS_IBS_VERSAO_BASE", "V0033")
     _FakeVersaoClient.versao = "V0033"
-    monkeypatch.setattr(serpro_client.httpx, "AsyncClient", _FakeVersaoClient)
-    serpro_client._reset_versao_cache()
+    monkeypatch.setattr(calculadora_client.httpx, "AsyncClient", _FakeVersaoClient)
+    calculadora_client._reset_versao_cache()
     with caplog.at_level(logging.WARNING):
-        v = await serpro_client.checar_versao_base()
+        v = await calculadora_client.checar_versao_base()
     assert v == "V0033"
     assert "divergente" not in caplog.text
 
 
-# ── Mapeamento IC-02 ↔ SERPRO (resposta ROCDomain REAL gravada da Calculadora) ──
+# ── Mapeamento IC-02 ↔ RTC (resposta ROCDomain REAL gravada da Calculadora) ──
 
 _ROC_REAL = {
     "objetos": [
@@ -190,8 +182,8 @@ def _op():
     )
 
 
-def test_ic02_para_serpro_monta_payload():
-    p = calc._ic02_para_serpro(_op())
+def test_ic02_para_rtc_monta_payload():
+    p = calc._ic02_para_rtc(_op())
     assert p["id"] == "D1"
     assert p["municipio"] == 5208707 and isinstance(p["municipio"], int)
     assert p["uf"] == "GO"
@@ -200,11 +192,11 @@ def test_ic02_para_serpro_monta_payload():
     assert p["dataHoraEmissao"].startswith("2026-02-01T")
 
 
-def test_serpro_para_ic02_achata_roc():
-    ap = calc._serpro_para_ic02(_ROC_REAL, _op())
+def test_rtc_para_ic02_achata_roc():
+    ap = calc._rtc_para_ic02(_ROC_REAL, _op())
     assert ap.base_calculo_total == 1000.0
     assert ap.gIBSUF.pIBSUF == 0.10 and ap.gIBSUF.vIBSUF == 1.0
     assert ap.gCBS.pCBS == 0.90 and ap.gCBS.vCBS == 9.0
     assert ap.vTotTrib == 10.0
     assert ap.itens[0].vCBS == 9.0 and ap.itens[0].cClassTrib == "000001"
-    assert "SERPRO" in ap.motor_versao
+    assert "RTC" in ap.motor_versao
