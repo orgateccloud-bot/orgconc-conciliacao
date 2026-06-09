@@ -179,7 +179,7 @@ export function Sidebar({
   clientes?: number;
 }) {
   return (
-    <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-card/95 backdrop-blur-sm relative">
+    <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-card/95 backdrop-blur-xs relative">
       <span aria-hidden className="absolute top-0 bottom-0 right-0 w-px coastline-r opacity-60" />
       <SidebarNavContent anomalias={anomalias} clientes={clientes} />
     </aside>

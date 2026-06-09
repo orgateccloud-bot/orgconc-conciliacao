@@ -120,7 +120,7 @@ export function UploadPage() {
               className={cn(
                 "px-4 py-1.5 text-sm rounded-lg font-medium transition-colors",
                 formato === f
-                  ? "bg-card shadow text-foreground"
+                  ? "bg-card shadow-sm text-foreground"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >

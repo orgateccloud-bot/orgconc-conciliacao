@@ -37,7 +37,7 @@ export function KpiCard({ label, value, desc, delta, icon: Icon, accent, inverso
       <p className="text-3xl font-bold font-jakarta tracking-tight leading-none tabular">
         {value}
       </p>
-      <div className="mt-2 flex items-baseline gap-2 min-h-[1rem]">
+      <div className="mt-2 flex items-baseline gap-2 min-h-4">
         <Delta value={delta} inverso={inverso} />
         {desc && <span className="text-xs text-muted-foreground">{desc}</span>}
       </div>
