@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -145,3 +146,185 @@ def test_confirmar_persistido_dia_diferente_eh_noop():
     _, d2_usd, d2_ch = acc.delta_para_persistir()
     assert d2_ch == d_ch  # delta intacto — nada foi confirmado
     assert d2_usd == pytest.approx(d_usd, rel=1e-3)
+
+
+# --- _price_for: cobertura de prefixos e direcao ---
+
+
+def test_calcular_custo_sonnet_usa_default_exato():
+    # Garante o ramo "sonnet" do prefixo (entre opus e haiku).
+    m = llm_metrics.calcular_custo("claude-sonnet-4-6", 1_000_000, 1_000_000)
+    assert m["cost_input_usd"] == 3.0
+    assert m["cost_output_usd"] == 15.0
+    assert m["cost_total_usd"] == 18.0
+
+
+def test_override_preco_vazio_string_ignorado():
+    # String vazia (apos strip) nao conta como override → cai no default.
+    os.environ["ORGCONC_LLM_PRICE_HAIKU_IN"] = "   "
+    m = llm_metrics.calcular_custo("claude-haiku-4-5", 1_000_000, 0)
+    assert m["cost_input_usd"] == 1.0  # default haiku
+
+
+def test_override_preco_sonnet_out_via_env():
+    # Cobre direcao "output" no caminho de override (env var _OUT).
+    os.environ["ORGCONC_LLM_PRICE_SONNET_OUT"] = "30.0"
+    m = llm_metrics.calcular_custo("claude-sonnet-4-6", 0, 1_000_000)
+    assert m["cost_output_usd"] == 30.0
+
+
+def test_calcular_custo_arredonda_seis_casas():
+    # 1 token de input em opus = 5/1M = 0.000005 → mantem 6 casas.
+    m = llm_metrics.calcular_custo("claude-opus-4-7", 1, 0)
+    assert m["cost_input_usd"] == 0.000005
+    assert m["cost_total_usd"] == 0.000005
+
+
+def test_calcular_custo_converte_tokens_para_int():
+    # input/output como float devem ser normalizados para int no retorno.
+    m = llm_metrics.calcular_custo("claude-haiku-4-5", 100.0, 50.0)
+    assert m["input_tokens"] == 100
+    assert m["output_tokens"] == 50
+    assert isinstance(m["input_tokens"], int)
+    assert isinstance(m["output_tokens"], int)
+
+
+# --- _threshold_alerta: parsing e bordas ---
+
+
+def test_threshold_alerta_default_zero_sem_env():
+    assert llm_metrics._threshold_alerta() == 0.0
+
+
+def test_threshold_alerta_valor_invalido_vira_zero():
+    os.environ["ORGCONC_LLM_COST_ALERT_USD"] = "abc"
+    assert llm_metrics._threshold_alerta() == 0.0
+
+
+def test_threshold_alerta_negativo_eh_clampado_para_zero():
+    os.environ["ORGCONC_LLM_COST_ALERT_USD"] = "-10"
+    assert llm_metrics._threshold_alerta() == 0.0
+
+
+def test_threshold_alerta_valor_valido():
+    os.environ["ORGCONC_LLM_COST_ALERT_USD"] = "2.5"
+    assert llm_metrics._threshold_alerta() == 2.5
+
+
+# --- _AcumuladorDiario.snapshot ---
+
+
+def test_snapshot_reflete_estado_atual():
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)  # 0.6
+    dia, total, chamadas = llm_metrics._ACUMULADOR.snapshot()
+    assert dia  # dia ISO nao vazio
+    assert total == pytest.approx(0.6, rel=1e-3)
+    assert chamadas == 1
+
+
+def test_snapshot_acumulador_zerado():
+    dia, total, chamadas = llm_metrics._ACUMULADOR.snapshot()
+    # Acumulador recem-criado: dia vazio, zero custo, zero chamadas.
+    assert dia == ""
+    assert total == 0.0
+    assert chamadas == 0
+
+
+# --- registrar_uso: sem duracao_ms e telemetria opcional ---
+
+
+def test_registrar_uso_sem_duracao_nao_inclui_campo(caplog):
+    with caplog.at_level(logging.INFO, logger="orgconc.llm.metrics"):
+        llm_metrics.registrar_uso("claude-haiku-4-5", "H", 1_000, 1_000)
+    rec = next(r for r in caplog.records if r.message == "llm_uso")
+    assert not hasattr(rec, "llm_duracao_ms")
+
+
+def test_registrar_uso_prometheus_erro_e_silencioso(caplog, monkeypatch):
+    # A exportacao Prometheus e best-effort: erro na lib opcional nao quebra.
+    import api.core.prometheus_metrics as prom
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("prometheus indisponivel")
+
+    monkeypatch.setattr(prom, "registrar_llm_prometheus", _boom)
+    with caplog.at_level(logging.INFO, logger="orgconc.llm.metrics"):
+        metrics = llm_metrics.registrar_uso("claude-haiku-4-5", "H", 1_000, 1_000)
+    # Mesmo com erro na telemetria, o calculo de custo e retornado normalmente.
+    assert "cost_total_usd" in metrics
+    assert "cost_dia_usd" in metrics
+
+
+# --- persistir_custo_diario_async: UPSERT incremental (sem banco real) ---
+
+
+def _fake_async_db() -> MagicMock:
+    """AsyncSession mockada com execute/commit/rollback assincronos."""
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock())
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    return db
+
+
+@pytest.mark.asyncio
+async def test_persistir_sem_delta_retorna_false():
+    # Nenhuma chamada registrada → delta_chamadas == 0 → pula persistencia.
+    db = _fake_async_db()
+    ok = await llm_metrics.persistir_custo_diario_async(db)
+    assert ok is False
+    db.execute.assert_not_called()
+    db.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_persistir_com_delta_executa_upsert_e_confirma():
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)  # 0.6
+    db = _fake_async_db()
+    ok = await llm_metrics.persistir_custo_diario_async(db)
+    assert ok is True
+    db.execute.assert_awaited_once()
+    db.commit.assert_awaited_once()
+    # Apos commit, delta deve estar confirmado → nada mais a persistir.
+    _, d_usd, d_ch = llm_metrics._ACUMULADOR.delta_para_persistir()
+    assert d_ch == 0
+    assert d_usd == pytest.approx(0.0, abs=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_persistir_segunda_chamada_sem_novo_uso_retorna_false():
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)
+    db = _fake_async_db()
+    assert await llm_metrics.persistir_custo_diario_async(db) is True
+    db2 = _fake_async_db()
+    # Sem novo uso, o delta foi confirmado na 1a chamada → 2a pula.
+    assert await llm_metrics.persistir_custo_diario_async(db2) is False
+    db2.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_persistir_erro_no_execute_faz_rollback_e_nao_confirma(caplog):
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)  # 0.6
+    db = _fake_async_db()
+    db.execute = AsyncMock(side_effect=RuntimeError("db caiu"))
+    with caplog.at_level(logging.ERROR, logger="orgconc.llm.metrics"):
+        ok = await llm_metrics.persistir_custo_diario_async(db)
+    assert ok is False
+    db.rollback.assert_awaited_once()
+    db.commit.assert_not_called()
+    # Como nao houve commit, o delta NAO foi confirmado → sera retentado.
+    _, d_usd, d_ch = llm_metrics._ACUMULADOR.delta_para_persistir()
+    assert d_ch == 1
+    assert d_usd == pytest.approx(0.6, rel=1e-3)
+
+
+@pytest.mark.asyncio
+async def test_persistir_erro_no_rollback_e_engolido(caplog):
+    # Mesmo se o proprio rollback falhar, a funcao nao propaga excecao.
+    llm_metrics.registrar_uso("claude-haiku-4-5", "H", 100_000, 100_000)
+    db = _fake_async_db()
+    db.execute = AsyncMock(side_effect=RuntimeError("commit falhou"))
+    db.rollback = AsyncMock(side_effect=RuntimeError("rollback tambem falhou"))
+    with caplog.at_level(logging.ERROR, logger="orgconc.llm.metrics"):
+        ok = await llm_metrics.persistir_custo_diario_async(db)
+    assert ok is False  # nao quebrou o request

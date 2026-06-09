@@ -53,7 +53,7 @@ jobs:
 
       - name: Rodar pytest
         run: |
-          python -m pytest tests/ -v --tb=short --cov=api --cov-report=term-missing --cov-fail-under=74
+          python -m pytest tests/ -v --tb=short --cov=api --cov-report=term-missing --cov-fail-under=80
 
       - name: Verificar que .env NAO foi commitado
         run: |
