@@ -218,7 +218,9 @@ describe("apiFetchBlob", () => {
     );
     setToken("tk");
     const { blob, filename } = await apiFetchBlob("/fiscal/laudo", { method: "POST" });
-    expect(blob).toBeInstanceOf(Blob);
+    // Blob vem de response.blob() (undici/Node), realm diferente do Blob do jsdom
+    // no CI Node 22 — toBeInstanceOf(Blob) falha. Checagem cross-realm via tag.
+    expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
     expect(filename).toBe("rel.xlsx");
     const [, init] = callAt(fn);
     expect((init?.headers as Headers).get("Authorization")).toBe("Bearer tk");
@@ -254,7 +256,9 @@ describe("apiFetchBlob", () => {
       new Response("ok-bin", { status: 200 }),
     );
     const { blob } = await apiFetchBlob("/dl");
-    expect(blob).toBeInstanceOf(Blob);
+    // Blob vem de response.blob() (undici/Node), realm diferente do Blob do jsdom
+    // no CI Node 22 — toBeInstanceOf(Blob) falha. Checagem cross-realm via tag.
+    expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
     expect(getToken()).toBe("blob-novo");
     expect(fn).toHaveBeenCalledTimes(3);
     const retryHeaders = fn.mock.calls[2][1]?.headers as Headers;
@@ -561,7 +565,9 @@ describe("fiscal", () => {
       }),
     );
     const { blob, filename } = await fiscalLaudoBlob("CNPJ", "999", [ofx]);
-    expect(blob).toBeInstanceOf(Blob);
+    // Blob vem de response.blob() (undici/Node), realm diferente do Blob do jsdom
+    // no CI Node 22 — toBeInstanceOf(Blob) falha. Checagem cross-realm via tag.
+    expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
     expect(filename).toBe("laudo.xlsx");
     const [url, init] = callAt(fn);
     expect(url).toBe("/fiscal/laudo");
@@ -588,7 +594,9 @@ describe("fiscalLaudo", () => {
       arquivos: [ofx],
       formato: "xlsx",
     });
-    expect(blob).toBeInstanceOf(Blob);
+    // Blob vem de response.blob() (undici/Node), realm diferente do Blob do jsdom
+    // no CI Node 22 — toBeInstanceOf(Blob) falha. Checagem cross-realm via tag.
+    expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
     expect(filename).toBe("meu-laudo.xlsx");
     const [url, init] = callAt(fn);
     expect(url).toBe("/fiscal/laudo?formato=xlsx");
@@ -615,7 +623,9 @@ describe("fiscalLaudo", () => {
       new Response("bin", { status: 200 }),
     );
     const { blob } = await fiscalLaudo({ empresaCnpj: "C", arquivos: [ofx], formato: "html" });
-    expect(blob).toBeInstanceOf(Blob);
+    // Blob vem de response.blob() (undici/Node), realm diferente do Blob do jsdom
+    // no CI Node 22 — toBeInstanceOf(Blob) falha. Checagem cross-realm via tag.
+    expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
     expect(getToken()).toBe("novo");
     expect(fn).toHaveBeenCalledTimes(3);
     expect((fn.mock.calls[2][1]?.headers as Headers).get("Authorization")).toBe("Bearer novo");
