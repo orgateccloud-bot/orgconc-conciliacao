@@ -1,7 +1,7 @@
 """Autenticacao JWT para OrgConc.
 
 Implementa:
-- Hashing de senhas com bcrypt (via passlib)
+- Hashing de senhas com bcrypt (direto, sem passlib)
 - Geracao e validacao de JWT (HS256)
 - Dependency FastAPI `current_user` com acesso anonimo em dev/staging
 
@@ -20,21 +20,24 @@ import uuid as _uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from passlib.context import CryptContext
+import bcrypt
 import jwt
 from fastapi import Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 
 log = logging.getLogger("orgconc.auth")
 
-# ── Bcrypt via passlib ───────────────────────────────────────────────────────
-# truncate_error=False: senhas >72 bytes sao truncadas silenciosamente em vez
-# de levantar ValueError (comportamento do bcrypt < 4.x). Evita quebra de CI.
-_pwd_ctx = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__truncate_error=False,
-)
+# ── Bcrypt (direto, sem passlib) ──────────────────────────────────────────────
+# passlib 1.7.4 (nao-mantido) quebra com bcrypt >= 5 (levanta ValueError na
+# auto-deteccao do backend). Usamos bcrypt direto. Como o bcrypt usa no maximo
+# 72 bytes da senha e o bcrypt >= 5 REJEITA entradas maiores (antes truncava),
+# truncamos explicitamente a 72 bytes — preserva o comportamento anterior
+# (truncate_error=False) e a compatibilidade com hashes ja armazenados.
+_BCRYPT_MAX_BYTES = 72
+
+
+def _senha_72(senha: str) -> bytes:
+    return senha.encode("utf-8")[:_BCRYPT_MAX_BYTES]
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -81,19 +84,19 @@ def hash_refresh_token(token: str) -> str:
 
 def hash_senha(senha: str) -> str:
     """Hash bcrypt da senha (uso: criar usuario, atualizar senha)."""
-    return _pwd_ctx.hash(senha)
+    return bcrypt.hashpw(_senha_72(senha), bcrypt.gensalt()).decode("utf-8")
 
 
 def verificar_senha(senha: str, hash_armazenado: str) -> bool:
-    """Constant-time comparison via bcrypt (passlib CryptContext).
+    """Constant-time comparison via bcrypt.
 
-    Senhas com mais de 72 bytes sao truncadas silenciosamente
-    (bcrypt__truncate_error=False). Retorna False para hashes com formato
-    invalido em vez de levantar excecao.
+    Senhas com mais de 72 bytes sao truncadas a 72 bytes (comportamento
+    historico do passlib com truncate_error=False; bcrypt usa no maximo 72).
+    Retorna False para hashes com formato invalido em vez de levantar excecao.
     """
     try:
-        return _pwd_ctx.verify(senha, hash_armazenado)
-    except Exception:  # noqa: BLE001 — hash invalido ou formato nao bcrypt
+        return bcrypt.checkpw(_senha_72(senha), hash_armazenado.encode("utf-8"))
+    except (ValueError, TypeError):  # hash invalido / formato nao bcrypt
         return False
 
 
