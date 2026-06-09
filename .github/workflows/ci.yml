@@ -177,9 +177,9 @@ jobs:
       - name: TypeScript type check
         working-directory: orgconc-react
         run: npx tsc --noEmit
-      - name: Vitest (unit tests)
+      - name: Vitest (unit tests + cobertura com gate)
         working-directory: orgconc-react
-        run: npm run test:run
+        run: npm run test:coverage
       - name: npm audit (vulnerabilidades high+critical)
         working-directory: orgconc-react
         run: npm audit --audit-level=high

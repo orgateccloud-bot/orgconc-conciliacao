@@ -27,6 +27,13 @@ export default defineConfig({
         "**/*.config.*",
         "**/*.d.ts",
       ],
+      // Piso anti-regressão (ratchet) — sobe conforme novos testes entram. Alvo 1.0 = 70%.
+      thresholds: {
+        statements: 45,
+        branches: 44,
+        functions: 38,
+        lines: 45,
+      },
     },
   },
 });
