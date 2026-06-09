@@ -27,6 +27,15 @@ export default defineConfig({
         "**/*.config.*",
         "**/*.d.ts",
       ],
+      // Gate (ratchet): piso ~2-3pts abaixo do atingido em 2026-06-09
+      // (stmts 75.8 / branches 65.1 / funcs 72.5 / lines 78.1).
+      // Trava o ganho sem fragilizar o CI; subir conforme a cobertura crescer.
+      thresholds: {
+        statements: 73,
+        branches: 62,
+        functions: 68,
+        lines: 75,
+      },
     },
   },
 });
