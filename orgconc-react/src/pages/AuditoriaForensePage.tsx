@@ -218,7 +218,16 @@ export function AuditoriaForensePage() {
         </div>
 
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="Selecionar extratos OFX — Enter/Espaço ou clique; ou arraste e solte"
           onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              inputRef.current?.click();
+            }
+          }}
           onDragOver={(e) => {
             e.preventDefault();
             setDragOver(true);

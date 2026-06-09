@@ -19,7 +19,8 @@ export function SecurityRing({ data, loading }: Props) {
   const vazio = loading || semDados;
   const score = data && !semDados ? Math.round(data.score) : 0;
   const corStroke = corPorScore(score);
-  const dashOffset = CIRCUNFERENCIA - (score / 100) * CIRCUNFERENCIA;
+  // Com dados mas score 0, mantém um arco mínimo (2%) p/ não confundir com "sem dados".
+  const dashOffset = CIRCUNFERENCIA - (Math.max(score, 2) / 100) * CIRCUNFERENCIA;
 
   const taxaSucesso = data && !semDados ? data.breakdown.taxa_sucesso_pct : 0;
   const cobertura = data && !semDados ? data.breakdown.cobertura_pct : 0;
