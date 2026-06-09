@@ -414,7 +414,7 @@ export function AuditoriaForensePage() {
                       </span>
                       <span className="font-mono">{formatBRL(cell.volume)}</span>
                     </div>
-                    <ProgressBar value={pct} colorClass={HEAT_COLOR[classe]} />
+                    <ProgressBar value={pct} colorClass={HEAT_COLOR[classe]} label={`${classe}: ${pct.toFixed(1)}% (${cell.qtd} tx)`} />
                   </div>
                 );
               })}

@@ -142,7 +142,7 @@ export function RiscoTributarioPage() {
                       </span>
                       <span className="font-mono">{formatBRL(valor)}</span>
                     </div>
-                    <ProgressBar value={pct} colorClass={CLASSE_COLOR_BAR[classe]} />
+                    <ProgressBar value={pct} colorClass={CLASSE_COLOR_BAR[classe]} label={`${classe}: ${pct.toFixed(1)}% (${cnt} fornec.)`} />
                   </div>
                 );
               })}
