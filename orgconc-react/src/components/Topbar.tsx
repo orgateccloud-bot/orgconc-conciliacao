@@ -66,7 +66,7 @@ export function Topbar({ title, dbStatus, onToggleSidebar, userEmail, onLogout }
           type="button"
           onClick={() => setPaletteOpen(true)}
           aria-label="Buscar e navegar (atalho Ctrl ou Cmd + K)"
-          className="relative w-full h-8 rounded-lg border bg-secondary/60 pl-9 pr-14 text-left text-xs text-muted-foreground hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="relative w-full h-8 rounded-lg border bg-secondary/60 pl-9 pr-14 text-left text-xs text-muted-foreground hover:bg-secondary focus:outline-hidden focus:ring-2 focus:ring-primary/30"
         >
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" aria-hidden="true" />
           Ir para…

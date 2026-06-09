@@ -126,7 +126,7 @@ export function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="voce@empresa.com"
-                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/30"
               />
             </div>
 
@@ -144,7 +144,7 @@ export function LoginPage() {
                   value={senha}
                   onChange={(e) => setSenha(e.target.value)}
                   placeholder="••••••••"
-                  className="flex h-10 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="flex h-10 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/30"
                 />
                 <button
                   type="button"

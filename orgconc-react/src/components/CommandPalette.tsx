@@ -91,7 +91,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm pt-[15vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-xs pt-[15vh]"
       onClick={onClose}
       role="presentation"
     >
@@ -111,7 +111,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             onKeyDown={onKeyDown}
             placeholder="Ir para…"
             aria-label="Buscar telas"
-            className="h-12 w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
+            className="h-12 w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-hidden"
           />
           <kbd className="hidden sm:inline-flex items-center rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
             esc
