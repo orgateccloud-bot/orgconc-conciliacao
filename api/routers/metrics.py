@@ -109,10 +109,13 @@ _MODELOS_TTL_S = 60
 async def modelos(
     request: Request,
     periodo: int = Query(30, ge=1, le=365),
+    user: TokenPayload = Depends(current_user),
 ):
-    """Uso e latencia media por modo de conciliacao."""
+    """Uso e latencia media por modo de conciliacao (cache 60s POR USER)."""
     _check_db()
-    cache_key = f"modelos:{periodo}"
+    # Cache por user: os dados de modo são org-scoped (RLS); chave global
+    # (modelos:{periodo}) vazava entre orgs na janela do TTL — mesma falha do #89.
+    cache_key = f"modelos:{user.sub}:{periodo}"
     agora = time.time()
     cached = _modelos_cache.get(cache_key)
     if cached and agora - cached[0] < _MODELOS_TTL_S:
