@@ -1,10 +1,11 @@
 """Cliente da Calculadora CBS/IBS (contrato IC-02).
 
 PRINCÍPIO (estudo de arquitetura ORGATEC): o OrgConc **orquestra, não recalcula**.
-Em produção, `apurar()` chama o motor oficial (SERPRO) — hospedado ou offline,
-mesmo contrato. Em dev/teste, o MODO "stub" usa uma calculadora interna
-determinística com alíquotas de **PILOTO** (valores de teste, jamais apuração
-oficial) para destravar o fluxo end-to-end sem depender do SERPRO (Fase 0).
+Em produção, `apurar()` chama a Calculadora oficial (RTC) — instância aberta do
+Portal de Tributos (consumo.tributos.gov.br) ou offline local, mesmo contrato.
+Em dev/teste, o MODO "stub" usa uma calculadora interna determinística com
+alíquotas de **PILOTO** (valores de teste, jamais apuração oficial) para
+destravar o fluxo end-to-end sem depender da rede (Fase 0).
 
 Config: CALCULADORA_MODO ("stub" | "hospedada" | "offline"), CALCULADORA_BASE_URL.
 """
@@ -119,14 +120,14 @@ _ENDPOINT_REGIME_GERAL = "calculadora/regime-geral"
 
 
 def _num(x) -> float:
-    """SERPRO devolve valores como string ('1000.00'); converte p/ float (0 se vazio)."""
+    """A Calculadora devolve valores como string ('1000.00'); converte p/ float (0 se vazio)."""
     if x is None or x == "":
         return 0.0
     return float(x)
 
 
-def _ic02_para_serpro(inp: OperacaoFiscalInput) -> dict:
-    """OperacaoFiscalInput (IC-02) → payload OperacaoInput da Calculadora SERPRO.
+def _ic02_para_rtc(inp: OperacaoFiscalInput) -> dict:
+    """OperacaoFiscalInput (IC-02) → payload OperacaoInput da Calculadora oficial (RTC).
 
     Mapeamento confirmado contra o OpenAPI/resposta real (POST /calculadora/regime-geral):
     documento_id→id, municipio_ibge(str)→municipio(int), uf→uf,
@@ -154,8 +155,8 @@ def _ic02_para_serpro(inp: OperacaoFiscalInput) -> dict:
     }
 
 
-def _serpro_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
-    """Resposta ROCDomain da Calculadora SERPRO → ApuracaoCBSIBS (IC-02 §3.2).
+def _rtc_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
+    """Resposta ROCDomain da Calculadora oficial (RTC) → ApuracaoCBSIBS (IC-02 §3.2).
 
     Achata objetos[].tribCalc.IBSCBS.gIBSCBS por item; usa total.tribCalc.IBSCBSTot
     p/ os valores agregados (fallback p/ soma dos itens). Alíquotas do header vêm do
@@ -206,7 +207,7 @@ def _serpro_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
         documento_id=inp.documento_id,
         versao_base=config.CBS_IBS_VERSAO_BASE,
         ambiente=config.CBS_IBS_AMBIENTE,
-        motor_versao=f"SERPRO Calculadora RTC (base {config.CBS_IBS_VERSAO_BASE})",
+        motor_versao=f"Calculadora oficial RTC (base {config.CBS_IBS_VERSAO_BASE})",
         uf=inp.uf,
         municipio_ibge=inp.municipio_ibge,
         data_fato_gerador=inp.data_fato_gerador,
@@ -228,37 +229,37 @@ def _serpro_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
         ),
         gIS=None,
         vTotTrib=_round2(v_uf_tot + v_mun_tot + v_cbs_tot),
-        fundamentacao_legal="LC 214/2025 — apuração CBS/IBS via Calculadora SERPRO (RTC).",
+        fundamentacao_legal="LC 214/2025 — apuração CBS/IBS via Calculadora oficial (RTC).",
         itens=itens_ap or None,
         payload_hash=payload_hash_de(inp),
         obtido_em=datetime.now(timezone.utc),
     )
 
 
-async def apurar_via_serpro(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
-    """Apura no motor oficial SERPRO (Fase 1): monta payload → chama → achata.
+async def apurar_via_calculadora(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
+    """Apura na Calculadora oficial (RTC): monta payload → chama → achata.
 
-    Auth/transporte em serpro_client (Bearer p/ API hospedada; sem auth p/ a
-    calculadora offline/aberta). Levanta SerproConfigError se faltar URL.
+    Transporte em calculadora_client (instância aberta/offline, sem auth).
+    Levanta CalculadoraConfigError se faltar CALCULADORA_BASE_URL.
     """
-    from api.services import serpro_client
+    from api.services import calculadora_client
 
-    payload = _ic02_para_serpro(inp)
+    payload = _ic02_para_rtc(inp)
     # Pre-flight (best-effort): avisa em log se a versão da base configurada divergir
     # da que o motor reporta — não bloqueia a apuração.
-    await serpro_client.checar_versao_base()
-    resp = await serpro_client.chamar_calculadora(payload, caminho=_ENDPOINT_REGIME_GERAL)
-    return _serpro_para_ic02(resp, inp)
+    await calculadora_client.checar_versao_base()
+    resp = await calculadora_client.chamar_calculadora(payload, caminho=_ENDPOINT_REGIME_GERAL)
+    return _rtc_para_ic02(resp, inp)
 
 
 async def apurar(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
     """Apura CBS/IBS de uma operação. Despacha por CALCULADORA_MODO.
 
     - "stub": calculadora interna determinística (PILOTO, sem rede). Fase 0.
-    - "hospedada"/"offline": motor oficial SERPRO via serpro_client (Fase 1).
+    - "hospedada"/"offline": Calculadora oficial (RTC) via calculadora_client.
     """
     modo = config.CALCULADORA_MODO
     if modo == "stub":
         return _apurar_stub(inp)
-    # Fase 1 — SERPRO-ready: auth/transporte prontos; mapeamento pendente da spec.
-    return await apurar_via_serpro(inp)
+    # Transporte pronto; o mapeamento IC-02↔RTC valida contra a instância oficial.
+    return await apurar_via_calculadora(inp)
