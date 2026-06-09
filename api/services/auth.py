@@ -92,8 +92,12 @@ def verificar_senha(senha: str, hash_armazenado: str) -> bool:
 
     Senhas com mais de 72 bytes sao truncadas a 72 bytes (comportamento
     historico do passlib com truncate_error=False; bcrypt usa no maximo 72).
-    Retorna False para hashes com formato invalido em vez de levantar excecao.
+    Retorna False (em vez de levantar excecao) para entradas invalidas —
+    inclusive senha/hash que nao sejam str (None, bytes), preservando a
+    paridade com o `except Exception` do passlib e evitando 500 no login.
     """
+    if not isinstance(senha, str) or not isinstance(hash_armazenado, str):
+        return False
     try:
         return bcrypt.checkpw(_senha_72(senha), hash_armazenado.encode("utf-8"))
     except (ValueError, TypeError):  # hash invalido / formato nao bcrypt

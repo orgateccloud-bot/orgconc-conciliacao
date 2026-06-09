@@ -36,3 +36,12 @@ def test_senha_acima_de_72_bytes_trunca_sem_quebrar():
 def test_hash_invalido_retorna_false_sem_excecao():
     assert verificar_senha("qualquer", "nao-e-um-hash-bcrypt") is False
     assert verificar_senha("qualquer", "") is False
+
+
+def test_entrada_nao_str_retorna_false_sem_excecao():
+    # Paridade com o passlib (except Exception): None/bytes nao podem virar 500
+    # no login — devem retornar False como qualquer hash invalido.
+    h = hash_senha("qualquer-coisa-123")
+    assert verificar_senha("x", None) is False              # hash None
+    assert verificar_senha(None, h) is False                # senha None
+    assert verificar_senha("x", h.encode("utf-8")) is False  # hash em bytes
