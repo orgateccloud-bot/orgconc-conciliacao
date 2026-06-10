@@ -30,31 +30,31 @@ depends_on = None
 
 _TABLE = "jobs"
 
-_RLS_SQL = """
-ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.jobs FORCE  ROW LEVEL SECURITY;
+# 1 statement por item: o preDeploy roda Alembic sobre asyncpg, que rejeita
+# múltiplos comandos num único execute ("cannot insert multiple commands into
+# a prepared statement").
+_RLS_STATEMENTS = (
+    "ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY",
+    "ALTER TABLE public.jobs FORCE ROW LEVEL SECURITY",
+    "ALTER TABLE public.jobs ALTER COLUMN org_id "
+    "SET DEFAULT NULLIF(current_setting('app.org_id', true), '')::uuid",
+    "DROP POLICY IF EXISTS org_isolation ON public.jobs",
+    "CREATE POLICY org_isolation ON public.jobs FOR ALL "
+    "USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) "
+    "WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid)",
+    "DROP POLICY IF EXISTS superadmin_read ON public.jobs",
+    "CREATE POLICY superadmin_read ON public.jobs FOR SELECT "
+    "USING (current_setting('app.superadmin', true) = 'on')",
+    # Worker da fila: claim/finalização cross-org. Permissiva (OR com a
+    # org_isolation); inerte sem app.worker='on' (fail-closed). Só o loop do
+    # worker (api/services/job_queue) seta o GUC.
+    "DROP POLICY IF EXISTS worker_access ON public.jobs",
+    "CREATE POLICY worker_access ON public.jobs FOR ALL "
+    "USING (current_setting('app.worker', true) = 'on') "
+    "WITH CHECK (current_setting('app.worker', true) = 'on')",
+)
 
-ALTER TABLE public.jobs ALTER COLUMN org_id
-  SET DEFAULT NULLIF(current_setting('app.org_id', true), '')::uuid;
-
-DROP POLICY IF EXISTS org_isolation ON public.jobs;
-CREATE POLICY org_isolation ON public.jobs FOR ALL
-  USING      (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid)
-  WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-
-DROP POLICY IF EXISTS superadmin_read ON public.jobs;
-CREATE POLICY superadmin_read ON public.jobs FOR SELECT
-  USING (current_setting('app.superadmin', true) = 'on');
-
--- Worker da fila: claim/finalização cross-org. Permissiva (OR com org_isolation);
--- inerte sem app.worker='on' (fail-closed). Só o loop do worker seta o GUC.
-DROP POLICY IF EXISTS worker_access ON public.jobs;
-CREATE POLICY worker_access ON public.jobs FOR ALL
-  USING      (current_setting('app.worker', true) = 'on')
-  WITH CHECK (current_setting('app.worker', true) = 'on');
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.jobs TO app_orgconc;
-"""
+_GRANT_APP = "GRANT SELECT, INSERT, UPDATE, DELETE ON public.jobs TO app_orgconc"
 
 
 def upgrade() -> None:
@@ -87,15 +87,14 @@ def upgrade() -> None:
         op.create_index("ix_jobs_status_criado", _TABLE, ["status", "criado_em"])
         op.create_index("ix_jobs_org", _TABLE, ["org_id"])
     # RLS + policies + grant: idempotente (DROP IF EXISTS antes de cada CREATE).
-    # Role app_orgconc pode não existir em ambientes locais — pula com aviso.
+    for stmt in _RLS_STATEMENTS:
+        op.execute(stmt)
+    # Role app_orgconc pode não existir fora de prod (staging/local) — pula o GRANT.
     bind = op.get_bind()
     tem_role = bind.execute(sa.text(
         "SELECT 1 FROM pg_roles WHERE rolname = 'app_orgconc'")).first()
     if tem_role:
-        op.execute(_RLS_SQL)
-    else:
-        op.execute(_RLS_SQL.replace(
-            "GRANT SELECT, INSERT, UPDATE, DELETE ON public.jobs TO app_orgconc;", ""))
+        op.execute(_GRANT_APP)
 
 
 def downgrade() -> None:
