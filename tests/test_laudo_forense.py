@@ -55,3 +55,45 @@ def test_construir_empresa_sem_cache_nao_vaza_dados():
     # Sem cache, todos os campos textuais ficam genéricos ("—") — nenhum dado de cliente.
     assert emp["razao_social"] == "—"
     assert emp["socio_nome"] == "—"
+
+
+def test_preparar_calculo_laudo_fase_pura():
+    """A fase de cálculo extraída (refactor 2.4) devolve os pré-cálculos sem render."""
+    memo_cnpj = "PAGAMENTO PIX 11.222.333/0001-81"  # pontuado: RX_CNPJ não pega espaços
+    txs = [
+        _tx("2026-01-05", -1500.0, memo=memo_cnpj), _tx("2026-01-20", 8000.0, memo=memo_cnpj),
+        _tx("2026-02-10", -500.0, nome="OUTRO FORN", memo=memo_cnpj),
+    ]
+    todos, saldos = laudo.montar_dados(txs)
+    cache = {"11222333000181": {
+        "razao_social": "ACME LTDA", "situacao": "BAIXADA",
+        "data_situacao": "2025-12-01", "porte": "ME",
+    }}
+    calc = laudo.preparar_calculo_laudo(todos, saldos, cache)
+
+    assert calc["n_total"] == 3
+    assert calc["meses"] == ["JAN/2026", "FEV/2026"]
+    assert calc["n_meses"] == 2
+    assert calc["periodo_str"] == "05/01/2026 a 10/02/2026"
+    assert round(calc["cred_total"], 2) == 8000.0
+    assert round(calc["deb_total"], 2) == -2000.0
+    assert round(calc["volume_bruto"], 2) == 10000.0
+    assert calc["anualizado"] > 0 and calc["multiplo"] >= 0
+    # Disposições classificadas: memo com CNPJ baixado ANTES da transação → pós-baixa.
+    disps = calc["todas_disps"]
+    assert len(disps) == 3
+    assert any(d.disposicao == "ALERTA_POS_BAIXA" for d in disps)
+    assert all(d.contraparte == "ACME LTDA" for d in disps if d.cnpj)
+    assert "agg" in calc and calc["agg"] is not None
+
+
+def test_preparar_calculo_alimenta_workbook_identico():
+    """gerar_laudo_workbook consome a fase pura — stats espelham o cálculo."""
+    txs = [_tx("2026-01-05", -100.0), _tx("2026-02-01", 300.0)]
+    todos, saldos = laudo.montar_dados(txs)
+    laudo.EMPRESA = laudo.construir_empresa("11222333000181", {})
+    calc = laudo.preparar_calculo_laudo(todos, saldos, {})
+    _, stats = laudo.gerar_laudo_workbook(todos, saldos, {})
+    for chave in ("n_total", "n_meses", "periodo_str", "cred_total",
+                  "deb_total", "volume_bruto", "anualizado", "multiplo"):
+        assert stats[chave] == calc[chave], chave
