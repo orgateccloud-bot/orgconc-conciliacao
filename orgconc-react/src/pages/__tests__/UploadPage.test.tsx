@@ -107,16 +107,16 @@ describe("UploadPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("mostra aviso de creditos ao selecionar o modo Opus", async () => {
+  it("mostra aviso de creditos ao selecionar o modo Fable", async () => {
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
     renderUpload();
     expect(
-      screen.queryByText(/consome ~10× mais créditos/i),
+      screen.queryByText(/custa ~3× mais que o Sonnet/i),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Opus" }));
+    await user.click(screen.getByRole("button", { name: "Fable 5" }));
     expect(
-      screen.getByText(/Opus consome ~10× mais créditos que Sonnet/i),
+      screen.getByText(/Fable 5 custa ~3× mais que o Sonnet/i),
     ).toBeInTheDocument();
   });
 

@@ -25,7 +25,7 @@ except ValueError:
     _RETRY_BASE_DELAY = 2.0
 
 # Timeout de parede por chamada a um modelo. Override via env. Default 240s
-# (extratos grandes + Sonnet/Opus podem passar de 90s).
+# (extratos grandes + Sonnet/Fable podem passar de 90s).
 try:
     _LLM_TIMEOUT_S = float(os.environ.get("ORGCONC_LLM_TIMEOUT_S", "240"))
 except ValueError:

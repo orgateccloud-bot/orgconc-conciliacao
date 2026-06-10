@@ -156,7 +156,7 @@ async def listar_transacoes_recentes(
 async def performance_modelos(db: AsyncSession, periodo_dias: int = 30) -> list[dict[str, Any]]:
     """Agrega uso e latencia media por modo de conciliacao.
 
-    Como `modo` mapeia para LLM/Multi/Simulacao (nao especifica Haiku/Sonnet/Opus),
+    Como `modo` mapeia para LLM/Multi/Simulacao (nao especifica Haiku/Sonnet/Fable),
     o endpoint expoe AT NIVEL DE MODO. latency_ms_avg pode ser None enquanto a
     coluna nao for populada (PR 5 apenas adiciona a coluna).
     """

@@ -4,9 +4,9 @@ Calcula custo em USD a partir de input/output tokens e logga estruturado.
 Permite alerta acima de threshold diario via ORGCONC_LLM_COST_ALERT_USD.
 
 Tabela de precos baseada em Anthropic (USD por 1M tokens). Override via env:
-    ORGCONC_LLM_PRICE_<MODEL>_IN / _OUT  (ex: ORGCONC_LLM_PRICE_OPUS_IN=18.0)
+    ORGCONC_LLM_PRICE_<MODEL>_IN / _OUT  (ex: ORGCONC_LLM_PRICE_FABLE_IN=12.0)
 
-A tabela usa "prefixo do model_id" como chave: opus / sonnet / haiku.
+A tabela usa "prefixo do model_id" como chave: fable / sonnet / haiku.
 """
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ log = logging.getLogger("orgconc.llm.metrics")
 
 # Precos default (USD / 1M tokens) — pode ser sobrescrito por env.
 # Atualizado p/ tabela oficial 2026 (claude.com/pricing#api):
-# Opus 4.5+ caiu para $5/$25 (era $15/$75 no Opus 4/4.1). O projeto usa opus-4-7.
+# Fable 5 (flagship, GA 2026-06-09) = $10/$50; Sonnet 4.6 = $3/$15; Haiku 4.5 = $1/$5.
 _DEFAULT_PRICES = {
-    "opus": {"input": 5.0, "output": 25.0},
+    "fable": {"input": 10.0, "output": 50.0},
     "sonnet": {"input": 3.0, "output": 15.0},
     "haiku": {"input": 1.0, "output": 5.0},
 }
@@ -37,7 +37,7 @@ _ENV_DIRECTION = {"input": "IN", "output": "OUT"}
 
 def _price_for(model_id: str, direction: str) -> float:
     """Retorna USD/1M tokens para o modelo e direcao (input|output)."""
-    key = "opus" if "opus" in model_id else "sonnet" if "sonnet" in model_id else "haiku"
+    key = "fable" if "fable" in model_id else "sonnet" if "sonnet" in model_id else "haiku"
     env_var = f"ORGCONC_LLM_PRICE_{key.upper()}_{_ENV_DIRECTION[direction]}"
     override = os.environ.get(env_var, "").strip()
     if override:
