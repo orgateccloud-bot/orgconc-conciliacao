@@ -21,13 +21,17 @@ import {
   fetchAuditTimeline,
   fetchDashboardBundle,
   fetchHealth,
+  fetchJobStatus,
   fetchMe,
   fetchTrustScore,
   fiscalConformidade,
   fiscalGerarCarta,
   fiscalLaudo,
+  fiscalLaudoAsync,
   fiscalLaudoBlob,
   fiscalLaudoResumo,
+  gerarLaudoComFila,
+  baixarJobResultado,
   fiscalListarCartas,
   fiscalProcessar,
   fiscalRiscoTributario,
@@ -746,5 +750,97 @@ describe("admin orgs e usuários", () => {
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ senha_nova: "novaSenha" });
     expect(out.detail).toBe("ok");
+  });
+});
+
+// ── Fila de jobs do laudo (P1 #9, backend #122) ──────────────────────────────
+
+describe("fila de jobs do laudo", () => {
+  const ofx = new File(["<OFX>"], "x.ofx");
+
+  function jobStatus(status: string, extra: Record<string, unknown> = {}) {
+    return jsonOk({
+      id: "j1", tipo: "laudo_forense", status, erro: null, tentativas: 1,
+      criado_em: null, iniciado_em: null, concluido_em: null,
+      resultado_nome: "laudo_acme.xlsx",
+      resultado_mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ...extra,
+    });
+  }
+
+  it("fiscalLaudoAsync: POST /v1/fiscal/laudo/async com formato na query", async () => {
+    const fn = stubFetch(jsonOk({ job_id: "j1", status: "PENDENTE", polling: "/v1/jobs/j1", resultado: "/v1/jobs/j1/resultado" }));
+    const sub = await fiscalLaudoAsync({ empresaCnpj: "C", arquivos: [ofx], formato: "xlsx" });
+    const [url, init] = callAt(fn);
+    expect(url).toBe("/v1/fiscal/laudo/async?formato=xlsx");
+    expect(init?.method).toBe("POST");
+    expect(sub.job_id).toBe("j1");
+  });
+
+  it("fetchJobStatus e baixarJobResultado usam /v1/jobs/{id}", async () => {
+    let fn = stubFetch(jobStatus("EXECUTANDO"));
+    const st = await fetchJobStatus("j1");
+    expect(callAt(fn)[0]).toBe("/v1/jobs/j1");
+    expect(st.status).toBe("EXECUTANDO");
+
+    fn = stubFetch(new Response("PK", {
+      status: 200,
+      headers: { "content-disposition": 'attachment; filename="laudo_acme.xlsx"' },
+    }));
+    const { filename } = await baixarJobResultado("j1");
+    expect(callAt(fn)[0]).toBe("/v1/jobs/j1/resultado");
+    expect(filename).toBe("laudo_acme.xlsx");
+  });
+
+  it("gerarLaudoComFila: submit -> polling -> download (viaFila=true)", async () => {
+    stubFetch(
+      jsonOk({ job_id: "j1", status: "PENDENTE", polling: "", resultado: "" }),
+      jobStatus("EXECUTANDO"),
+      jobStatus("CONCLUIDO"),
+      new Response("PK", {
+        status: 200,
+        headers: { "content-disposition": 'attachment; filename="laudo_acme.xlsx"' },
+      }),
+    );
+    const fases: string[] = [];
+    const out = await gerarLaudoComFila(
+      { empresaCnpj: "C", arquivos: [ofx], formato: "xlsx" },
+      (f) => fases.push(f),
+      1, // poll de 1ms no teste
+    );
+    expect(out.viaFila).toBe(true);
+    expect(out.filename).toBe("laudo_acme.xlsx");
+    expect(fases).toEqual(["PENDENTE", "EXECUTANDO", "CONCLUIDO"]);
+  });
+
+  it("gerarLaudoComFila: fila indisponivel (503) cai no fluxo sincrono", async () => {
+    stubFetch(
+      new Response(JSON.stringify({ detail: "Fila de jobs requer banco de dados configurado." }), {
+        status: 503, headers: { "content-type": "application/json" },
+      }),
+      new Response("PK", {
+        status: 200,
+        headers: { "content-disposition": 'attachment; filename="laudo_sync.xlsx"' },
+      }),
+    );
+    const fases: string[] = [];
+    const out = await gerarLaudoComFila(
+      { empresaCnpj: "C", arquivos: [ofx], formato: "xlsx" },
+      (f) => fases.push(f),
+      1,
+    );
+    expect(out.viaFila).toBe(false);
+    expect(out.filename).toBe("laudo_sync.xlsx");
+    expect(fases).toEqual(["SINCRONO"]);
+  });
+
+  it("gerarLaudoComFila: job com ERRO vira ApiError 422 (sem fallback)", async () => {
+    stubFetch(
+      jsonOk({ job_id: "j1", status: "PENDENTE", polling: "", resultado: "" }),
+      jobStatus("ERRO", { erro: "Falha ao ler OFX: x.ofx" }),
+    );
+    await expect(
+      gerarLaudoComFila({ empresaCnpj: "C", arquivos: [ofx], formato: "xlsx" }, undefined, 1),
+    ).rejects.toMatchObject({ status: 422, message: "Falha ao ler OFX: x.ofx" });
   });
 });

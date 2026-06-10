@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fiscalLaudoResumo,
-  fiscalLaudoBlob,
+  gerarLaudoComFila,
   listarClientes,
   type Cliente,
   type FiscalAuditoriaResumo,
@@ -143,11 +143,14 @@ export function AuditoriaForensePage() {
     if (!validar()) return;
     setBaixando(true);
     try {
-      const { blob, filename } = await fiscalLaudoBlob(
-        soDigitos(cnpj),
-        conta.trim(),
+      // Via fila de jobs (#122); fallback síncrono quando a fila não está
+      // disponível (sem banco / token sem org).
+      const { blob, filename } = await gerarLaudoComFila({
+        empresaCnpj: soDigitos(cnpj),
+        conta: conta.trim() || undefined,
         arquivos,
-      );
+        formato: "xlsx",
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
