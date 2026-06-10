@@ -31,7 +31,10 @@ Todas as mudanças relevantes do OrgConc. Formato baseado em
 - `docs/SLO.md` (metas propostas) e `docs/ROTACAO_SEGREDOS.md` (runbook).
 - Refactor do laudo: fase de cálculo pura `preparar_calculo_laudo` (#115) com
   prova ao centavo nos dados reais; laudo agora 100% determinístico (aba 7
-  ordenava por iteração de set).
+  ordenava por iteração de set). **Fase 2** (#118): agregados das abas
+  (transf. internas, classes de risco, fluxos, MEIs × teto, tributário,
+  pós-baixa) extraídos para funções puras da fase de cálculo — render só
+  renderiza; nova prova ao centavo (0 divergências em 262.939 células).
 
 ### Corrigido (2ª rodada 2026-06-09)
 - **Laudo (MD/HTML/PDF): "Volume anualizado projetado" mostrava o anualizado do

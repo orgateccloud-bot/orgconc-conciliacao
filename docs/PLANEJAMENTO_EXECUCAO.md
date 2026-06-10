@@ -94,10 +94,11 @@ Varredura read-only (10 agentes) cruzando roadmap × código. Achados que mudam 
 | ✅ Mergeado | P2 #10 `/v1` dual-mount (auth/infra fora por design) | [#113](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/113) |
 | ✅ Mergeado | P0 #5 E2E profundo com backend real (24/24, 2 rodadas) | [#114](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/114) |
 | ✅ Mergeado | 2.4 fase 1 — `preparar_calculo_laudo` + determinismo aba 7 (prova LOCAR ao centavo) | [#115](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/115) |
+| 🟢 PR aberto (2026-06-10) | 2.4 fase 2 — agregados das abas (risco/fluxos/MEIs/tributário/pós-baixa/transf. internas) na fase pura; prova ao centavo 0/262.939 | [#118](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/118) |
 | ✅ Mergeado | **Bugfix**: anualizado do Sumário sombreado pelo loop de MEIs (regressão do 59401c1e) | [#116](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/116) |
 | ✅ Criado | P2 #11 staging Railway (env+Postgres+web-staging) | `docs/STAGING.md` |
 | 🟡 Proposto (🔑 aprovar) | P2 #12 SLO · P2 #13 rotação | `docs/SLO.md` · `docs/ROTACAO_SEGREDOS.md` |
-| ⏭️ Restante | P1 #9 jobs assíncronos (🔑 worker) · 2.4 fase 2 (agregados das abas) · validação live da calculadora (🔑 spec) · migração do frontend p/ `/v1`+auth | — |
+| ⏭️ Restante | P1 #9 jobs assíncronos (🔑 worker) · 2.4 fase 3 (risk score por linha da aba 5 → fase pura) · validação live da calculadora (🔑 spec) · migração do frontend p/ `/v1`+auth | — |
 
 ## Execução 2026-06-09 — itens → PRs
 
