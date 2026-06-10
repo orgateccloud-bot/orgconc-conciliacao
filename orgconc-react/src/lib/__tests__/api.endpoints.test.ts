@@ -783,7 +783,7 @@ describe("fila de jobs do laudo", () => {
     expect(callAt(fn)[0]).toBe("/v1/jobs/j1");
     expect(st.status).toBe("EXECUTANDO");
 
-    fn = stubFetch(new Response(new Blob(["PK"]), {
+    fn = stubFetch(new Response("PK", {
       status: 200,
       headers: { "content-disposition": 'attachment; filename="laudo_acme.xlsx"' },
     }));
@@ -797,7 +797,7 @@ describe("fila de jobs do laudo", () => {
       jsonOk({ job_id: "j1", status: "PENDENTE", polling: "", resultado: "" }),
       jobStatus("EXECUTANDO"),
       jobStatus("CONCLUIDO"),
-      new Response(new Blob(["PK"]), {
+      new Response("PK", {
         status: 200,
         headers: { "content-disposition": 'attachment; filename="laudo_acme.xlsx"' },
       }),
@@ -818,7 +818,7 @@ describe("fila de jobs do laudo", () => {
       new Response(JSON.stringify({ detail: "Fila de jobs requer banco de dados configurado." }), {
         status: 503, headers: { "content-type": "application/json" },
       }),
-      new Response(new Blob(["PK"]), {
+      new Response("PK", {
         status: 200,
         headers: { "content-disposition": 'attachment; filename="laudo_sync.xlsx"' },
       }),
