@@ -131,7 +131,8 @@ def _ic02_para_rtc(inp: OperacaoFiscalInput) -> dict:
 
     Mapeamento confirmado contra o OpenAPI/resposta real (POST /calculadora/regime-geral):
     documento_id→id, municipio_ibge(str)→municipio(int), uf→uf,
-    data_fato_gerador→dataHoraEmissao (ISO), itens[].base_calculo→baseCalculo.
+    data_fato_gerador→dhFatoGerador (ISO; substitui o deprecated dataHoraEmissao),
+    itens[].base_calculo→baseCalculo.
     """
     itens = []
     for it in inp.itens or []:
@@ -148,7 +149,7 @@ def _ic02_para_rtc(inp: OperacaoFiscalInput) -> dict:
     return {
         "id": inp.documento_id,
         "versao": config.CBS_IBS_VERSAO_BASE,
-        "dataHoraEmissao": f"{inp.data_fato_gerador.isoformat()}T00:00:00-03:00",
+        "dhFatoGerador": f"{inp.data_fato_gerador.isoformat()}T00:00:00-03:00",
         "municipio": int(inp.municipio_ibge),
         "uf": inp.uf,
         "itens": itens,

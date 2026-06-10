@@ -97,6 +97,7 @@ class _FakeVersaoClient:
 
 @pytest.mark.asyncio
 async def test_obter_versao_db_parseia(monkeypatch):
+    # Fake responde só o formato LEGADO (versaoDbLocal) — exercita o fallback.
     monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "http://x/api")
     _FakeVersaoClient.versao = "V0029"
     monkeypatch.setattr(calculadora_client.httpx, "AsyncClient", _FakeVersaoClient)
@@ -104,6 +105,39 @@ async def test_obter_versao_db_parseia(monkeypatch):
     assert await calculadora_client.obter_versao_db() == "V0029"
     # Instância aberta: sem Authorization no pre-flight.
     assert "Authorization" not in _FakeVersaoClient.captured["headers"]
+
+
+class _FakeVersaoOficialClient:
+    """Responde o caminho OFICIAL (dados-abertos/versao → versaoDb) e registra
+    as URLs consultadas — formato verificado live na produção (2026-06-10)."""
+
+    urls: list = []
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def get(self, url, headers=None, **k):
+        _FakeVersaoOficialClient.urls.append(url)
+        if url.endswith("/calculadora/dados-abertos/versao"):
+            return _FakeResp({"versaoApp": "1.2.1", "versaoDb": "V0033", "ambiente": "pro"})
+        return _FakeResp({}, status=404)
+
+
+@pytest.mark.asyncio
+async def test_obter_versao_db_prefere_caminho_oficial(monkeypatch):
+    monkeypatch.setattr(config, "CALCULADORA_BASE_URL", "http://x/api")
+    monkeypatch.setattr(calculadora_client.httpx, "AsyncClient", _FakeVersaoOficialClient)
+    _FakeVersaoOficialClient.urls = []
+    calculadora_client._reset_versao_cache()
+    assert await calculadora_client.obter_versao_db() == "V0033"
+    # Achou no caminho oficial — não cai no legado /versao/status.
+    assert _FakeVersaoOficialClient.urls == ["http://x/api/calculadora/dados-abertos/versao"]
 
 
 @pytest.mark.asyncio
@@ -189,7 +223,9 @@ def test_ic02_para_rtc_monta_payload():
     assert p["uf"] == "GO"
     assert p["itens"][0]["baseCalculo"] == 1000.0
     assert p["itens"][0]["ncm"] == "22021000"
-    assert p["dataHoraEmissao"].startswith("2026-02-01T")
+    # dhFatoGerador substitui o deprecated dataHoraEmissao (validado live 2026-06-10).
+    assert p["dhFatoGerador"].startswith("2026-02-01T")
+    assert "dataHoraEmissao" not in p
 
 
 def test_rtc_para_ic02_achata_roc():

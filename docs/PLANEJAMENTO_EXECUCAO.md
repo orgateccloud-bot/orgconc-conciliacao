@@ -109,7 +109,11 @@ Varredura read-only (10 agentes) cruzando roadmap × código. Achados que mudam 
 | ✅ Mergeado em prod | UI do laudo via fila (fases na UI + fallback síncrono em 503/403); E2E real exercitou o fallback | [#124](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/124) |
 | ✅ Mergeado em prod | Observabilidade do incidente: ping de DB com log do erro real + sonda de banco no monitor (30min) | [#123](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/123) |
 | 🔧 Incidente resolvido | Prod ~32h sem DB no runtime (senha `app_orgconc` divergente — rotação parcial); reset via owner + variável + redeploy; senha do `app_orgconc` portanto JÁ rotacionada | post-mortem em `docs/postmortems/` · RUNBOOK §5 |
-| ⏭️ Restante | validação live da calculadora (🔑 spec) · migração do `/auth` p/ `/v1` (🔑 cookie path coordenado) · SLO aprovar (🔑) · rotação dos DEMAIS segredos (JWT/service/Anthropic — 🔑) | — |
+| ✅ **Validação live da calculadora** — a API oficial é ABERTA (descoberta 2026-06-10: sem credencial!); pipeline reproduziu o gabarito do Manual RTC na produção oficial (CBS R$ 36,00 + IBS-UF R$ 4,00, base V0033, 9/9 checks); ajustes do contrato real (`dhFatoGerador`, pre-flight `dados-abertos/versao`); p/ volume: componente offline self-hosted (recomendação RFB) | [#127](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/127) |
+| 🟢 PR aberto | Migração do `/auth` p/ `/v1` SEM quebrar sessões: dual-mount completo; só `refresh`/`logout` ficam na raiz (únicos que leem o cookie httpOnly path=/auth) | [#126](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/126) |
+| ✅ Aprovado pelo owner | **SLO VIGENTE** (P2 #12): 5 metas de `docs/SLO.md` aprovadas 2026-06-10 | `docs/SLO.md` |
+| ✅ Executado em prod | **Rotação de segredos** (P2 #13): JWT_SECRET + AUTH_TOKEN rotacionados 2026-06-10 (sem downtime) + app_orgconc (incidente). Pendente só do owner: ANTHROPIC_API_KEY · ADMIN_SENHA_HASH | CHANGELOG §Segurança |
+| ⏭️ Restante (🔑 somente owner) | rotacionar ANTHROPIC_API_KEY (console Anthropic) e ORGCONC_ADMIN_SENHA_HASH · (opcional) hospedar componente offline da calculadora p/ volume | — |
 
 ## Execução 2026-06-09 — itens → PRs
 
