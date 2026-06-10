@@ -92,14 +92,17 @@ app.include_router(jobs_router.router)
 # === Versionamento de API: /v1 (dual-mount, P2 #10) ===
 # As rotas de negócio respondem TAMBÉM sob /v1/* (alias estável p/ clientes de
 # API), mantendo a raiz como retrocompat do frontend atual — nada quebra.
-# Fora do /v1, de propósito:
-#  - auth_routes: o cookie de refresh tem path fixo "/auth" (escopo de segurança);
-#    sob /v1 o browser não o enviaria e a rotação falharia silenciosamente.
-#    Migra junto com o frontend, numa mudança coordenada.
-#  - /metrics e /app: infraestrutura (Prometheus/SPA), não-versionados.
+# auth_routes TAMBÉM responde sob /v1 — com UMA exceção de uso: o cookie
+# httpOnly de refresh é emitido com path fixo "/auth" (escopo mínimo), então o
+# browser só o envia para /auth/* — refresh e logout DEVEM ser chamados na
+# raiz (/auth/refresh, /auth/logout). Login/me/orgs/usuarios funcionam em
+# ambos (Set-Cookie no login define o path do cookie independentemente da URL
+# chamada). Documentado também em orgconc-react/src/lib/api.ts.
+# Fora do /v1, de propósito: /metrics e /app (infra Prometheus/SPA).
 # include_in_schema=False: o OpenAPI documenta o caminho canônico (raiz) uma vez.
 _V1_ROUTERS = (
     health.router,
+    auth_routes.router,
     clientes.router,
     conciliacao.router,
     exports.router,

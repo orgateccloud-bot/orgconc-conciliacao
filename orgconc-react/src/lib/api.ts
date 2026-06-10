@@ -1,7 +1,8 @@
-// Rotas de NEGÓCIO usam o prefixo versionado /v1 (dual-mount do backend, #113).
-// /auth/* fica na raiz de propósito: o cookie httpOnly de refresh tem path
-// fixo "/auth" — sob /v1 o browser não o enviaria e a rotação de sessão
-// quebraria silenciosamente. Migra numa mudança coordenada com o backend.
+// Rotas de NEGÓCIO e de AUTH usam o prefixo versionado /v1 (dual-mount do
+// backend). DUAS exceções ficam na raiz de propósito: /auth/refresh e
+// /auth/logout — são os únicos endpoints que LEEM o cookie httpOnly de
+// refresh, emitido com path fixo "/auth" (escopo mínimo); sob /v1 o browser
+// não o enviaria e a rotação de sessão quebraria silenciosamente.
 const TOKEN_KEY = "orgconc.access_token";
 
 export function getToken(): string | null {
@@ -19,6 +20,7 @@ export function setToken(token: string | null) {
 
 export async function apiLogout(): Promise<void> {
   try {
+    // Raiz de propósito: lê o cookie de refresh (path "/auth") p/ revogá-lo.
     await fetch("/auth/logout", {
       method: "POST",
       credentials: "include",
@@ -34,6 +36,7 @@ export async function apiLogout(): Promise<void> {
  */
 export async function apiRefresh(): Promise<string | null> {
   try {
+    // Raiz de propósito: único endpoint que o cookie de refresh alcança.
     const res = await fetch("/auth/refresh", { method: "POST", credentials: "include" });
     if (!res.ok) return null;
     const data = (await res.json()) as { access_token?: string };
@@ -186,14 +189,14 @@ export interface ConciliacaoResponse {
 }
 
 export async function login(email: string, senha: string) {
-  return apiFetch<LoginResponse>("/auth/login", {
+  return apiFetch<LoginResponse>("/v1/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, senha }),
   });
 }
 
 export async function fetchMe() {
-  return apiFetch<UserMe>("/auth/me");
+  return apiFetch<UserMe>("/v1/auth/me");
 }
 
 export async function conciliarOfx(
@@ -941,7 +944,7 @@ export interface UsuarioAdmin {
 }
 
 export async function listarOrgs(): Promise<OrgAdmin[]> {
-  return apiFetch<OrgAdmin[]>("/auth/orgs");
+  return apiFetch<OrgAdmin[]>("/v1/auth/orgs");
 }
 
 export async function criarOrg(data: {
@@ -949,11 +952,11 @@ export async function criarOrg(data: {
   cnpj?: string;
   plano?: string;
 }): Promise<{ id: string; nome: string; plano: string }> {
-  return apiFetch("/auth/orgs", { method: "POST", body: JSON.stringify(data) });
+  return apiFetch("/v1/auth/orgs", { method: "POST", body: JSON.stringify(data) });
 }
 
 export async function listarUsuarios(orgId: string): Promise<UsuarioAdmin[]> {
-  return apiFetch<UsuarioAdmin[]>(`/auth/usuarios?org_id=${encodeURIComponent(orgId)}`);
+  return apiFetch<UsuarioAdmin[]>(`/v1/auth/usuarios?org_id=${encodeURIComponent(orgId)}`);
 }
 
 export async function criarUsuario(data: {
@@ -963,14 +966,14 @@ export async function criarUsuario(data: {
   role?: string;
   nome?: string;
 }): Promise<{ id: string; email: string; org_id: string; role: string }> {
-  return apiFetch("/auth/usuarios", { method: "POST", body: JSON.stringify(data) });
+  return apiFetch("/v1/auth/usuarios", { method: "POST", body: JSON.stringify(data) });
 }
 
 export async function resetarSenhaUsuario(
   usuarioId: string,
   senhaNova: string,
 ): Promise<{ detail: string }> {
-  return apiFetch(`/auth/usuarios/${usuarioId}/senha`, {
+  return apiFetch(`/v1/auth/usuarios/${usuarioId}/senha`, {
     method: "POST",
     body: JSON.stringify({ senha_nova: senhaNova }),
   });
