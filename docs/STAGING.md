@@ -38,6 +38,21 @@ ao Postgres do staging — migrations rodam no banco de staging no preDeploy).
 3. (Opcional, dashboard) Conectar o serviço `web-staging` ao repo GitHub com
    branch `staging` para auto-deploy por push — hoje o deploy é via CLI.
 
+## Bootstrap do banco (feito em 2026-06-09) — e um ACHADO
+
+O 1º deploy falhou no `alembic upgrade head`: **a cadeia de migrations não é
+bootstrapável em banco vazio** (`relation "conciliacoes" does not exist`) — o
+schema base de produção nasceu fora do Alembic (mesma causa do incidente de CI
+#64). Já validou o propósito do staging no primeiro uso.
+
+Bootstrap aplicado (uma vez): `Base.metadata.create_all` (ORM, 20 tabelas) +
+`alembic stamp head` → daqui em diante o preDeploy valida normalmente cada
+migration NOVA contra o Postgres de staging. Follow-up opcional: migration
+000_bootstrap p/ tornar a cadeia auto-suficiente.
+
+Verificado: `GET /health` → `{"status":"ok","banco_dados":"ok"}` ·
+`alembic_version=022` · 20 tabelas.
+
 ## Custo & limpeza
 
 Serviço + Postgres pequenos (créditos do plano). Para desligar tudo:
