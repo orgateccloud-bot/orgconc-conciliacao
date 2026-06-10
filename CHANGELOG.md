@@ -23,6 +23,10 @@ Todas as mudanças relevantes do OrgConc. Formato baseado em
 - Remapeamento técnico, planejamento de execução e relatório executivo (#104).
 
 ### Alterado
+- **API versionada sob `/v1` (dual-mount)**: rotas de negócio respondem em
+  `/v1/*` e na raiz (retrocompat do frontend). Fora do `/v1`: auth/sessão
+  (cookie de refresh com path `/auth`), `/metrics` e `/app`. OpenAPI documenta
+  só o caminho canônico.
 - **CBS/IBS sem SERPRO**: removida a auth OAuth2/Consumer-Key e as vars
   `SERPRO_*`; `serpro_client.py` → `calculadora_client.py` (transporte aberto p/
   a calculadora oficial `consumo.tributos.gov.br` / offline). Em prod

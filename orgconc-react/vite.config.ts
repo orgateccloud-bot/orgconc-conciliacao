@@ -26,6 +26,7 @@ export default defineConfig({
     port: 5176,
     host: "127.0.0.1",
     proxy: {
+      "/v1":          "http://127.0.0.1:8765",
       "/health":      "http://127.0.0.1:8765",
       "/conciliar":   "http://127.0.0.1:8765",
       "/export":      "http://127.0.0.1:8765",

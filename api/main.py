@@ -87,6 +87,34 @@ app.include_router(guias_router.router)
 app.include_router(contratos_router.router)
 app.include_router(fiscal_router.router)
 
+# === Versionamento de API: /v1 (dual-mount, P2 #10) ===
+# As rotas de negócio respondem TAMBÉM sob /v1/* (alias estável p/ clientes de
+# API), mantendo a raiz como retrocompat do frontend atual — nada quebra.
+# Fora do /v1, de propósito:
+#  - auth_routes: o cookie de refresh tem path fixo "/auth" (escopo de segurança);
+#    sob /v1 o browser não o enviaria e a rotação falharia silenciosamente.
+#    Migra junto com o frontend, numa mudança coordenada.
+#  - /metrics e /app: infraestrutura (Prometheus/SPA), não-versionados.
+# include_in_schema=False: o OpenAPI documenta o caminho canônico (raiz) uma vez.
+_V1_ROUTERS = (
+    health.router,
+    clientes.router,
+    conciliacao.router,
+    exports.router,
+    conciliacoes_list.router,
+    metrics_router.router,
+    audit_router.router,
+    ai_router.router,
+    activity_router.router,
+    transacoes_router.router,
+    matchers_router.router,
+    guias_router.router,
+    contratos_router.router,
+    fiscal_router.router,
+)
+for _v1_router in _V1_ROUTERS:
+    app.include_router(_v1_router, prefix="/v1", include_in_schema=False)
+
 # Frontend React (SPA) — servido em /app quando o build existe (orgconc-react/dist).
 # Em produção o build é gerado no Dockerfile multi-stage e servido same-origin pela
 # própria API (GitHub Pages foi removido); este mount cobre prod e o uso local/Docker
