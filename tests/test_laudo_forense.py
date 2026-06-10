@@ -99,6 +99,60 @@ def test_preparar_calculo_alimenta_workbook_identico():
         assert stats[chave] == calc[chave], chave
 
 
+def test_fase2_agregados_das_abas_na_fase_pura():
+    """Fase 2 do refactor 2.4: os agregados que viviam nas abas (classe de
+    risco, fluxos, MEIs × teto, tributário, pós-baixa, transf. internas) saem
+    de preparar_calculo_laudo, e o stats do workbook espelha os mesmos valores.
+    """
+    memo_mei = "PAGAMENTO PIX 11.222.333/0001-81"
+    memo_baixada = "PAGAMENTO PIX 99.888.777/0001-66"
+    txs = [
+        _tx("2026-01-05", -90_000.0, memo=memo_mei),
+        _tx("2026-01-15", -5_000.0, memo=memo_baixada),
+        _tx("2026-02-10", -40_000.0, memo=memo_mei),
+        _tx("2026-03-01", 200_000.0, memo="RECEBIMENTO CLIENTE"),
+    ]
+    todos, saldos = laudo.montar_dados(txs)
+    cache = {
+        "11222333000181": {"razao_social": "MEI CAMINHONEIRO", "porte": "MICRO EMPRESA",
+                           "cnae_principal": "4930201", "situacao": "ATIVA"},
+        "99888777000166": {"razao_social": "BAIXADA LTDA", "situacao": "BAIXADA",
+                           "data_situacao": "2025-12-01", "porte": "ME"},
+    }
+    laudo.EMPRESA = laudo.construir_empresa("55444333000122", {})
+    calc = laudo.preparar_calculo_laudo(todos, saldos, cache)
+
+    # Risco e tributário cobrem todas as transações.
+    assert sum(v[0] for v in calc["classe_counts"].values()) == calc["n_total"]
+    assert sum(calc["cat_count"].values()) == calc["n_total"]
+    # MEI caminhoneiro (CNAE 4930-*) estoura o teto TAC anualizado.
+    assert calc["meis_det"]["meis"], "MEI deveria estourar o teto TAC"
+    assert calc["meis_det"]["meis"][0]["eh_tac"] is True
+    assert calc["meis_det"]["total_excesso"] > 0
+    assert calc["meis_det"]["n_meis"] == 1
+    # Pós-baixa detectada com total absoluto.
+    assert [p["dias"] for p in calc["pos_baixa"]] == [45]
+    assert calc["total_pb"] == 5_000.0
+    # Sem transferências internas neste cenário: líquido == bruto.
+    assert calc["vol_transf_interna"] == 0.0
+    assert calc["volume_liquido"] == calc["volume_bruto"]
+    assert set(calc["fluxos"]) == {"Auto-movimentacao (proprio CNPJ)",
+                                   "Mesma titularidade (transf. entre contas proprias)"}
+
+    # O workbook renderiza a partir da mesma fase pura — stats espelha calc.
+    _, stats = laudo.gerar_laudo_workbook(todos, saldos, cache)
+    assert stats["classe_counts"] == calc["classe_counts"]
+    assert stats["fluxos"] == calc["fluxos"]
+    assert stats["cat_count"] == calc["cat_count"]
+    assert stats["cat_volume"] == calc["cat_volume"]
+    assert stats["cat_retencao"] == calc["cat_retencao"]
+    assert stats["total_ret_5m"] == calc["total_ret_5m"]
+    assert stats["volume_liquido"] == calc["volume_liquido"]
+    assert stats["vol_transf_interna"] == calc["vol_transf_interna"]
+    assert stats["meis"] == calc["meis_det"]["meis"]
+    assert [p["dias"] for p in stats["pos_baixa"]] == [p["dias"] for p in calc["pos_baixa"]]
+
+
 def test_stats_anualizado_nao_e_sombreado_pelo_loop_de_meis():
     """Regressão do bug 59401c1e (reintroduzido na reconciliação #59 e refixado):
     o loop da aba 9 (MEIs) usava a variável `anualizado` e SOMBREAVA o anualizado

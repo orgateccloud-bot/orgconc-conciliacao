@@ -690,6 +690,176 @@ def aba_conformidade_fiscal(wb, conf):
     ws.freeze_panes = f"A{start + 2}"
 
 
+CATS_TRIBUTARIO = ["RETENCAO_PJ", "RETENCAO_PF", "OPERACAO_CREDITO", "IOF", "JUROS",
+                   "PAGAMENTO_TRIBUTO", "TARIFA", "PIX_RECEBIDO", "BOLETO",
+                   "COMPRA_CARTAO", "NAO_TRIBUTAVEL", "OUTRO"]
+
+
+def _calcular_transf_internas(todas_disps, cnpj_basico) -> float:
+    """Volume de transferências internas (auto-movimentação por próprio CNPJ +
+    mesma titularidade entre contas próprias), que NÃO representam movimentação
+    econômica real. Mesma detecção de `_calcular_fluxos_partes`, porém somada na
+    ordem única das transações — não derivar dos fluxos: a ordem de adição dos
+    floats difere e o total deixaria de bater ao centavo com o golden."""
+    vol = 0.0
+    for d in todas_disps:
+        txt = ((d.transacao.nome or "") + " " + (d.transacao.memo or "")).upper()
+        if (cnpj_basico and (d.cnpj == cnpj_basico or cnpj_basico in re.sub(r"\D", "", txt))) \
+           or "MESMA TIT" in txt or "MESMA TITULAR" in txt:
+            vol += abs(d.transacao.valor)
+    return vol
+
+
+def _calcular_fluxos_partes(todas_disps, cnpj_basico) -> dict:
+    """Fluxos data-driven com partes relacionadas (aba 8): auto-movimentação
+    (próprio CNPJ) + mesma titularidade. Partes relacionadas nominais
+    (coligadas/sócios) exigem cadastro manual."""
+    fluxos = {
+        "Auto-movimentacao (proprio CNPJ)": {"n": 0, "cred": 0.0, "deb": 0.0},
+        "Mesma titularidade (transf. entre contas proprias)": {"n": 0, "cred": 0.0, "deb": 0.0},
+    }
+    for d in todas_disps:
+        texto_up = ((d.transacao.nome or "") + " " + (d.transacao.memo or "")).upper()
+        if cnpj_basico and (d.cnpj == cnpj_basico or cnpj_basico in re.sub(r"\D", "", texto_up)):
+            target = fluxos["Auto-movimentacao (proprio CNPJ)"]
+        elif "MESMA TIT" in texto_up or "MESMA TITULAR" in texto_up:
+            target = fluxos["Mesma titularidade (transf. entre contas proprias)"]
+        else:
+            continue
+        target["n"] += 1
+        if d.transacao.valor > 0:
+            target["cred"] += d.transacao.valor
+        else:
+            target["deb"] += d.transacao.valor
+    return fluxos
+
+
+def _agregar_classes_risco(todas_disps, agg) -> dict:
+    """Distribuição por classe de risco (aba 6): {classe: [qtd, volume]}."""
+    classe_counts = {"CRITICO": [0, 0.0], "ALTO": [0, 0.0], "MEDIO": [0, 0.0], "BAIXO": [0, 0.0]}
+    for d in todas_disps:
+        t = d.transacao
+        cnpj = d.cnpj
+        info = d.info_cnpj
+        sit = info.get("situacao", "")
+        porte = info.get("porte", "")
+        meio = d.meio
+        mes = t.data[:7]
+        acum = agg.acumulado_mes.get((cnpj, mes), 0.0) if cnpj else 0.0
+        pv = detectar_primeira_vez(cnpj, t.data, agg)
+        vr = detectar_valor_redondo(t.valor)
+        sm = detectar_smurfing(cnpj, t.data, agg)
+        car = detectar_carrossel(cnpj, agg)
+        _, classe = calcular_risk_score(t.valor, d.disposicao, sit, porte, meio, vr, sm, car, pv, acum)
+        classe_counts[classe][0] += 1
+        classe_counts[classe][1] += abs(t.valor)
+    return classe_counts
+
+
+def _agregar_meis(todas_disps, cache, meses_obs) -> dict:
+    """MEIs fornecedores (aba 9): agrega débitos por CNPJ MICRO EMPRESA e
+    classifica MEI-TAC (LC 188/2021) vs MEI padrão, separando quem estoura o
+    teto anualizado correspondente."""
+    por_cnpj_mei = defaultdict(lambda: {"n": 0, "deb": 0.0})
+    for d in todas_disps:
+        if d.transacao.valor >= 0 or not d.cnpj:
+            continue
+        if d.info_cnpj.get("porte") != "MICRO EMPRESA":
+            continue
+        por_cnpj_mei[d.cnpj]["n"] += 1
+        por_cnpj_mei[d.cnpj]["deb"] += abs(d.transacao.valor)
+
+    meis_tac_ok, meis_tac_estourados = [], []
+    meis_padrao_ok, meis_padrao_estourados = [], []
+    for cnpj, dd in por_cnpj_mei.items():
+        info = cache.get(cnpj, {})
+        cnae = info.get("cnae_principal", "")
+        # `anualizado_mei`, nunca `anualizado`: no render antigo esse loop
+        # sombreava o anualizado da EMPRESA (bug 59401c1e); o escopo isolado
+        # desta função elimina o risco por construção.
+        anualizado_mei = dd["deb"] * 12 / max(meses_obs, 1)
+        teto = _limite_mei_por_cnae(cnae)
+        eh_tac = teto == LIMITE_MEI_TAC
+        excesso = anualizado_mei - teto if anualizado_mei > teto else 0.0
+        item = {
+            "cnpj": cnpj, "razao": info.get("razao_social", ""),
+            "cnae": cnae, "cnae_desc": info.get("cnae_descricao", ""),
+            "uf": info.get("uf", ""), "n": dd["n"],
+            "deb_5m": dd["deb"], "anualizado": anualizado_mei,
+            "teto": teto, "excesso": excesso, "eh_tac": eh_tac,
+        }
+        if eh_tac and excesso > 0:
+            meis_tac_estourados.append(item)
+        elif eh_tac:
+            meis_tac_ok.append(item)
+        elif excesso > 0:
+            meis_padrao_estourados.append(item)
+        else:
+            meis_padrao_ok.append(item)
+
+    todos_estourados = (
+        [(m, "MEI-TAC") for m in meis_tac_estourados] +
+        [(m, "MEI Padrao") for m in meis_padrao_estourados]
+    )
+    todos_estourados.sort(key=lambda x: -x[0]["anualizado"])
+    total_excesso = 0.0
+    for m, _tipo in todos_estourados:
+        total_excesso += m["excesso"]
+    return {
+        "n_meis": len(por_cnpj_mei),
+        "tac_ok": meis_tac_ok, "tac_estourados": meis_tac_estourados,
+        "padrao_ok": meis_padrao_ok, "padrao_estourados": meis_padrao_estourados,
+        "todos_estourados": todos_estourados,
+        "total_excesso": total_excesso,
+        "meis": [m for m, _ in todos_estourados],
+    }
+
+
+def _agregar_tributario(todas_disps):
+    """Status tributário (aba 10): qtd/volume/retenção por categoria e retenção
+    por mês. `total_ret_5m` somado na MESMA ordem/critério do render (apenas
+    categorias visíveis com retenção > 0)."""
+    cat_count = Counter()
+    cat_volume = defaultdict(float)
+    cat_retencao = defaultdict(float)
+    cat_por_mes = defaultdict(lambda: defaultdict(float))
+    for d in todas_disps:
+        t = d.transacao
+        porte = d.info_cnpj.get("porte", "")
+        trib = classificar_tributario(t.memo or "", t.nome or "", t.valor, d.cnpj or "", porte)
+        cat_count[trib["categoria"]] += 1
+        cat_volume[trib["categoria"]] += abs(t.valor)
+        cat_retencao[trib["categoria"]] += trib["valor_retencao"]
+        cat_por_mes[d.mes][trib["categoria"]] += trib["valor_retencao"]
+    total_ret_5m = 0.0
+    for cat in CATS_TRIBUTARIO:
+        if cat_count.get(cat, 0) and cat_retencao[cat] > 0:
+            total_ret_5m += cat_retencao[cat]
+    return cat_count, cat_volume, cat_retencao, cat_por_mes, total_ret_5m
+
+
+def _agregar_pos_baixa(todas_disps):
+    """Pagamentos pós-baixa (aba 11) ordenados por dias decrescentes + total
+    absoluto, somado na ordem da lista ordenada (igual ao render)."""
+    pos_baixa = []
+    for d in todas_disps:
+        if d.disposicao == "ALERTA_POS_BAIXA":
+            try:
+                db_d = date.fromisoformat(d.info_cnpj["data_situacao"][:10])
+                dt_d = date.fromisoformat(d.transacao.data[:10])
+                pos_baixa.append({
+                    "mes": d.mes, "t": d.transacao, "cnpj": d.cnpj,
+                    "info": d.info_cnpj, "dias": (dt_d - db_d).days,
+                })
+            except (ValueError, TypeError, KeyError):
+                pass
+    pos_baixa.sort(key=lambda x: -x["dias"])
+    total_pb = 0.0
+    for p in pos_baixa:
+        total_pb += abs(p["t"].valor)
+    return pos_baixa, total_pb
+
+
 def preparar_calculo_laudo(todos, saldos, cache) -> dict:
     """Fase de CÁLCULO do laudo (pura, sem render) — refator do fat file (2.4).
 
@@ -697,9 +867,12 @@ def preparar_calculo_laudo(todos, saldos, cache) -> dict:
     cache de CNPJ, e devolve um dict com todos os pré-cálculos que as abas
     consomem: período, totais, anualização/múltiplo (motor `analisar_regime` —
     laudo == motor), disposições forenses classificadas (incl. pós-baixa) e os
-    agregados. Mantida ao lado do render para a saída continuar idêntica ao
-    centavo (golden LOCAR); a fase 2 do desmembramento extrai os agregados
-    ainda entrelaçados nas abas (classe_counts/cat_*/meis/pos_baixa).
+    agregados por aba (fase 2 do desmembramento: classe de risco, fluxos com
+    partes relacionadas, MEIs × teto, tributário e pós-baixa). Mantida ao lado
+    do render para a saída continuar idêntica ao centavo (golden LOCAR).
+
+    Lê o global EMPRESA (cnpj_basico) — já montado por coletar_dados/chamador
+    antes da geração, e imutável durante ela.
     """
     n_total = len(todos)
     meses = list(saldos.keys())              # ordem cronológica (derivada dos dados)
@@ -760,6 +933,12 @@ def preparar_calculo_laudo(todos, saldos, cache) -> dict:
         d.mes = mes
         todas_disps.append(d)
 
+    agg = calcular_agregados(todas_disps)
+    cnpj_basico = EMPRESA.get("cnpj_basico", "")
+    vol_transf_interna = _calcular_transf_internas(todas_disps, cnpj_basico)
+    cat_count, cat_volume, cat_retencao, cat_por_mes, total_ret_5m = _agregar_tributario(todas_disps)
+    pos_baixa, total_pb = _agregar_pos_baixa(todas_disps)
+
     return {
         "n_total": n_total,
         "meses": meses,
@@ -776,7 +955,19 @@ def preparar_calculo_laudo(todos, saldos, cache) -> dict:
         "anualizado": anualizado,
         "multiplo": multiplo,
         "todas_disps": todas_disps,
-        "agg": calcular_agregados(todas_disps),
+        "agg": agg,
+        "vol_transf_interna": vol_transf_interna,
+        "volume_liquido": volume_bruto - vol_transf_interna,
+        "classe_counts": _agregar_classes_risco(todas_disps, agg),
+        "fluxos": _calcular_fluxos_partes(todas_disps, cnpj_basico),
+        "meis_det": _agregar_meis(todas_disps, cache, meses_obs),
+        "cat_count": cat_count,
+        "cat_volume": cat_volume,
+        "cat_retencao": cat_retencao,
+        "cat_por_mes": cat_por_mes,
+        "total_ret_5m": total_ret_5m,
+        "pos_baixa": pos_baixa,
+        "total_pb": total_pb,
     }
 
 
@@ -803,6 +994,19 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     multiplo = calc["multiplo"]
     todas_disps = calc["todas_disps"]
     agg = calc["agg"]
+    vol_transf_interna = calc["vol_transf_interna"]
+    volume_liquido = calc["volume_liquido"]
+    classe_counts = calc["classe_counts"]
+    fluxos = calc["fluxos"]
+    meis_det = calc["meis_det"]
+    cat_count = calc["cat_count"]
+    cat_volume = calc["cat_volume"]
+    cat_retencao = calc["cat_retencao"]
+    cat_por_mes = calc["cat_por_mes"]
+    total_ret_5m = calc["total_ret_5m"]
+    pos_baixa = calc["pos_baixa"]
+    total_pb = calc["total_pb"]
+    meis = meis_det["meis"]
 
     # ════════════════════════════════════════════════════════════════════
     # Aba 1: Capa / Indice
@@ -857,19 +1061,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
                 ws.cell(row=r, column=c).fill = ZEBRA_FILL
         r += 1
 
-    # Volume liquido = bruto menos transferencias internas (auto-movimentacao
-    # por proprio CNPJ + mesma titularidade entre contas proprias), que NAO
-    # representam movimentacao economica real. Mesma deteccao da aba 8.
-    _cnpj_basico = EMPRESA.get("cnpj_basico", "")
-    vol_transf_interna = 0.0
-    for _d in todas_disps:
-        _txt = ((_d.transacao.nome or "") + " " + (_d.transacao.memo or "")).upper()
-        if (_cnpj_basico and (_d.cnpj == _cnpj_basico or _cnpj_basico in re.sub(r"\D", "", _txt))) \
-           or "MESMA TIT" in _txt or "MESMA TITULAR" in _txt:
-            vol_transf_interna += abs(_d.transacao.valor)
-    volume_liquido = volume_bruto - vol_transf_interna
-
-    # Sumario rapido
+    # Sumario rapido (volume liquido/transf. internas vem da fase de calculo)
     r += 2
     ws.cell(row=r, column=1, value="SUMARIO EXECUTIVO").font = SUBTITLE_FONT
     ws.merge_cells(f"A{r}:F{r}")
@@ -1250,24 +1442,6 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     ws.cell(row=start, column=1, value="DISTRIBUICAO POR CLASSE DE RISCO").font = TITLE_FONT
     ws.merge_cells(f"A{start}:F{start}")
 
-    classe_counts = {"CRITICO": [0, 0.0], "ALTO": [0, 0.0], "MEDIO": [0, 0.0], "BAIXO": [0, 0.0]}
-    for d in todas_disps:
-        t = d.transacao
-        cnpj = d.cnpj
-        info = d.info_cnpj
-        sit = info.get("situacao", "")
-        porte = info.get("porte", "")
-        meio = d.meio
-        mes = t.data[:7]
-        acum = agg.acumulado_mes.get((cnpj, mes), 0.0) if cnpj else 0.0
-        pv = detectar_primeira_vez(cnpj, t.data, agg)
-        vr = detectar_valor_redondo(t.valor)
-        sm = detectar_smurfing(cnpj, t.data, agg)
-        car = detectar_carrossel(cnpj, agg)
-        _, classe = calcular_risk_score(t.valor, d.disposicao, sit, porte, meio, vr, sm, car, pv, acum)
-        classe_counts[classe][0] += 1
-        classe_counts[classe][1] += abs(t.valor)
-
     r = start + 2
     headers_h = ["Classe", "Qtd Transacoes", "% do Total", "Volume (R$)", "% Volume", "Acao Sugerida"]
     for c, h in enumerate(headers_h, start=1):
@@ -1368,27 +1542,6 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     ws.cell(row=start, column=1, value=f"MOVIMENTACAO COM PARTES RELACIONADAS — {razao}").font = TITLE_FONT
     ws.merge_cells(f"A{start}:E{start}")
 
-    # Fluxos data-driven: auto-movimentacao (proprio CNPJ) + mesma titularidade.
-    # Partes relacionadas nominais (coligadas/socios) exigem cadastro manual.
-    cnpj_basico = EMPRESA.get("cnpj_basico", "")
-    fluxos = {
-        "Auto-movimentacao (proprio CNPJ)": {"n": 0, "cred": 0.0, "deb": 0.0},
-        "Mesma titularidade (transf. entre contas proprias)": {"n": 0, "cred": 0.0, "deb": 0.0},
-    }
-    for d in todas_disps:
-        texto_up = ((d.transacao.nome or "") + " " + (d.transacao.memo or "")).upper()
-        if cnpj_basico and (d.cnpj == cnpj_basico or cnpj_basico in re.sub(r"\D", "", texto_up)):
-            target = fluxos["Auto-movimentacao (proprio CNPJ)"]
-        elif "MESMA TIT" in texto_up or "MESMA TITULAR" in texto_up:
-            target = fluxos["Mesma titularidade (transf. entre contas proprias)"]
-        else:
-            continue
-        target["n"] += 1
-        if d.transacao.valor > 0:
-            target["cred"] += d.transacao.valor
-        else:
-            target["deb"] += d.transacao.valor
-
     r = start + 2
     h = ["Entidade", "Qtd", "Creditos (R$)", "Debitos (R$)", "Volume Total (R$)"]
     for c, hd in enumerate(h, start=1):
@@ -1433,45 +1586,11 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     ws.cell(row=start+1, column=1, value="Lei Complementar 188/2021: MEI-TAC (caminhoneiros, CNAEs 4930-*, 5320-*, 4911-*) tem teto de R$ 251.600/ano. MEI padrao mantem R$ 81.000/ano.").font = Font(italic=True, color="64748B", size=9)
     ws.merge_cells(f"A{start+1}:J{start+1}")
 
-    # Agrega todos os MEIs (TAC e padrao)
-    por_cnpj_mei = defaultdict(lambda: {"n": 0, "deb": 0.0})
-    for d in todas_disps:
-        if d.transacao.valor >= 0 or not d.cnpj:
-            continue
-        if d.info_cnpj.get("porte") != "MICRO EMPRESA":
-            continue
-        por_cnpj_mei[d.cnpj]["n"] += 1
-        por_cnpj_mei[d.cnpj]["deb"] += abs(d.transacao.valor)
-
-    # Classifica cada MEI conforme CNAE
-    meis_tac_ok, meis_tac_estourados = [], []
-    meis_padrao_ok, meis_padrao_estourados = [], []
-    for cnpj, dd in por_cnpj_mei.items():
-        info = cache.get(cnpj, {})
-        cnae = info.get("cnae_principal", "")
-        # NÃO usar o nome `anualizado`: sombrearia o anualizado da EMPRESA (motor),
-        # que o stats lê DEPOIS deste loop — regressão do bug 59401c1e (o Sumário
-        # do MD/HTML/PDF mostrava o anualizado do último MEI, ex.: R$ 1.467,59
-        # em vez de R$ 168M no LOCAR). O XLSX não era afetado (lê antes do loop).
-        anualizado_mei = dd["deb"] * 12 / max(meses_obs, 1)
-        teto = _limite_mei_por_cnae(cnae)
-        eh_tac = teto == LIMITE_MEI_TAC
-        excesso = anualizado_mei - teto if anualizado_mei > teto else 0.0
-        item = {
-            "cnpj": cnpj, "razao": info.get("razao_social", ""),
-            "cnae": cnae, "cnae_desc": info.get("cnae_descricao", ""),
-            "uf": info.get("uf", ""), "n": dd["n"],
-            "deb_5m": dd["deb"], "anualizado": anualizado_mei,
-            "teto": teto, "excesso": excesso, "eh_tac": eh_tac,
-        }
-        if eh_tac and excesso > 0:
-            meis_tac_estourados.append(item)
-        elif eh_tac:
-            meis_tac_ok.append(item)
-        elif excesso > 0:
-            meis_padrao_estourados.append(item)
-        else:
-            meis_padrao_ok.append(item)
+    # Agregacao e classificacao TAC vs padrao vem da fase de calculo (meis_det)
+    meis_tac_ok = meis_det["tac_ok"]
+    meis_tac_estourados = meis_det["tac_estourados"]
+    meis_padrao_ok = meis_det["padrao_ok"]
+    meis_padrao_estourados = meis_det["padrao_estourados"]
 
     # Sumario
     r = start + 3
@@ -1493,7 +1612,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
          len(meis_padrao_ok), len(meis_padrao_estourados),
          "OK" if not meis_padrao_estourados else "ATENCAO"),
         ("TOTAL", "—",
-         len(por_cnpj_mei), len(meis_tac_ok) + len(meis_padrao_ok),
+         meis_det["n_meis"], len(meis_tac_ok) + len(meis_padrao_ok),
          len(meis_tac_estourados) + len(meis_padrao_estourados), "—"),
     ]
     for cat, teto, total, dentro, acima, status in linhas_sum:
@@ -1534,12 +1653,8 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     style_header(ws, r, 10)
     r += 1
 
-    todos_estourados = (
-        [(m, "MEI-TAC") for m in meis_tac_estourados] +
-        [(m, "MEI Padrao") for m in meis_padrao_estourados]
-    )
-    todos_estourados.sort(key=lambda x: -x[0]["anualizado"])
-    total_excesso = 0.0
+    todos_estourados = meis_det["todos_estourados"]
+    total_excesso = meis_det["total_excesso"]
 
     if not todos_estourados:
         ws.cell(row=r, column=1, value="(nenhum MEI excede o teto legal correspondente)").font = Font(italic=True, color="2F7D4F")
@@ -1567,7 +1682,6 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
                     ws.cell(row=r, column=c).fill = ALERT_FILL
                 elif r % 2 == 0:
                     ws.cell(row=r, column=c).fill = ZEBRA_FILL
-            total_excesso += m["excesso"]
             r += 1
 
         ws.cell(row=r, column=1, value=f"TOTAL ({len(todos_estourados)} MEIs)").font = TOTAL_FONT
@@ -1579,8 +1693,6 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     for col, w in {1: 4, 2: 12, 3: 20, 4: 38, 5: 32, 6: 5, 7: 8, 8: 16, 9: 17, 10: 17}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = f"A{start + 4}"
-    # Mantem para compatibilidade com codigo posterior
-    meis = [m for m, _ in todos_estourados]
 
     # ════════════════════════════════════════════════════════════════════
     # Aba 10: Status Tributario
@@ -1590,20 +1702,6 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     ws.cell(row=start, column=1, value=f"STATUS TRIBUTARIO CONSOLIDADO - {n_meses} MESES").font = TITLE_FONT
     ws.merge_cells(f"A{start}:{get_column_letter(ncol_trib)}{start}")
 
-    cat_count = Counter()
-    cat_volume = defaultdict(float)
-    cat_retencao = defaultdict(float)
-    cat_por_mes = defaultdict(lambda: defaultdict(float))
-
-    for d in todas_disps:
-        t = d.transacao
-        porte = d.info_cnpj.get("porte", "")
-        trib = classificar_tributario(t.memo or "", t.nome or "", t.valor, d.cnpj or "", porte)
-        cat_count[trib["categoria"]] += 1
-        cat_volume[trib["categoria"]] += abs(t.valor)
-        cat_retencao[trib["categoria"]] += trib["valor_retencao"]
-        cat_por_mes[d.mes][trib["categoria"]] += trib["valor_retencao"]
-
     r = start + 2
     headers = ["Categoria", "Qtd", "Volume (R$)", "Retencao (R$)"] + meses_curto
     for c, h in enumerate(headers, start=1):
@@ -1611,11 +1709,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     style_header(ws, r, ncol_trib)
     r += 1
 
-    CATS = ["RETENCAO_PJ", "RETENCAO_PF", "OPERACAO_CREDITO", "IOF", "JUROS",
-            "PAGAMENTO_TRIBUTO", "TARIFA", "PIX_RECEBIDO", "BOLETO",
-            "COMPRA_CARTAO", "NAO_TRIBUTAVEL", "OUTRO"]
-    total_ret_5m = 0.0
-    for cat in CATS:
+    for cat in CATS_TRIBUTARIO:
         qtd = cat_count.get(cat, 0)
         if qtd == 0:
             continue
@@ -1627,7 +1721,6 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         cret.number_format = "#,##0.00"
         if cat_retencao[cat] > 0:
             cret.font = Font(bold=True, color="D97706")
-            total_ret_5m += cat_retencao[cat]
         for i, mes in enumerate(meses, start=5):
             val = cat_por_mes[mes].get(cat, 0)
             cm = ws.cell(row=r, column=i, value=round(val, 2) if val else "")
@@ -1665,28 +1758,12 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     ws.cell(row=start+1, column=1, value="Transacoes a CNPJs ja BAIXADOS na data do pagamento - red flag forense").font = Font(italic=True, color="64748B", size=9)
     ws.merge_cells(f"A{start+1}:G{start+1}")
 
-    pos_baixa = []
-    for d in todas_disps:
-        if d.disposicao == "ALERTA_POS_BAIXA":
-            try:
-                db_d = date.fromisoformat(d.info_cnpj["data_situacao"][:10])
-                dt_d = date.fromisoformat(d.transacao.data[:10])
-                pos_baixa.append({
-                    "mes": d.mes, "t": d.transacao, "cnpj": d.cnpj,
-                    "info": d.info_cnpj, "dias": (dt_d - db_d).days,
-                })
-            except (ValueError, TypeError, KeyError):
-                pass
-
-    pos_baixa.sort(key=lambda x: -x["dias"])
-
     headers = ["#", "Mes", "Data", "Valor (R$)", "Razao Social", "Data Baixa", "Dias Apos"]
     r = start + 3
     for c, h in enumerate(headers, start=1):
         ws.cell(row=r, column=c, value=h)
     style_header(ws, r, 7)
     r += 1
-    total_pb = 0.0
     for i, p in enumerate(pos_baixa, start=1):
         cnpj_fmt = f"{p['cnpj'][:2]}.{p['cnpj'][2:5]}.{p['cnpj'][5:8]}/{p['cnpj'][8:12]}-{p['cnpj'][12:14]}"
         razao = p["info"].get("razao_social", "")[:35]
@@ -1703,7 +1780,6 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         for c in range(1, 8):
             ws.cell(row=r, column=c).border = THIN_BORDER
             ws.cell(row=r, column=c).fill = ALERT_FILL
-        total_pb += abs(p["t"].valor)
         r += 1
 
     ws.cell(row=r, column=1, value=f"TOTAL ({len(pos_baixa)} alertas)").font = TOTAL_FONT
