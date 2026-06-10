@@ -35,6 +35,9 @@ Todas as mudanças relevantes do OrgConc. Formato baseado em
   (transf. internas, classes de risco, fluxos, MEIs × teto, tributário,
   pós-baixa) extraídos para funções puras da fase de cálculo — render só
   renderiza; nova prova ao centavo (0 divergências em 262.939 células).
+  **Fase 3** (#120): risk score por transação anexado às disposições na fase
+  pura (`_anexar_risco_disps`); abas 5/6 só leem (elimina o cálculo 2× por
+  transação); mesma prova ao centavo.
 
 ### Corrigido (2ª rodada 2026-06-09)
 - **Laudo (MD/HTML/PDF): "Volume anualizado projetado" mostrava o anualizado do
