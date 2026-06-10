@@ -48,11 +48,11 @@ test.describe("Auditoria forense: OFX → resumo regime × teto", () => {
     expect(arquivo.suggestedFilename()).toMatch(/\.xlsx$/i);
   });
 
-  test("POST /fiscal/laudo/resumo responde JSON coerente para o extrato", async ({ page }) => {
-    // Prova de contrato da API real (sem UI): mesmo payload do fluxo acima.
+  test("POST /v1/fiscal/laudo/resumo responde JSON coerente para o extrato", async ({ page }) => {
+    // Prova de contrato da API real (sem UI): mesmo payload e caminho /v1 do app.
     await entrarComTokenDeServico(page, "/app/auditoria-forense");
     const fs = await import("fs");
-    const resp = await page.request.post("/fiscal/laudo/resumo", {
+    const resp = await page.request.post("/v1/fiscal/laudo/resumo", {
       headers: { Authorization: `Bearer ${TOKEN_SERVICO}` },
       multipart: {
         empresa_cnpj: "11222333000181",

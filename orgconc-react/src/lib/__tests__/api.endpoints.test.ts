@@ -158,7 +158,7 @@ describe("fetchHealth", () => {
     const fn = stubFetch(jsonOk({ status: "ok", banco_dados: "online" }));
     const out = await fetchHealth();
     const [url, init] = callAt(fn);
-    expect(url).toBe("/health");
+    expect(url).toBe("/v1/health");
     expect(init?.credentials).toBe("include");
     expect(out.status).toBe("ok");
     expect(out.banco_dados).toBe("online");
@@ -217,7 +217,7 @@ describe("apiFetchBlob", () => {
       }),
     );
     setToken("tk");
-    const { blob, filename } = await apiFetchBlob("/fiscal/laudo", { method: "POST" });
+    const { blob, filename } = await apiFetchBlob("/v1/fiscal/laudo", { method: "POST" });
     // Blob vem de response.blob() (undici/Node), realm diferente do Blob do jsdom
     // no CI Node 22 — toBeInstanceOf(Blob) falha. Checagem cross-realm via tag.
     expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
@@ -309,7 +309,7 @@ describe("conciliarOfx / conciliarCsv", () => {
     const fn = stubFetch(jsonOk({ modo: "sim" } as ConciliacaoResponse));
     await conciliarOfx([file], { simular: true, multi_modelo: true });
     const [url, init] = callAt(fn);
-    expect(url).toBe("/conciliar/ofx?simular=true");
+    expect(url).toBe("/v1/conciliar/ofx?simular=true");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBeInstanceOf(FormData);
   });
@@ -317,26 +317,26 @@ describe("conciliarOfx / conciliarCsv", () => {
   it("conciliarOfx: multi_modelo quando não simula", async () => {
     const fn = stubFetch(jsonOk({} as ConciliacaoResponse));
     await conciliarOfx([file], { multi_modelo: true });
-    expect(callAt(fn)[0]).toBe("/conciliar/ofx?multi_modelo=true");
+    expect(callAt(fn)[0]).toBe("/v1/conciliar/ofx?multi_modelo=true");
   });
 
   it("conciliarOfx: modelo específico", async () => {
     const fn = stubFetch(jsonOk({} as ConciliacaoResponse));
     await conciliarOfx([file], { modelo: "gpt-x" });
-    expect(callAt(fn)[0]).toBe("/conciliar/ofx?modelo=gpt-x");
+    expect(callAt(fn)[0]).toBe("/v1/conciliar/ofx?modelo=gpt-x");
   });
 
   it("conciliarOfx: sem opções não acrescenta query", async () => {
     const fn = stubFetch(jsonOk({} as ConciliacaoResponse));
     await conciliarOfx([file], {});
-    expect(callAt(fn)[0]).toBe("/conciliar/ofx");
+    expect(callAt(fn)[0]).toBe("/v1/conciliar/ofx");
   });
 
   it("conciliarCsv: POST /conciliar/csv com modelo", async () => {
     const fn = stubFetch(jsonOk({} as ConciliacaoResponse));
     await conciliarCsv([new File(["y"], "e.csv")], { modelo: "m1" });
     const [url, init] = callAt(fn);
-    expect(url).toBe("/conciliar/csv?modelo=m1");
+    expect(url).toBe("/v1/conciliar/csv?modelo=m1");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBeInstanceOf(FormData);
   });
@@ -347,7 +347,7 @@ describe("conciliarMatchers", () => {
     const fn = stubFetch(jsonOk({ cliente_id: "c1", total_transacoes: 5 } as MatchersResponse));
     const out = await conciliarMatchers("c1", [new File(["x"], "a.ofx")]);
     const [url, init] = callAt(fn);
-    expect(url).toBe("/matchers/conciliar");
+    expect(url).toBe("/v1/matchers/conciliar");
     expect(init?.method).toBe("POST");
     const fd = init?.body as FormData;
     expect(fd.get("cliente_id")).toBe("c1");
@@ -363,7 +363,7 @@ describe("clientes", () => {
     const a = await listarClientes();
     const b = await listarClientes();
     expect(a).toEqual(b);
-    expect(callAt(fn)[0]).toBe("/clientes");
+    expect(callAt(fn)[0]).toBe("/v1/clientes");
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
@@ -383,7 +383,7 @@ describe("clientes", () => {
     const fn = stubFetch(jsonOk({ id: "9", nome: "Novo", plano: "free" } as Cliente));
     const out = await criarCliente({ nome: "Novo" });
     const [url, init] = callAt(fn);
-    expect(url).toBe("/clientes");
+    expect(url).toBe("/v1/clientes");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ nome: "Novo" });
     expect(out.id).toBe("9");
@@ -393,7 +393,7 @@ describe("clientes", () => {
     const fn = stubFetch(jsonOk({ id: "9", nome: "Edit", plano: "pro" } as Cliente));
     await atualizarCliente("9", { nome: "Edit" });
     const [url, init] = callAt(fn);
-    expect(url).toBe("/clientes/9");
+    expect(url).toBe("/v1/clientes/9");
     expect(init?.method).toBe("PATCH");
     expect(JSON.parse(init?.body as string)).toEqual({ nome: "Edit" });
   });
@@ -405,19 +405,19 @@ describe("conciliações", () => {
   it("listarConciliacoes sem cliente_id", async () => {
     const fn = stubFetch(jsonOk([]));
     await listarConciliacoes();
-    expect(callAt(fn)[0]).toBe("/conciliacoes");
+    expect(callAt(fn)[0]).toBe("/v1/conciliacoes");
   });
 
   it("listarConciliacoes com cliente_id na query", async () => {
     const fn = stubFetch(jsonOk([]));
     await listarConciliacoes("c42");
-    expect(callAt(fn)[0]).toBe("/conciliacoes?cliente_id=c42");
+    expect(callAt(fn)[0]).toBe("/v1/conciliacoes?cliente_id=c42");
   });
 
   it("listarConciliacoesDoCliente usa rota por-cliente", async () => {
     const fn = stubFetch(jsonOk([]));
     await listarConciliacoesDoCliente("c7");
-    expect(callAt(fn)[0]).toBe("/conciliacoes/por-cliente/c7");
+    expect(callAt(fn)[0]).toBe("/v1/conciliacoes/por-cliente/c7");
   });
 });
 
@@ -455,20 +455,20 @@ describe("guias e contratos", () => {
   it("listarGuias sem clienteId", async () => {
     const fn = stubFetch(jsonOk([] as Guia[]));
     await listarGuias();
-    expect(callAt(fn)[0]).toBe("/guias");
+    expect(callAt(fn)[0]).toBe("/v1/guias");
   });
 
   it("listarGuias com clienteId", async () => {
     const fn = stubFetch(jsonOk([] as Guia[]));
     await listarGuias("c1");
-    expect(callAt(fn)[0]).toBe("/guias?cliente_id=c1");
+    expect(callAt(fn)[0]).toBe("/v1/guias?cliente_id=c1");
   });
 
   it("criarGuia faz POST /guias com JSON", async () => {
     const fn = stubFetch(jsonOk({ id: "g1" } as Guia));
     await criarGuia({ cliente_id: "c1", tipo: "DARF", valor: 100 });
     const [url, init] = callAt(fn);
-    expect(url).toBe("/guias");
+    expect(url).toBe("/v1/guias");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toMatchObject({ cliente_id: "c1", tipo: "DARF", valor: 100 });
   });
@@ -476,14 +476,14 @@ describe("guias e contratos", () => {
   it("listarContratos com clienteId", async () => {
     const fn = stubFetch(jsonOk([] as Contrato[]));
     await listarContratos("c1");
-    expect(callAt(fn)[0]).toBe("/contratos?cliente_id=c1");
+    expect(callAt(fn)[0]).toBe("/v1/contratos?cliente_id=c1");
   });
 
   it("criarContrato faz POST /contratos com JSON", async () => {
     const fn = stubFetch(jsonOk({ id: "k1" } as Contrato));
     await criarContrato({ cliente_id: "c1", descricao: "Aluguel", valor: 500 });
     const [url, init] = callAt(fn);
-    expect(url).toBe("/contratos");
+    expect(url).toBe("/v1/contratos");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toMatchObject({ descricao: "Aluguel", valor: 500 });
   });
@@ -498,7 +498,7 @@ describe("fiscal", () => {
     const fn = stubFetch(jsonOk({ cliente_id: "c1", documentos_processados: 2 }));
     await fiscalProcessar("c1", [ofx]);
     const [url, init] = callAt(fn);
-    expect(url).toBe("/fiscal/processar");
+    expect(url).toBe("/v1/fiscal/processar");
     expect(init?.method).toBe("POST");
     const fd = init?.body as FormData;
     expect(fd.get("cliente_id")).toBe("c1");
@@ -515,26 +515,26 @@ describe("fiscal", () => {
   it("fiscalConformidade sem classe_minima", async () => {
     const fn = stubFetch(jsonOk({ cliente_id: "c1", total: 0, fornecedores: [] }));
     await fiscalConformidade("c1");
-    expect(callAt(fn)[0]).toBe("/fiscal/conformidade/c1");
+    expect(callAt(fn)[0]).toBe("/v1/fiscal/conformidade/c1");
   });
 
   it("fiscalConformidade com classe_minima", async () => {
     const fn = stubFetch(jsonOk({ cliente_id: "c1", total: 0, fornecedores: [] }));
     await fiscalConformidade("c1", "ALTO");
-    expect(callAt(fn)[0]).toBe("/fiscal/conformidade/c1?classe_minima=ALTO");
+    expect(callAt(fn)[0]).toBe("/v1/fiscal/conformidade/c1?classe_minima=ALTO");
   });
 
   it("fiscalRiscoTributario faz GET /fiscal/risco-tributario/:id", async () => {
     const fn = stubFetch(jsonOk({ cliente_id: "c1", risco_total_anual: 0 }));
     await fiscalRiscoTributario("c1");
-    expect(callAt(fn)[0]).toBe("/fiscal/risco-tributario/c1");
+    expect(callAt(fn)[0]).toBe("/v1/fiscal/risco-tributario/c1");
   });
 
   it("fiscalGerarCarta faz POST /fiscal/gerar-carta/:id", async () => {
     const fn = stubFetch(jsonOk({ cliente_id: "c1", markdown: "## carta" }));
     const out = await fiscalGerarCarta("c1");
     const [url, init] = callAt(fn);
-    expect(url).toBe("/fiscal/gerar-carta/c1");
+    expect(url).toBe("/v1/fiscal/gerar-carta/c1");
     expect(init?.method).toBe("POST");
     expect(out.markdown).toBe("## carta");
   });
@@ -542,14 +542,14 @@ describe("fiscal", () => {
   it("fiscalListarCartas faz GET /fiscal/cartas/:id", async () => {
     const fn = stubFetch(jsonOk({ cliente_id: "c1", total: 0, cartas: [] }));
     await fiscalListarCartas("c1");
-    expect(callAt(fn)[0]).toBe("/fiscal/cartas/c1");
+    expect(callAt(fn)[0]).toBe("/v1/fiscal/cartas/c1");
   });
 
   it("fiscalLaudoResumo: POST /fiscal/laudo/resumo com FormData", async () => {
     const fn = stubFetch(jsonOk({ n_transacoes: 7 }));
     const out = await fiscalLaudoResumo("00.000.000/0001-00", "12345", [ofx]);
     const [url, init] = callAt(fn);
-    expect(url).toBe("/fiscal/laudo/resumo");
+    expect(url).toBe("/v1/fiscal/laudo/resumo");
     expect(init?.method).toBe("POST");
     const fd = init?.body as FormData;
     expect(fd.get("empresa_cnpj")).toBe("00.000.000/0001-00");
@@ -570,7 +570,7 @@ describe("fiscal", () => {
     expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
     expect(filename).toBe("laudo.xlsx");
     const [url, init] = callAt(fn);
-    expect(url).toBe("/fiscal/laudo");
+    expect(url).toBe("/v1/fiscal/laudo");
     expect((init?.body as FormData).get("conta")).toBe("999");
   });
 });
@@ -599,7 +599,7 @@ describe("fiscalLaudo", () => {
     expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
     expect(filename).toBe("meu-laudo.xlsx");
     const [url, init] = callAt(fn);
-    expect(url).toBe("/fiscal/laudo?formato=xlsx");
+    expect(url).toBe("/v1/fiscal/laudo?formato=xlsx");
     expect(init?.method).toBe("POST");
     expect((init?.headers as Headers).get("Authorization")).toBe("Bearer tk");
     const fd = init?.body as FormData;
@@ -658,50 +658,50 @@ describe("métricas e feeds", () => {
   it("fetchDashboardBundle usa periodo default 30", async () => {
     const fn = stubFetch(jsonOk({ kpis: {}, trend: [], distribuicao: [], heatmap: [] }));
     await fetchDashboardBundle();
-    expect(callAt(fn)[0]).toBe("/metrics/dashboard-bundle?periodo=30");
+    expect(callAt(fn)[0]).toBe("/v1/metrics/dashboard-bundle?periodo=30");
   });
 
   it("fetchDashboardBundle aceita periodo custom", async () => {
     const fn = stubFetch(jsonOk({}));
     await fetchDashboardBundle(7);
-    expect(callAt(fn)[0]).toBe("/metrics/dashboard-bundle?periodo=7");
+    expect(callAt(fn)[0]).toBe("/v1/metrics/dashboard-bundle?periodo=7");
   });
 
   it("fetchTrustScore default 30", async () => {
     const fn = stubFetch(jsonOk({ score: 90 }));
     const out = await fetchTrustScore();
-    expect(callAt(fn)[0]).toBe("/metrics/trust-score?periodo=30");
+    expect(callAt(fn)[0]).toBe("/v1/metrics/trust-score?periodo=30");
     expect(out.score).toBe(90);
   });
 
   it("fetchAuditTimeline default limit 10", async () => {
     const fn = stubFetch(jsonOk({ total: 0, eventos: [] }));
     await fetchAuditTimeline();
-    expect(callAt(fn)[0]).toBe("/audit/timeline?limit=10");
+    expect(callAt(fn)[0]).toBe("/v1/audit/timeline?limit=10");
   });
 
   it("fetchAuditEvento usa o id na rota", async () => {
     const fn = stubFetch(jsonOk({ id: "ev1" }));
     await fetchAuditEvento("ev1");
-    expect(callAt(fn)[0]).toBe("/audit/eventos/ev1");
+    expect(callAt(fn)[0]).toBe("/v1/audit/eventos/ev1");
   });
 
   it("fetchActivityFeed com limit custom", async () => {
     const fn = stubFetch(jsonOk([]));
     await fetchActivityFeed(5);
-    expect(callAt(fn)[0]).toBe("/activity/feed?limit=5");
+    expect(callAt(fn)[0]).toBe("/v1/activity/feed?limit=5");
   });
 
   it("fetchAiInsights default periodo=30 refresh=false", async () => {
     const fn = stubFetch(jsonOk({ insights: [], from_cache: false }));
     await fetchAiInsights();
-    expect(callAt(fn)[0]).toBe("/ai/insights/dashboard?periodo=30&refresh=false");
+    expect(callAt(fn)[0]).toBe("/v1/ai/insights/dashboard?periodo=30&refresh=false");
   });
 
   it("fetchAiInsights com refresh=true", async () => {
     const fn = stubFetch(jsonOk({ insights: [] }));
     await fetchAiInsights(15, true);
-    expect(callAt(fn)[0]).toBe("/ai/insights/dashboard?periodo=15&refresh=true");
+    expect(callAt(fn)[0]).toBe("/v1/ai/insights/dashboard?periodo=15&refresh=true");
   });
 });
 
