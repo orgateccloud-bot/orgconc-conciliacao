@@ -690,12 +690,17 @@ def aba_conformidade_fiscal(wb, conf):
     ws.freeze_panes = f"A{start + 2}"
 
 
-def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
-    wb = Workbook()
-    if "Sheet" in wb.sheetnames:
-        del wb["Sheet"]
+def preparar_calculo_laudo(todos, saldos, cache) -> dict:
+    """Fase de CÁLCULO do laudo (pura, sem render) — refator do fat file (2.4).
 
-    # ── Pre-calculos ────────────────────────────────────────────────────
+    Recebe as transações bucketadas (`montar_dados`), os saldos mensais e o
+    cache de CNPJ, e devolve um dict com todos os pré-cálculos que as abas
+    consomem: período, totais, anualização/múltiplo (motor `analisar_regime` —
+    laudo == motor), disposições forenses classificadas (incl. pós-baixa) e os
+    agregados. Mantida ao lado do render para a saída continuar idêntica ao
+    centavo (golden LOCAR); a fase 2 do desmembramento extrai os agregados
+    ainda entrelaçados nas abas (classe_counts/cat_*/meis/pos_baixa).
+    """
     n_total = len(todos)
     meses = list(saldos.keys())              # ordem cronológica (derivada dos dados)
     n_meses = len(meses)
@@ -721,12 +726,10 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
 
     # Disposicoes com classificacao forense
     todas_disps = []
-    fake_disps_para_agg = []
     for mes, t, r in todos:
         cnpj = _extrair_cnpj(t)
         info = cache.get(cnpj, {}) if cnpj else {}
         sit = info.get("situacao", "")
-        porte = info.get("porte", "")
         meio = detectar_meio(t.memo or "", t.nome or "")
         razao = info.get("razao_social", "")
 
@@ -756,9 +759,50 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         d.info_cnpj = info
         d.mes = mes
         todas_disps.append(d)
-        fake_disps_para_agg.append(d)
 
-    agg = calcular_agregados(fake_disps_para_agg)
+    return {
+        "n_total": n_total,
+        "meses": meses,
+        "n_meses": n_meses,
+        "meses_curto": meses_curto,
+        "ncol_trib": ncol_trib,
+        "periodo_str": periodo_str,
+        "cred_total": cred_total,
+        "deb_total": deb_total,
+        "saldo_ini_jan": saldo_ini_jan,
+        "saldo_fim_mai": saldo_fim_mai,
+        "volume_bruto": volume_bruto,
+        "meses_obs": meses_obs,
+        "anualizado": anualizado,
+        "multiplo": multiplo,
+        "todas_disps": todas_disps,
+        "agg": calcular_agregados(todas_disps),
+    }
+
+
+def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
+    wb = Workbook()
+    if "Sheet" in wb.sheetnames:
+        del wb["Sheet"]
+
+    # ── Pre-calculos (fase pura, extraída — ver preparar_calculo_laudo) ──
+    calc = preparar_calculo_laudo(todos, saldos, cache)
+    n_total = calc["n_total"]
+    meses = calc["meses"]
+    n_meses = calc["n_meses"]
+    meses_curto = calc["meses_curto"]
+    ncol_trib = calc["ncol_trib"]
+    periodo_str = calc["periodo_str"]
+    cred_total = calc["cred_total"]
+    deb_total = calc["deb_total"]
+    saldo_ini_jan = calc["saldo_ini_jan"]
+    saldo_fim_mai = calc["saldo_fim_mai"]
+    volume_bruto = calc["volume_bruto"]
+    meses_obs = calc["meses_obs"]
+    anualizado = calc["anualizado"]
+    multiplo = calc["multiplo"]
+    todas_disps = calc["todas_disps"]
+    agg = calc["agg"]
 
     # ════════════════════════════════════════════════════════════════════
     # Aba 1: Capa / Indice
@@ -1284,9 +1328,11 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     style_header(ws, r, 8)
     r += 1
 
-    # Agrega por aparicoes
+    # Agrega por aparicoes. Desempate por CNPJ: sem ele, empates saem na ordem
+    # de iteração do set (hash-dependente) e a aba muda a cada execução —
+    # ~3,6k células instáveis flagradas no diff de regressão do refactor.
     aparicoes = Counter(d.cnpj for d in todas_disps if d.cnpj)
-    for cnpj in sorted(cnpjs_unicos_usados, key=lambda c: -aparicoes[c]):
+    for cnpj in sorted(cnpjs_unicos_usados, key=lambda c: (-aparicoes[c], c)):
         info = cache.get(cnpj, {})
         fmt = f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:14]}"
         is_baixada = "BAIXADA" in info.get("situacao", "") or "INAPTA" in info.get("situacao", "")
