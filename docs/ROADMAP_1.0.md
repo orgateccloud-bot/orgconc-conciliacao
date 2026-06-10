@@ -18,38 +18,38 @@
 | 1 | ✅ **Cobertura de testes do frontend + gate no CI** (feito 2026-06-09) | 🤖 | 17/17 páginas + CommandPalette/AuditEventModal/AIInsightsPanel + `api.ts`; 249 testes; cobertura ~78% com `coverage.thresholds`; CI roda `test:coverage` |
 | 2 | ✅ **Revogação de refresh token no logout** (verificado 2026-06-09) | 🤖 | já funcional (`revogar_por_hash` no logout; `logout-all`; reset/troca de senha). Adicionados testes (logout-all, idempotência) + docstring do modelo de revogação. *Denylist do access JWT por jti fica p/ P1.* |
 | 3 | ✅ **Testes de rate-limit + headers `X-RateLimit-*`** (feito 2026-06-09) | 🤖 | `tests/test_rate_limit.py` (throttle 429 no CI); handler 429 customizado adiciona `X-RateLimit-Limit/Remaining/Reset` + `Retry-After` (sem `headers_enabled` global, que quebraria 34 endpoints) |
-| 4 | Limpar 3 policies RLS legadas inertes | 🤖 preparo · 🔑 aplicar | migration de `DROP POLICY` revisável; aplicação em prod coordenada |
-| 5 | E2E mais profundo | 🤖 | specs: upload OFX→resultado, fluxo de auditoria, erros de negócio |
+| 4 | 🟡 **Limpar policies RLS legadas inertes** (preparado, HOLD) | 🤖 preparo · 🔑 aplicar | migration 021 (`DROP POLICY` idempotente, 11 tabelas) em [#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107) (draft) — aplicação coordenada (merge dispara alembic) |
+| 5 | ⚠️ E2E mais profundo — **adiado** | 🤖 | risco de flakiness no CI (operações fiscais/timeout); 4 specs atuais verdes |
 
 ## P1 — Fiscal & abrangência (valor de negócio)
 | # | Item | Tipo | Entrega |
 |---|------|------|---------|
-| 6 | **Remover SERPRO** + apontar a calculadora CBS/IBS para a **API oficial (portal Tributos sobre Bens e Serviços)** | 🤖 remoção/generalização · 🔑 spec do endpoint live | tira a auth OAuth2/Consumer-Key SERPRO e o naming; mantém o transporte genérico (`CALCULADORA_BASE_URL`, instância aberta/offline `consumo.tributos.gov.br`); atualiza config/testes/docs |
-| 7 | Persistir apuração CBS/IBS | 🤖 | já há `apuracao_cbs_ibs` (migration 013) — garantir que `POST /fiscal/apurar` grava documento_id + versao_base + resultado + `payload_hash` |
-| 8 | Catálogo de anomalias AN-01..18 no laudo | 🤖 | gerar alertas estruturados (hoje só 3 flags: MEI_SEM_CTE, REDE_FROTA_TYPE, PARTE_RELACIONADA) |
+| 6 | ✅ **Remover SERPRO** + generalizar p/ calculadora oficial (feito 2026-06-09) | 🤖 · 🔑 spec live | [#106](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/106): removeu OAuth2/Consumer-Key + vars SERPRO_*; `serpro_client.py`→`calculadora_client.py` (transporte aberto). Validação contra a API oficial live = 🔑 follow-up |
+| 7 | 🟡 **Persistir apuração CBS/IBS (idempotência)** — preparado, HOLD | 🤖 preparo · 🔑 aplicar | UNIQUE `(documento_id, versao_base)` + UPSERT (migration 022) em [#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107) (draft) |
+| 8 | ❌ ~~Catálogo de anomalias AN-01..18~~ — **descartado** | — | taxonomia é do OrgAudi/rural (NFA-e SEFAZ-GO), não cabe no OrgConc (cruzamento entre contas). OrgConc já tem catálogo próprio em `matchers/forensics.py`. Caminho futuro: catálogo NATIVO |
 | 9 | Jobs assíncronos p/ tarefas fiscais longas | 🔑 | worker/fila no Railway (calculadora/laudo deixam de ser bloqueantes) |
 
 ## P2 — Governança & escala (rumo ao 1.0 formal)
 | # | Item | Tipo | Entrega |
 |---|------|------|---------|
-| 10 | CHANGELOG + versionamento de API (`/v1`) + critério de 1.0 | 🤖 | governança de release |
+| 10 | 🟢 CHANGELOG ✅ ([#105](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/105)) · ⚠️ `/v1` adiado | 🤖 | CHANGELOG (Keep a Changelog + SemVer) em prod; `/v1` é breaking (16 routers + 40+ paths) — confirmar abordagem dual-mount |
 | 11 | Staging dedicado | 🔑 | Railway env + Supabase branch (a maior lacuna citada por todos) |
 | 12 | SLA/SLO + observabilidade pós-deploy | 🔑 | metas + Sentry/logs centralizados confirmados em prod |
 | 13 | Rotação de segredos / key management | 🔑 | rotação do JWT secret + chaves |
 
 ---
 
-## Ordem de execução (modo automático)
-`P0 #1 → #2 → #3 → #5 → P1 #6 → #7 → P0 #4 (preparo) → P1 #8 → P2 #10`
+## Progresso (2026-06-09)
+Feito e em prod: **P0 #1,#2,#3** ([#104](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/104)) · **P1 #6** ([#106](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/106)) · **P2 #10 CHANGELOG** ([#105](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/105)) · 3.4 TS strict (anterior).
+Preparado, HOLD (aplicar = 🔑): **P0 #4 + P1 #7** ([#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107) draft).
+Descartado: **P1 #8** (rural). Adiado: **P0 #5**, **2.4** refator laudo, **/v1**. 🔑 infra: **#9, #11, #12, #13** + spec live do #6.
 
-Itens 🔑 (#9, #11, #12, #13 e a parte live do #6) ficam para quando você liberar infra/credenciais/spec.
-
-## Critério de 1.0 (proposto)
-- [ ] Cobertura: backend ≥ 80% (hoje 74%) · ✅ frontend ≥ 70% — ~78% com gate no CI (2026-06-09).
-- [ ] E2E cobrindo os fluxos críticos (conciliação, laudo, auth).
-- [ ] CBS/IBS sem SERPRO, apontando a calculadora oficial + apuração persistida.
-- [ ] Hardening P0 completo (refresh revogável, rate-limit testado, RLS sem drift).
-- [ ] Staging + rollback + SLA/SLO documentados.
-- [ ] CHANGELOG + versionamento de API.
+## Critério de 1.0 (status)
+- [x] ✅ **Cobertura: backend 80.2%** (gate 80, #110) · **frontend 88.6%** (gate 86, #109) — ambos com gate no CI.
+- [~] E2E: happy paths ✅; fluxos profundos (upload→resultado, auditoria) adiados.
+- [~] CBS/IBS sem SERPRO ✅ (#106) + apuração persistida idempotente — preparada (HOLD #107).
+- [~] Hardening P0: ✅ refresh revogável, ✅ rate-limit testado; RLS sem drift preparado (HOLD #107).
+- [ ] Staging + rollback + SLA/SLO documentados — 🔑.
+- [~] CHANGELOG ✅ (#105) + versionamento `/v1` — adiado.
 
 > Histórico desta maratona (2026-06-09): #89–94 (dashboard), #95 (login), #96–98 (deps), #99 (bcrypt 5/sem passlib), #100 (Tailwind 4).

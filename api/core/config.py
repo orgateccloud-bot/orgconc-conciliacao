@@ -147,7 +147,7 @@ _MODELOS_VALIDOS = dict(_model_registry.DEFAULTS)  # {familia: (id, label)}
 def _multi_de_validos() -> list[tuple[str, str, str]]:
     return [
         (_MODELOS_VALIDOS[f][0], _MODELOS_VALIDOS[f][1], _model_registry.EMOJI.get(f, ""))
-        for f in ("opus", "sonnet", "haiku")
+        for f in ("fable", "sonnet", "haiku")
         if f in _MODELOS_VALIDOS
     ]
 
@@ -185,19 +185,12 @@ CNPJ_ENRICH_TIMEOUT_S: float = float(os.environ.get("CNPJ_ENRICH_TIMEOUT_S", "10
 
 # === CALCULADORA CBS/IBS (contrato IC-02 — reforma tributária, LC 214/2025) ===
 # MODO: "stub" = calculadora interna de teste (sem rede, valores PILOTO); o OrgConc
-# NUNCA recalcula tributos em produção — "hospedada"/"offline" chamam o motor
-# oficial (SERPRO) via CALCULADORA_BASE_URL (mesma API nos dois modos). Fase 1.
+# NUNCA recalcula tributos em produção — "hospedada"/"offline" chamam a Calculadora
+# oficial (RTC) via CALCULADORA_BASE_URL. Alvo: instância aberta do Portal de
+# Tributos (consumo.tributos.gov.br) ou offline local — sem autenticação.
 CALCULADORA_MODO: str = os.environ.get("CALCULADORA_MODO", "stub").strip().lower()
 CALCULADORA_BASE_URL: str = os.environ.get("CALCULADORA_BASE_URL", "").strip()
 CALCULADORA_TIMEOUT_S: float = float(os.environ.get("CALCULADORA_TIMEOUT_S", "15"))
-# Credenciais SERPRO (Fase 1) — área do cliente cliente.serpro.gov.br. Sem elas,
-# o modo hospedada/offline falha com erro de config claro (apurar continua no
-# stub se CALCULADORA_MODO=stub). Token via OAuth2 client_credentials.
-SERPRO_CONSUMER_KEY: str = os.environ.get("SERPRO_CONSUMER_KEY", "").strip()
-SERPRO_CONSUMER_SECRET: str = os.environ.get("SERPRO_CONSUMER_SECRET", "").strip()
-SERPRO_TOKEN_URL: str = os.environ.get(
-    "SERPRO_TOKEN_URL", "https://gateway.apiserpro.serpro.gov.br/token"
-).strip()
 # Gate de proveniência (IC-02 §4): versão da base de regras + ambiente.
 CBS_IBS_VERSAO_BASE: str = os.environ.get("CBS_IBS_VERSAO_BASE", "V0033").strip()
 CBS_IBS_AMBIENTE: str = os.environ.get("CBS_IBS_AMBIENTE", "PILOTO").strip().upper()

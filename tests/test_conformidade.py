@@ -10,6 +10,7 @@ from api.matchers.conformidade import (
     ConformidadeScore,
     _classe,
     _detectar_flags,
+    _extrair_cnpj,
     calcular_conformidade_fornecedor,
     classificar_risco,
 )
@@ -156,3 +157,289 @@ def test_score_sem_pagamento_mas_com_nf():
     scores = calcular_conformidade_fornecedor(docs, txs)
     assert scores[0].conformidade_pct == 100.0
     assert scores[0].risco_classe == "BAIXO"
+
+
+# ────────────────────────────────────────────────────────────────────────
+# _extrair_cnpj — formatado, bruto (14 dígitos) e ausência
+# ────────────────────────────────────────────────────────────────────────
+
+
+def test_extrair_cnpj_formatado_com_barra():
+    """CNPJ no formato 00.000.000/0000-00 (separador barra)."""
+    tx = _Tx(data=date(2026, 4, 1), valor=-10.0, nome="FORN 12.345.678/0001-90")
+    assert _extrair_cnpj(tx) == "12345678000190"
+
+
+def test_extrair_cnpj_formatado_com_espaco():
+    """A regex aceita espaço no lugar da barra antes do bloco de filial."""
+    tx = _Tx(data=date(2026, 4, 1), valor=-10.0, memo="PIX 12.345.678 0001-90")
+    assert _extrair_cnpj(tx) == "12345678000190"
+
+
+def test_extrair_cnpj_bruto_14_digitos():
+    """Sem pontuação: 14 dígitos contíguos no memo (RX_CNPJ_BRUTO)."""
+    tx = _Tx(data=date(2026, 4, 1), valor=-10.0, memo="TED 12345678000190 PAGTO")
+    assert _extrair_cnpj(tx) == "12345678000190"
+
+
+def test_extrair_cnpj_ausente_retorna_none():
+    """Sem CNPJ identificável → None."""
+    tx = _Tx(data=date(2026, 4, 1), valor=-10.0, nome="MERCADO", memo="COMPRA CARTAO")
+    assert _extrair_cnpj(tx) is None
+
+
+def test_extrair_cnpj_nome_e_memo_none_nao_quebra():
+    """nome/memo None devem ser tratados como string vazia (sem AttributeError)."""
+    @dataclass
+    class _TxNone:
+        data: date
+        valor: float
+        nome = None
+        memo = None
+    tx = _TxNone(data=date(2026, 4, 1), valor=-10.0)
+    assert _extrair_cnpj(tx) is None
+
+
+# ────────────────────────────────────────────────────────────────────────
+# calcular_conformidade_fornecedor — ramos de agregação
+# ────────────────────────────────────────────────────────────────────────
+
+
+def test_credito_e_pagamento_sem_cnpj_sao_ignorados():
+    """Transações positivas (crédito) e sem CNPJ não geram fornecedor."""
+    txs = [
+        _Tx(data=date(2026, 4, 1), valor=500.0, nome="DEPOSITO 12.345.678/0001-90"),
+        _Tx(data=date(2026, 4, 2), valor=-300.0, nome="SEM CNPJ AQUI"),
+    ]
+    scores = calcular_conformidade_fornecedor([], txs)
+    assert scores == []
+
+
+def test_data_string_valida_define_periodo():
+    """Quando t.data é string AAAA-MM-DD, vira date e alimenta período."""
+    txs = [
+        _Tx(data="2026-04-10", valor=-100.0, nome="X 12.345.678/0001-90"),
+        _Tx(data="2026-04-20", valor=-100.0, nome="X 12.345.678/0001-90"),
+    ]
+    scores = calcular_conformidade_fornecedor([], txs)
+    assert len(scores) == 1
+    assert scores[0].periodo_inicio == date(2026, 4, 10)
+    assert scores[0].periodo_fim == date(2026, 4, 20)
+
+
+def test_data_string_invalida_sem_periodo():
+    """String de data inválida cai no except ValueError → sem período."""
+    txs = [_Tx(data="data-invalida", valor=-100.0, nome="X 12.345.678/0001-90")]
+    scores = calcular_conformidade_fornecedor([], txs)
+    assert len(scores) == 1
+    assert scores[0].periodo_inicio is None
+    assert scores[0].periodo_fim is None
+
+
+def test_documento_sem_emit_cnpj_e_ignorado():
+    """NF-e sem emit_cnpj não entra na agregação de documentos."""
+    docs = [_doc(emit_cnpj="", valor=1000.0)]
+    scores = calcular_conformidade_fornecedor(docs, [])
+    assert scores == []
+
+
+def test_documento_cancelado_nao_conta_como_cobertura():
+    """NF CANCELADA não soma volume_nf — mas se há pagamento, o gap aparece."""
+    cancelada = _doc(emit_cnpj="12345678000190", valor=1000.0)
+    cancelada.situacao = "CANCELADA"
+    txs = [_Tx(data=date(2026, 4, 1), valor=-1000.0, nome="X 12.345.678/0001-90")]
+    scores = calcular_conformidade_fornecedor([cancelada], txs)
+    assert len(scores) == 1
+    assert scores[0].volume_nf == 0.0
+    assert scores[0].conformidade_pct == 0.0
+    assert scores[0].n_nfes == 0
+
+
+def test_documento_denegado_nao_conta_como_cobertura():
+    denegada = _doc(emit_cnpj="12345678000190", valor=1000.0)
+    denegada.situacao = "DENEGADA"
+    scores = calcular_conformidade_fornecedor([denegada], [])
+    # Documento inválido e sem pagamento → CNPJ não entra no universo
+    assert scores == []
+
+
+def test_cte_incrementa_n_ctes_evita_mei_sem_cte():
+    """CT-e do MEI de transporte deve zerar a flag MEI_SEM_CTE (n_ctes>0)."""
+    cte = _doc(emit_cnpj="99999999000199", valor=5000.0, tipo="CT-e")
+    txs = [_Tx(data=date(2026, 4, 1), valor=-5000.0, nome="MEI 99.999.999/0001-99")]
+    scores = calcular_conformidade_fornecedor(
+        [cte], txs,
+        cnae_por_cnpj={"99999999000199": "4930-2"},
+        is_mei_por_cnpj={"99999999000199": True},
+    )
+    assert len(scores) == 1
+    assert "MEI_SEM_CTE" not in scores[0].flags
+
+
+def test_mei_de_transporte_sem_cte_dispara_flag_via_calculo():
+    """Pagamento a MEI de transporte (CNAE 4930) sem nenhum CT-e → MEI_SEM_CTE."""
+    nfe = _doc(emit_cnpj="99999999000199", valor=5000.0, tipo="NF-e")
+    txs = [_Tx(data=date(2026, 4, 1), valor=-5000.0, nome="MEI 99.999.999/0001-99")]
+    scores = calcular_conformidade_fornecedor(
+        [nfe], txs,
+        cnae_por_cnpj={"99999999000199": "4930-2"},
+        is_mei_por_cnpj={"99999999000199": True},
+    )
+    assert "MEI_SEM_CTE" in scores[0].flags
+    assert classificar_risco(scores[0]) == "CRITICO"
+
+
+def test_documento_valor_zero_gera_pct_zero():
+    """Doc com emit_cnpj válido mas valor_total 0 e sem pagamento → pct 0.0 (ramo else)."""
+    doc = _doc(emit_cnpj="12345678000190", valor=0.0)
+    scores = calcular_conformidade_fornecedor([doc], [])
+    assert len(scores) == 1
+    assert scores[0].conformidade_pct == 0.0
+    # vol_pago == 0 → risco_classe forçado a BAIXO independentemente do pct
+    assert scores[0].risco_classe == "BAIXO"
+
+
+def test_pct_capado_em_100_quando_nf_excede_pagamento():
+    """volume_nf > volume_pago não passa de 100% (cap min(100, ...))."""
+    docs = [_doc(emit_cnpj="12345678000190", valor=3000.0)]
+    txs = [_Tx(data=date(2026, 4, 1), valor=-1000.0, nome="X 12.345.678/0001-90")]
+    scores = calcular_conformidade_fornecedor(docs, txs)
+    assert scores[0].conformidade_pct == 100.0
+
+
+def test_razao_social_truncada_em_200():
+    """razao_social é cortada em 200 caracteres."""
+    nome_longo = "A" * 300
+    doc = _doc(emit_cnpj="12345678000190", valor=1000.0)
+    doc.emit_nome = nome_longo
+    scores = calcular_conformidade_fornecedor([doc], [])
+    assert len(scores[0].razao_social) == 200
+
+
+def test_ordenacao_por_volume_pago_desc():
+    """Resultados saem ordenados por volume_pago decrescente."""
+    docs = []
+    txs = [
+        _Tx(data=date(2026, 4, 1), valor=-100.0, nome="P 11.111.111/0001-11"),
+        _Tx(data=date(2026, 4, 1), valor=-900.0, nome="G 22.222.222/0001-22"),
+    ]
+    scores = calcular_conformidade_fornecedor(docs, txs)
+    assert [s.volume_pago for s in scores] == [900.0, 100.0]
+
+
+def test_razao_social_prefere_nome_do_documento():
+    """Quando há doc e pagamento, a razão social vem do documento (emit_nome)."""
+    doc = _doc(emit_cnpj="12345678000190", valor=1000.0)
+    doc.emit_nome = "RAZAO DO DOCUMENTO"
+    txs = [_Tx(data=date(2026, 4, 1), valor=-1000.0, nome="NOME DO EXTRATO 12.345.678/0001-90")]
+    scores = calcular_conformidade_fornecedor([doc], txs)
+    assert scores[0].razao_social == "RAZAO DO DOCUMENTO"
+
+
+# ────────────────────────────────────────────────────────────────────────
+# _detectar_flags — bordas
+# ────────────────────────────────────────────────────────────────────────
+
+
+def test_rede_frota_limite_inferior_dispara():
+    """volume_pago exatamente 100k com NF zero dispara REDE_FROTA_TYPE."""
+    flags = _detectar_flags(
+        nome="FROTA", cnae="", volume_pago=100_000, volume_nf=0,
+        is_mei=False, n_ctes=0,
+    )
+    assert "REDE_FROTA_TYPE" in flags
+
+
+def test_rede_frota_abaixo_limite_nao_dispara():
+    flags = _detectar_flags(
+        nome="FROTA", cnae="", volume_pago=99_999.99, volume_nf=0,
+        is_mei=False, n_ctes=0,
+    )
+    assert "REDE_FROTA_TYPE" not in flags
+
+
+def test_rede_frota_com_nf_nao_dispara():
+    """Mesmo com volume alto, se houver NF (>0) a flag não aparece."""
+    flags = _detectar_flags(
+        nome="FROTA", cnae="", volume_pago=200_000, volume_nf=1.0,
+        is_mei=False, n_ctes=0,
+    )
+    assert "REDE_FROTA_TYPE" not in flags
+
+
+def test_mei_sem_cte_so_para_cnae_de_transporte():
+    """MEI sem CT-e mas CNAE não-transporte não dispara MEI_SEM_CTE."""
+    flags = _detectar_flags(
+        nome="MEI COMERCIO", cnae="4711", volume_pago=10_000, volume_nf=10_000,
+        is_mei=True, n_ctes=0,
+    )
+    assert "MEI_SEM_CTE" not in flags
+
+
+def test_mei_sem_cte_so_quando_is_mei():
+    """CNAE de transporte sem CT-e mas não-MEI não dispara a flag."""
+    flags = _detectar_flags(
+        nome="TRANSPORTADORA", cnae="4930-2", volume_pago=10_000, volume_nf=10_000,
+        is_mei=False, n_ctes=0,
+    )
+    assert "MEI_SEM_CTE" not in flags
+
+
+def test_parte_relacionada_socio_curto_nao_dispara():
+    """Sócio com nome < 4 caracteres é ignorado (guarda de comprimento)."""
+    flags = _detectar_flags(
+        nome="BANANA TRANSPORTES", cnae="", volume_pago=100, volume_nf=100,
+        is_mei=False, n_ctes=0, nomes_socios=["Ana"],
+    )
+    assert "PARTE_RELACIONADA" not in flags
+
+
+def test_parte_relacionada_substring_sem_fronteira_nao_dispara():
+    """Match exige fronteira de palavra (\\b): substring colada não conta."""
+    flags = _detectar_flags(
+        nome="JOAOZINHO TRANSPORTES", cnae="", volume_pago=100, volume_nf=100,
+        is_mei=False, n_ctes=0, nomes_socios=["Joao"],
+    )
+    assert "PARTE_RELACIONADA" not in flags
+
+
+def test_parte_relacionada_socio_vazio_ou_none_ignorado():
+    """Sócios vazios/None na lista não quebram nem disparam a flag."""
+    flags = _detectar_flags(
+        nome="JOAO SILVA TRANSPORTES", cnae="", volume_pago=100, volume_nf=100,
+        is_mei=False, n_ctes=0, nomes_socios=["", None, "JOAO SILVA"],
+    )
+    assert "PARTE_RELACIONADA" in flags
+
+
+def test_detectar_flags_nome_none_nao_quebra():
+    """nome None vira string vazia (sem AttributeError no .upper())."""
+    flags = _detectar_flags(
+        nome=None, cnae="", volume_pago=50, volume_nf=50,
+        is_mei=False, n_ctes=0,
+    )
+    assert flags == []
+
+
+# ────────────────────────────────────────────────────────────────────────
+# classificar_risco — ramo sem flag crítica
+# ────────────────────────────────────────────────────────────────────────
+
+
+def test_classificar_risco_mei_sem_cte_eleva_critico():
+    score = ConformidadeScore(
+        cnpj_fornecedor="111", razao_social="x", periodo_inicio=None, periodo_fim=None,
+        volume_pago=100, volume_nf=100, conformidade_pct=100, n_pagamentos=1,
+        n_nfes=1, risco_classe="BAIXO", flags=["MEI_SEM_CTE"],
+    )
+    assert classificar_risco(score) == "CRITICO"
+
+
+def test_classificar_risco_sem_flag_mantem_classe():
+    """Sem flag crítica, retorna o risco_classe original (ramo final)."""
+    score = ConformidadeScore(
+        cnpj_fornecedor="111", razao_social="x", periodo_inicio=None, periodo_fim=None,
+        volume_pago=100, volume_nf=30, conformidade_pct=30, n_pagamentos=1,
+        n_nfes=1, risco_classe="ALTO", flags=["PARTE_RELACIONADA"],
+    )
+    assert classificar_risco(score) == "ALTO"
