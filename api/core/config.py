@@ -71,7 +71,12 @@ else:
 
 
 def _db_ping_sync(timeout_s: int = 10) -> bool:
-    """Verifica conectividade; retry 3x com backoff exponencial."""
+    """Verifica conectividade; retry 3x com backoff exponencial.
+
+    Loga o erro de CADA tentativa (sem URL/credencial): no incidente de
+    2026-06-10 o "password authentication failed" ficou invisível por ~32h
+    porque este except engolia a exceção — prod rodou sem DB sem ninguém notar.
+    """
     if not _DB_URL or re.search(r"\[.+?\]", _DB_URL):
         return False
     url = _DB_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
@@ -83,9 +88,16 @@ def _db_ping_sync(timeout_s: int = 10) -> bool:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1")
             return True
-        except (psycopg2.OperationalError, psycopg2.DatabaseError):
+        except (psycopg2.OperationalError, psycopg2.DatabaseError) as exc:
+            # 1ª linha apenas: psycopg2 repete o DSN nas linhas seguintes em
+            # alguns erros — nunca logar URL/credencial.
+            motivo = (str(exc).strip().splitlines() or ["?"])[0]
+            log.warning("Ping do DB falhou (tentativa %d/3): %s: %s",
+                        attempt + 1, type(exc).__name__, motivo)
             if attempt < 2:
                 time.sleep(2 ** attempt)
+    log.error("Ping do DB falhou nas 3 tentativas — app seguirá SEM banco "
+              "(DB_DISPONIVEL=False): login de usuários/refresh/dados darão 503")
     return False
 
 

@@ -1,9 +1,16 @@
 name: Synthetic Monitor (prod)
 
 # Sonda externa de uptime: a cada 30 min verifica que a producao responde 200 em
-# /health e /app. Complementa o healthcheck interno do Railway (que so reinicia o
-# container) detectando falhas de roteamento/DNS/cert vistas de fora. Em falha, o
-# workflow falha -> GitHub notifica os admins do repo.
+# /health e /app, e que o RUNTIME esta com banco (sonda /auth/refresh). Complementa
+# o healthcheck interno do Railway (que so reinicia o container) detectando falhas
+# de roteamento/DNS/cert vistas de fora. Em falha, o workflow falha -> GitHub
+# notifica os admins do repo.
+#
+# Por que /auth/refresh? O /health de prod responde {"status":"ok"} MESMO sem
+# banco (nao expoe infra por design) — no incidente de 2026-06-10 a producao
+# rodou ~32h sem DB sem alarme. POST /auth/refresh sem cookie nao requer
+# credencial e diferencia: 401 ("Refresh token ausente") = banco ok;
+# 503 ("banco nao configurado") = runtime sem DB.
 
 on:
   schedule:
@@ -15,7 +22,7 @@ permissions:
 
 jobs:
   probe:
-    name: Probe prod (/health + /app)
+    name: Probe prod (/health + /app + DB)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -35,3 +42,19 @@ jobs:
             exit 1
           fi
           echo "Producao saudavel."
+      - name: Runtime com banco (POST /auth/refresh sem cookie -> 401)
+        env:
+          BASE: ${{ vars.PROD_BASE_URL || 'https://web-production-9f69.up.railway.app' }}
+        run: |
+          set -u
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 -X POST "$BASE/auth/refresh" || echo 000)
+          echo "/auth/refresh (sem cookie) -> $code"
+          if [ "$code" = "503" ]; then
+            echo "::error::Producao SEM BANCO no runtime (DB_DISPONIVEL=False) — ver memoria do incidente 2026-06-10 (senha do app_orgconc na DATABASE_URL)"
+            exit 1
+          fi
+          if [ "$code" != "401" ]; then
+            echo "::error::Sonda de DB inesperada: /auth/refresh respondeu $code (esperado 401)"
+            exit 1
+          fi
+          echo "Runtime com banco ok (401 esperado)."
