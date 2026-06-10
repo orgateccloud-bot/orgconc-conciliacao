@@ -10,12 +10,10 @@ Sprint 1 do Plano de Integração Fiscal. Expõe 4 endpoints:
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import re
 import threading
 import uuid
-import zipfile
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -61,7 +59,7 @@ from api.services.fiscal_persistence import (
     salvar_cruzamentos,
     salvar_documentos_fiscais,
 )
-from api.services.storage import read_limited
+from api.services.storage import extrair_zip_seguro, read_limited
 from api.services import laudo_forense as laudo
 from api.services import calculadora_cbs_ibs
 from api.schemas_cbs_ibs import OperacaoFiscalInput
@@ -90,20 +88,13 @@ def _separar_arquivos_fiscal(arquivos: list[tuple[str, bytes]]) -> tuple[Optiona
         elif nome_lower.endswith(".xml"):
             xmls.append((filename, conteudo))
         elif nome_lower.endswith(".zip"):
-            try:
-                with zipfile.ZipFile(io.BytesIO(conteudo)) as zf:
-                    for member in zf.namelist():
-                        lower = member.lower()
-                        if lower.endswith(".xml"):
-                            with zf.open(member) as fh:
-                                xmls.append((member, fh.read()))
-                        elif lower.endswith(".ofx"):
-                            if ofx_bytes is not None:
-                                raise HTTPException(400, "ZIP contém mais de 1 OFX.")
-                            with zf.open(member) as fh:
-                                ofx_bytes = fh.read()
-            except zipfile.BadZipFile:
-                raise HTTPException(400, f"Arquivo {filename} não é ZIP válido.")
+            for member, data in extrair_zip_seguro(conteudo, (".xml", ".ofx")):
+                if member.lower().endswith(".xml"):
+                    xmls.append((member, data))
+                else:  # .ofx
+                    if ofx_bytes is not None:
+                        raise HTTPException(400, "ZIP contém mais de 1 OFX.")
+                    ofx_bytes = data
         else:
             log.warning("fiscal: ignorando arquivo com extensão não suportada: %s", filename)
 

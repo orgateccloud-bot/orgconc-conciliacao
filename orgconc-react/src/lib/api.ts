@@ -21,6 +21,7 @@ export async function apiLogout(): Promise<void> {
     });
   } finally {
     setToken(null);
+    limparDadosTenant();
   }
 }
 
@@ -231,6 +232,28 @@ export async function listarClientes() {
 }
 
 export function invalidarCacheClientes(): void { _clientesCache = null; _clientesCacheAt = 0; }
+
+/**
+ * Limpa todo dado tenant-scoped do browser: cache em memória (clientes) + chaves
+ * `orgconc.*` em session/localStorage (histórico, último resultado, token).
+ * Chamado no logout explícito e na expiração de sessão para impedir que o próximo
+ * usuário no mesmo browser veja dados da organização anterior.
+ */
+export function limparDadosTenant(): void {
+  invalidarCacheClientes();
+  try {
+    for (const storage of [window.sessionStorage, window.localStorage]) {
+      const remover: string[] = [];
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (k && k.startsWith("orgconc.")) remover.push(k);
+      }
+      remover.forEach((k) => storage.removeItem(k));
+    }
+  } catch {
+    /* storage indisponível (modo privado) — ignore */
+  }
+}
 
 export async function criarCliente(data: Partial<Cliente>) {
   return apiFetch<Cliente>("/clientes", { method: "POST", body: JSON.stringify(data) });

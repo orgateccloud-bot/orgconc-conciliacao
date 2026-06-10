@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { apiLogout, fetchMe, getToken, login as apiLogin, setToken, type UserMe } from "@/lib/api";
+import { apiLogout, fetchMe, getToken, limparDadosTenant, login as apiLogin, setToken, type UserMe } from "@/lib/api";
 
 interface AuthState {
   user: UserMe | null;
@@ -42,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const onLogout = () => {
       setUser(null);
       setToken(null);
+      limparDadosTenant();
     };
     window.addEventListener("orgconc:logout", onLogout);
     return () => window.removeEventListener("orgconc:logout", onLogout);

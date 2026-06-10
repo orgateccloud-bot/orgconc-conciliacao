@@ -10,9 +10,11 @@ O custo de uma query de 1 linha e desprezivel perto do parsing/LLM dos endpoints
 """
 from __future__ import annotations
 
+import io
 import json
 import re
 import uuid
+import zipfile
 
 from fastapi import HTTPException, UploadFile
 
@@ -37,6 +39,55 @@ async def read_limited(up: UploadFile, max_bytes: int) -> bytes:
             )
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+def extrair_zip_seguro(conteudo: bytes, exts: tuple[str, ...]) -> list[tuple[str, bytes]]:
+    """Extrai membros de um ZIP cujo nome termina em ``exts``, com proteção anti
+    zip-bomb: limita número de membros, total descomprimido e razão de compressão
+    (descomprimido/comprimido). O limite de upload cobre só o tamanho comprimido;
+    este cobre a inflação em memória.
+
+    Levanta HTTPException(400) para ZIP inválido e 413 ao estourar um limite.
+    """
+    comprimido = max(1, len(conteudo))
+    selecionados: list[tuple[str, bytes]] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(conteudo)) as zf:
+            infos = [i for i in zf.infolist() if not i.is_dir()]
+            if len(infos) > config.ZIP_MAX_MEMBERS:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"ZIP com {len(infos)} arquivos excede o limite de {config.ZIP_MAX_MEMBERS}.",
+                )
+            total_declarado = sum(i.file_size for i in infos)
+            if total_declarado > config.ZIP_MAX_DECOMPRESSED_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"ZIP descomprime para ~{total_declarado // (1024 * 1024)} MB "
+                        f"(limite {config.ZIP_MAX_DECOMPRESSED_MB} MB)."
+                    ),
+                )
+            if total_declarado / comprimido > config.ZIP_MAX_RATIO:
+                raise HTTPException(
+                    status_code=413,
+                    detail="Razão de compressão do ZIP suspeita (possível zip bomb).",
+                )
+            lido = 0
+            for info in infos:
+                if not info.filename.lower().endswith(exts):
+                    continue
+                lido += info.file_size
+                if lido > config.ZIP_MAX_DECOMPRESSED_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="Total descomprimido do ZIP excede o limite.",
+                    )
+                with zf.open(info) as fh:
+                    selecionados.append((info.filename, fh.read()))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Arquivo não é um ZIP válido.")
+    return selecionados
 
 
 def _db_url() -> str:
