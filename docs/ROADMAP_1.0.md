@@ -44,12 +44,15 @@ Feito e em prod: **P0 #1,#2,#3** ([#104](https://github.com/orgateccloud-bot/org
 Preparado, HOLD (aplicar = 🔑): **P0 #4 + P1 #7** ([#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107) draft).
 Descartado: **P1 #8** (rural). Adiado: **P0 #5**, **2.4** refator laudo, **/v1**. 🔑 infra: **#9, #11, #12, #13** + spec live do #6.
 
-## Critério de 1.0 (status)
-- [x] ✅ **Cobertura: backend 80.2%** (gate 80, #110) · **frontend 88.6%** (gate 86, #109) — ambos com gate no CI.
-- [~] E2E: happy paths ✅; fluxos profundos (upload→resultado, auditoria) adiados.
-- [~] CBS/IBS sem SERPRO ✅ (#106) + apuração persistida idempotente — preparada (HOLD #107).
-- [~] Hardening P0: ✅ refresh revogável, ✅ rate-limit testado; RLS sem drift preparado (HOLD #107).
-- [ ] Staging + rollback + SLA/SLO documentados — 🔑.
-- [~] CHANGELOG ✅ (#105) + versionamento `/v1` — adiado.
+## Critério de 1.0 (status — atualizado 2026-06-10)
+- [x] ✅ **Cobertura: backend 81.6%** (gate 80, #110) · **frontend 88.6%** (gate 86, #109) — ambos com gate no CI.
+- [x] ✅ E2E: happy paths + fluxos profundos com backend real (#114; 24/24, exercitando `/v1` desde #119).
+- [x] ✅ CBS/IBS sem SERPRO (#106) + apuração persistida idempotente aplicada em prod (#107).
+- [x] ✅ Hardening P0: refresh revogável, rate-limit testado, RLS sem drift aplicado em prod (#107).
+- [~] Staging ✅ criado (`docs/STAGING.md`); SLO proposto / rotação runbook — 🔑 aprovar/executar.
+- [x] ✅ CHANGELOG (#105) + `/v1` dual-mount (#113) + **frontend no `/v1`** (#119; `/auth` na raiz pelo cookie — migração coordenada futura).
+
+> Refactor 2.4 do laudo completo (fases 1–3: #115, #118, #120) — cálculo 100% separado do render,
+> todas com prova de regressão ao centavo nos dados reais (0 divergências em 262.939 células).
 
 > Histórico desta maratona (2026-06-09): #89–94 (dashboard), #95 (login), #96–98 (deps), #99 (bcrypt 5/sem passlib), #100 (Tailwind 4).
