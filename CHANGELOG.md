@@ -9,6 +9,14 @@ Todas as mudanças relevantes do OrgConc. Formato baseado em
 
 ## [Não lançado]
 
+### Adicionado (3ª rodada 2026-06-10)
+- **Fila de jobs assíncronos (P1 #9, #122)**: `POST /fiscal/laudo/async` →
+  `job_id`; polling `GET /jobs/{id}`; download `GET /jobs/{id}/resultado`.
+  Fila em Postgres (migration 023, RLS + policy `worker_access`) com worker
+  asyncio embutido nas réplicas (claim `FOR UPDATE SKIP LOCKED`, retry de
+  órfãos, TTL). Núcleo do laudo compartilhado (`laudo_async`) — síncrono e
+  assíncrono geram o mesmo documento. Validado no staging ponta-a-ponta.
+
 ### Adicionado
 - Cobertura de testes do frontend para 17/17 páginas + componentes
   (CommandPalette, AIInsightsPanel, AuditEventModal) e cliente `api.ts` (#104),

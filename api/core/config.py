@@ -52,6 +52,15 @@ MAX_UPLOAD_TOTAL_BYTES = MAX_UPLOAD_TOTAL_MB * 1024 * 1024
 # Limite de corpo bruto da request (multipart, JSON). Protege contra payloads
 # gigantes antes do parsing. Lido live pelo middleware de body-limit.
 _MAX_BODY_BYTES = int(os.environ.get("ORGCONC_MAX_BODY_BYTES", str(60 * 1024 * 1024)))
+
+# Fila de jobs assíncronos (P1 #9 — api/services/job_queue.py). O worker roda
+# embutido em cada réplica web; desligue com ORGCONC_JOBS_WORKER=0 (ex.: quando
+# houver serviço worker dedicado rodando o mesmo loop).
+JOBS_WORKER_ENABLED = os.environ.get("ORGCONC_JOBS_WORKER", "1").strip().lower() in ("1", "true", "yes")
+JOBS_POLL_S = int(os.environ.get("ORGCONC_JOBS_POLL_S", "3"))
+JOBS_TIMEOUT_MIN = int(os.environ.get("ORGCONC_JOBS_TIMEOUT_MIN", "15"))
+JOBS_MAX_TENTATIVAS = int(os.environ.get("ORGCONC_JOBS_MAX_TENTATIVAS", "2"))
+JOBS_TTL_HORAS = int(os.environ.get("ORGCONC_JOBS_TTL_H", "24"))
 DATA_DIR = Path(os.environ.get("ORGCONC_DATA_DIR", "./data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -97,6 +106,7 @@ _DB_DISPONIVEL_CONSUMERS: tuple[str, ...] = (
     "api.routers.conciliacoes_list",
     "api.routers.contratos",
     "api.routers.fiscal",
+    "api.routers.jobs",
     "api.routers.guias",
     "api.routers.health",
     "api.routers.matchers",
