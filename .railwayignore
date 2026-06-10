@@ -1,0 +1,10 @@
+node_modules/
+orgconc-react/node_modules/
+orgconc-react/test-results/
+orgconc-react/playwright-report/
+orgconc-react/coverage/
+data/
+*.ofx
+*.OFX
+!orgconc-react/e2e/fixtures/*.ofx
+.git/
