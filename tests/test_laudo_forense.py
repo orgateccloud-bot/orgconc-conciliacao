@@ -38,7 +38,7 @@ def test_gerar_laudo_workbook_11_abas():
         _tx("2026-02-10", -500.0, nome="OUTRO FORN"), _tx("2026-03-15", -12000.0),
     ]
     todos, saldos = laudo.montar_dados(txs)
-    laudo.EMPRESA = laudo.construir_empresa("11222333000181", {})
+    laudo.set_empresa(laudo.construir_empresa("11222333000181", {}))
     wb, stats = laudo.gerar_laudo_workbook(todos, saldos, {})
     assert wb.sheetnames == ABAS
     assert stats["n_total"] == 4
