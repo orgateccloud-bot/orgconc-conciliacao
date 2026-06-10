@@ -86,6 +86,19 @@ Varredura read-only (10 agentes) cruzando roadmap × código. Achados que mudam 
 > Idempotência CBS/IBS + RLS legadas preparadas e em HOLD (#107, aplicação 🔑). 2.3 descartado;
 > 2.4 / 3.1-/v1 / 1.4 adiados (risco); staging/jobs/SLO/rotação dependem de você.
 
+## Execução 2026-06-09 (2ª rodada — modo automático com permissão total)
+
+| Status | Item | PR / evidência |
+|--------|------|----------------|
+| ✅ Aplicado em prod + verificado no banco | P0 #4 RLS legadas + P1 #7 idempotência CBS/IBS | [#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107) — `alembic=022`, constraint criada, 0 policies |
+| ✅ Mergeado | P2 #10 `/v1` dual-mount (auth/infra fora por design) | [#113](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/113) |
+| ✅ Mergeado | P0 #5 E2E profundo com backend real (24/24, 2 rodadas) | [#114](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/114) |
+| ✅ Mergeado | 2.4 fase 1 — `preparar_calculo_laudo` + determinismo aba 7 (prova LOCAR ao centavo) | [#115](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/115) |
+| ✅ Mergeado | **Bugfix**: anualizado do Sumário sombreado pelo loop de MEIs (regressão do 59401c1e) | [#116](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/116) |
+| ✅ Criado | P2 #11 staging Railway (env+Postgres+web-staging) | `docs/STAGING.md` |
+| 🟡 Proposto (🔑 aprovar) | P2 #12 SLO · P2 #13 rotação | `docs/SLO.md` · `docs/ROTACAO_SEGREDOS.md` |
+| ⏭️ Restante | P1 #9 jobs assíncronos (🔑 worker) · 2.4 fase 2 (agregados das abas) · validação live da calculadora (🔑 spec) · migração do frontend p/ `/v1`+auth | — |
+
 ## Execução 2026-06-09 — itens → PRs
 
 | Status | Itens | PR |

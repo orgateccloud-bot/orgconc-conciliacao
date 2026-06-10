@@ -22,6 +22,25 @@ Todas as mudanças relevantes do OrgConc. Formato baseado em
   revogação de sessão (#104).
 - Remapeamento técnico, planejamento de execução e relatório executivo (#104).
 
+### Adicionado (2ª rodada 2026-06-09)
+- **E2E profundo com backend real** (#114): upload OFX→resultado→export,
+  auditoria forense (resumo + laudo XLSX) e erros de negócio; `preview.proxy`
+  no vite destravou E2E sem mock (24/24 estáveis).
+- **Staging dedicado** no Railway (env `staging` + Postgres próprio +
+  `web-staging`) — migrations validáveis fora de prod (`docs/STAGING.md`).
+- `docs/SLO.md` (metas propostas) e `docs/ROTACAO_SEGREDOS.md` (runbook).
+- Refactor do laudo: fase de cálculo pura `preparar_calculo_laudo` (#115) com
+  prova ao centavo nos dados reais; laudo agora 100% determinístico (aba 7
+  ordenava por iteração de set).
+
+### Corrigido (2ª rodada 2026-06-09)
+- **Laudo (MD/HTML/PDF): "Volume anualizado projetado" mostrava o anualizado do
+  último MEI** (ex.: R$ 1.467,59) em vez do da empresa (R$ 192,9M no caso real)
+  — variável sombreada pelo loop da aba 9; regressão do `59401c1e` reintroduzida
+  na reconciliação #59. XLSX nunca foi afetado; múltiplo sempre correto (#116).
+- Migrations 021/022 aplicadas em produção (#107): policies RLS legadas
+  removidas + idempotência da apuração CBS/IBS (verificado no banco vivo).
+
 ### Alterado
 - **API versionada sob `/v1` (dual-mount)**: rotas de negócio respondem em
   `/v1/*` e na raiz (retrocompat do frontend). Fora do `/v1`: auth/sessão
