@@ -97,3 +97,35 @@ def test_preparar_calculo_alimenta_workbook_identico():
     for chave in ("n_total", "n_meses", "periodo_str", "cred_total",
                   "deb_total", "volume_bruto", "anualizado", "multiplo"):
         assert stats[chave] == calc[chave], chave
+
+
+def test_stats_anualizado_nao_e_sombreado_pelo_loop_de_meis():
+    """Regressão do bug 59401c1e (reintroduzido na reconciliação #59 e refixado):
+    o loop da aba 9 (MEIs) usava a variável `anualizado` e SOMBREAVA o anualizado
+    da EMPRESA — stats/MD passavam a mostrar o anualizado do último MEI.
+    """
+    memo_cnpj = "PAGAMENTO PIX 11.222.333/0001-81"
+    txs = [
+        _tx("2026-01-05", -50_000.0, memo=memo_cnpj),
+        _tx("2026-02-10", -80_000.0, memo=memo_cnpj),
+        _tx("2026-03-15", 900_000.0, memo="RECEBIMENTO CLIENTE"),
+    ]
+    todos, saldos = laudo.montar_dados(txs)
+    # MEI no cache → o loop da aba 9 processa e (no bug) poluía `anualizado`.
+    cache = {"11222333000181": {
+        "razao_social": "MEI TESTE", "porte": "MICRO EMPRESA",
+        "cnae_principal": "4930201", "situacao": "ATIVA",
+    }}
+    laudo.EMPRESA = laudo.construir_empresa("99888777000166", {})
+    _, stats = laudo.gerar_laudo_workbook(todos, saldos, cache)
+
+    # O anualizado do stats DEVE ser o da empresa (fase de cálculo/motor)…
+    calc = laudo.preparar_calculo_laudo(todos, saldos, cache)
+    assert stats["anualizado"] == calc["anualizado"]
+    # …e NÃO o do MEI (deb*12/meses_obs).
+    anualizado_mei = (50_000.0 + 80_000.0) * 12 / max(stats["meses_obs"], 1)
+    assert stats["anualizado"] != anualizado_mei
+    assert stats["meis"], "cenário deve ter MEI processado na aba 9"
+    # O MD imprime o valor da empresa no Sumário.
+    md, _ = laudo.gerar_md(stats)
+    assert f"R$ {calc['anualizado']:,.2f}" in md
