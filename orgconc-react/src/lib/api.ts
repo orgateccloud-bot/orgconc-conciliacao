@@ -681,6 +681,102 @@ export async function fiscalLaudoBlob(
   return apiFetchBlob("/v1/fiscal/laudo", { method: "POST", body: fd });
 }
 
+// ── Fila de jobs assíncronos (P1 #9, backend #122) ───────────────────────────
+
+export type JobStatusNome = "PENDENTE" | "EXECUTANDO" | "CONCLUIDO" | "ERRO";
+
+export interface JobStatus {
+  id: string;
+  tipo: string;
+  status: JobStatusNome;
+  erro: string | null;
+  tentativas: number;
+  criado_em: string | null;
+  iniciado_em: string | null;
+  concluido_em: string | null;
+  resultado_nome: string | null;
+  resultado_mime: string | null;
+}
+
+export interface JobSubmetido {
+  job_id: string;
+  status: JobStatusNome;
+  polling: string;
+  resultado: string;
+}
+
+export async function fiscalLaudoAsync(opts: {
+  empresaCnpj: string;
+  conta?: string;
+  arquivos: File[];
+  formato: FormatoLaudo;
+}): Promise<JobSubmetido> {
+  const fd = new FormData();
+  fd.append("empresa_cnpj", opts.empresaCnpj);
+  if (opts.conta) fd.append("conta", opts.conta);
+  opts.arquivos.forEach((f) => fd.append("arquivos", f));
+  return apiFetch<JobSubmetido>(`/v1/fiscal/laudo/async?formato=${opts.formato}`, {
+    method: "POST",
+    body: fd,
+  });
+}
+
+export async function fetchJobStatus(jobId: string): Promise<JobStatus> {
+  return apiFetch<JobStatus>(`/v1/jobs/${jobId}`);
+}
+
+export async function baixarJobResultado(
+  jobId: string,
+): Promise<{ blob: Blob; filename: string | null }> {
+  return apiFetchBlob(`/v1/jobs/${jobId}/resultado`);
+}
+
+/** Fase corrente do laudo via fila, para feedback de UI. */
+export type FaseLaudo = JobStatusNome | "SINCRONO";
+
+/**
+ * Gera o laudo pela FILA (não bloqueia o backend): submete, faz polling e baixa
+ * o resultado. Se a fila não estiver disponível — 503 (sem banco) ou 403 (token
+ * sem organização, ex.: service token) — cai no fluxo síncrono transparente.
+ * `onFase` recebe PENDENTE/EXECUTANDO/CONCLUIDO ou SINCRONO (fallback).
+ */
+export async function gerarLaudoComFila(
+  opts: { empresaCnpj: string; conta?: string; arquivos: File[]; formato: FormatoLaudo },
+  onFase?: (fase: FaseLaudo) => void,
+  pollMs = 3000,
+): Promise<{ blob: Blob; filename: string; viaFila: boolean }> {
+  let sub: JobSubmetido;
+  try {
+    sub = await fiscalLaudoAsync(opts);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 503 || err.status === 403)) {
+      onFase?.("SINCRONO");
+      const { blob, filename } = await fiscalLaudo(opts);
+      return { blob, filename, viaFila: false };
+    }
+    throw err;
+  }
+  onFase?.(sub.status);
+  const limite = Date.now() + 10 * 60_000; // jobs têm timeout no servidor (15min)
+  while (Date.now() < limite) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    const st = await fetchJobStatus(sub.job_id);
+    onFase?.(st.status);
+    if (st.status === "CONCLUIDO") {
+      const { blob, filename } = await baixarJobResultado(sub.job_id);
+      return {
+        blob,
+        filename: filename ?? st.resultado_nome ?? `laudo.${opts.formato}`,
+        viaFila: true,
+      };
+    }
+    if (st.status === "ERRO") {
+      throw new ApiError(st.erro || "Falha ao gerar o laudo (job)", 422);
+    }
+  }
+  throw new ApiError("Tempo esgotado aguardando o laudo na fila", 408);
+}
+
 // ── Dashboard metrics (PR 1 backend) ──────────────────────────────────────
 
 export interface KpisDelta {
