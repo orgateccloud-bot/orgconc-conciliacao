@@ -6,6 +6,8 @@ montada sem cache NÃO vaza dados de cliente.
 """
 from __future__ import annotations
 
+from collections import Counter
+
 import api.services.laudo_forense as laudo
 from api.matchers.cascata import Transacao
 
@@ -151,6 +153,35 @@ def test_fase2_agregados_das_abas_na_fase_pura():
     assert stats["vol_transf_interna"] == calc["vol_transf_interna"]
     assert stats["meis"] == calc["meis_det"]["meis"]
     assert [p["dias"] for p in stats["pos_baixa"]] == [p["dias"] for p in calc["pos_baixa"]]
+
+
+def test_fase3_risk_score_anexado_nas_disposicoes():
+    """Fase 3 do refactor 2.4: a fase pura anexa sinais + risk score por
+    transação às disposições; classe_counts é derivado deles (abas 5/6 só leem).
+    """
+    memo_baixada = "PAGAMENTO PIX 99.888.777/0001-66"
+    txs = [
+        _tx("2026-01-05", -10_000.0, memo=memo_baixada),
+        _tx("2026-02-01", 5_000.0, memo="RECEBIMENTO CLIENTE"),
+    ]
+    todos, saldos = laudo.montar_dados(txs)
+    cache = {"99888777000166": {"razao_social": "BAIXADA LTDA", "situacao": "BAIXADA",
+                                "data_situacao": "2025-12-01", "porte": "ME"}}
+    laudo.EMPRESA = laudo.construir_empresa("55444333000122", {})
+    calc = laudo.preparar_calculo_laudo(todos, saldos, cache)
+
+    for d in calc["todas_disps"]:
+        for campo in ("acum", "pv", "vr", "sm", "car", "score", "classe", "pf", "hash_linha"):
+            assert hasattr(d, campo), campo
+        assert d.classe in ("CRITICO", "ALTO", "MEDIO", "BAIXO")
+        assert isinstance(d.score, (int, float))
+    # Pós-baixa puxa a transação para classe crítica (score do motor).
+    pb = next(d for d in calc["todas_disps"] if d.disposicao == "ALERTA_POS_BAIXA")
+    assert pb.classe == "CRITICO"
+    # classe_counts é exatamente a contagem dos d.classe anexados.
+    esperado = Counter(d.classe for d in calc["todas_disps"])
+    for classe, (qtd, _vol) in calc["classe_counts"].items():
+        assert qtd == esperado.get(classe, 0), classe
 
 
 def test_stats_anualizado_nao_e_sombreado_pelo_loop_de_meis():

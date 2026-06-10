@@ -734,25 +734,34 @@ def _calcular_fluxos_partes(todas_disps, cnpj_basico) -> dict:
     return fluxos
 
 
-def _agregar_classes_risco(todas_disps, agg) -> dict:
-    """Distribuição por classe de risco (aba 6): {classe: [qtd, volume]}."""
-    classe_counts = {"CRITICO": [0, 0.0], "ALTO": [0, 0.0], "MEDIO": [0, 0.0], "BAIXO": [0, 0.0]}
+def _anexar_risco_disps(todas_disps, agg) -> None:
+    """Fase 3 do refactor 2.4: anexa a cada disposição os sinais forenses e o
+    risk score por transação (acum/pv/vr/sm/car/score/classe + período fiscal e
+    hash de rastreabilidade). Calculado UMA vez aqui; as abas 5 (Disposições) e
+    6 (Risk Heatmap) só leem — antes cada aba recalculava por linha."""
     for d in todas_disps:
         t = d.transacao
-        cnpj = d.cnpj
         info = d.info_cnpj
-        sit = info.get("situacao", "")
-        porte = info.get("porte", "")
-        meio = d.meio
-        mes = t.data[:7]
-        acum = agg.acumulado_mes.get((cnpj, mes), 0.0) if cnpj else 0.0
-        pv = detectar_primeira_vez(cnpj, t.data, agg)
-        vr = detectar_valor_redondo(t.valor)
-        sm = detectar_smurfing(cnpj, t.data, agg)
-        car = detectar_carrossel(cnpj, agg)
-        _, classe = calcular_risk_score(t.valor, d.disposicao, sit, porte, meio, vr, sm, car, pv, acum)
-        classe_counts[classe][0] += 1
-        classe_counts[classe][1] += abs(t.valor)
+        mes_iso = t.data[:7]
+        d.acum = agg.acumulado_mes.get((d.cnpj, mes_iso), 0.0) if d.cnpj else 0.0
+        d.pv = detectar_primeira_vez(d.cnpj, t.data, agg)
+        d.vr = detectar_valor_redondo(t.valor)
+        d.sm = detectar_smurfing(d.cnpj, t.data, agg)
+        d.car = detectar_carrossel(d.cnpj, agg)
+        d.score, d.classe = calcular_risk_score(
+            t.valor, d.disposicao, info.get("situacao", ""), info.get("porte", ""),
+            d.meio, d.vr, d.sm, d.car, d.pv, d.acum)
+        d.pf = periodo_fiscal(t.data)
+        d.hash_linha = hash_linha(t.data, t.valor, t.memo or "", t.fitid or "")
+
+
+def _agregar_classes_risco(todas_disps) -> dict:
+    """Distribuição por classe de risco (aba 6): {classe: [qtd, volume]}.
+    Consome o `d.classe` anexado por `_anexar_risco_disps`."""
+    classe_counts = {"CRITICO": [0, 0.0], "ALTO": [0, 0.0], "MEDIO": [0, 0.0], "BAIXO": [0, 0.0]}
+    for d in todas_disps:
+        classe_counts[d.classe][0] += 1
+        classe_counts[d.classe][1] += abs(d.transacao.valor)
     return classe_counts
 
 
@@ -868,8 +877,10 @@ def preparar_calculo_laudo(todos, saldos, cache) -> dict:
     consomem: período, totais, anualização/múltiplo (motor `analisar_regime` —
     laudo == motor), disposições forenses classificadas (incl. pós-baixa) e os
     agregados por aba (fase 2 do desmembramento: classe de risco, fluxos com
-    partes relacionadas, MEIs × teto, tributário e pós-baixa). Mantida ao lado
-    do render para a saída continuar idêntica ao centavo (golden LOCAR).
+    partes relacionadas, MEIs × teto, tributário e pós-baixa). A fase 3 anexa a
+    cada disposição os sinais e o risk score por transação (`_anexar_risco_disps`)
+    — as abas 5/6 só renderizam. Mantida ao lado do render para a saída
+    continuar idêntica ao centavo (golden LOCAR).
 
     Lê o global EMPRESA (cnpj_basico) — já montado por coletar_dados/chamador
     antes da geração, e imutável durante ela.
@@ -934,6 +945,7 @@ def preparar_calculo_laudo(todos, saldos, cache) -> dict:
         todas_disps.append(d)
 
     agg = calcular_agregados(todas_disps)
+    _anexar_risco_disps(todas_disps, agg)
     cnpj_basico = EMPRESA.get("cnpj_basico", "")
     vol_transf_interna = _calcular_transf_internas(todas_disps, cnpj_basico)
     cat_count, cat_volume, cat_retencao, cat_por_mes, total_ret_5m = _agregar_tributario(todas_disps)
@@ -958,7 +970,7 @@ def preparar_calculo_laudo(todos, saldos, cache) -> dict:
         "agg": agg,
         "vol_transf_interna": vol_transf_interna,
         "volume_liquido": volume_bruto - vol_transf_interna,
-        "classe_counts": _agregar_classes_risco(todas_disps, agg),
+        "classe_counts": _agregar_classes_risco(todas_disps),
         "fluxos": _calcular_fluxos_partes(todas_disps, cnpj_basico),
         "meis_det": _agregar_meis(todas_disps, cache, meses_obs),
         "cat_count": cat_count,
@@ -993,7 +1005,6 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     anualizado = calc["anualizado"]
     multiplo = calc["multiplo"]
     todas_disps = calc["todas_disps"]
-    agg = calc["agg"]
     vol_transf_interna = calc["vol_transf_interna"]
     volume_liquido = calc["volume_liquido"]
     classe_counts = calc["classe_counts"]
@@ -1359,6 +1370,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     style_header(ws, r, len(headers))
     r += 1
 
+    # Sinais/score por linha vêm anexados da fase de cálculo (_anexar_risco_disps).
     for d in sorted(todas_disps, key=lambda x: x.transacao.data):
         t = d.transacao
         cnpj = d.cnpj
@@ -1370,17 +1382,11 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         uf = info.get("uf", "")
         municipio = info.get("municipio", "")
         porte = info.get("porte", "")
-        sit = info.get("situacao", "")
         meio = d.meio
-        mes = t.data[:7]
-        acum = agg.acumulado_mes.get((cnpj, mes), 0.0) if cnpj else 0.0
-        pv = detectar_primeira_vez(cnpj, t.data, agg)
-        vr = detectar_valor_redondo(t.valor)
-        sm = detectar_smurfing(cnpj, t.data, agg)
-        car = detectar_carrossel(cnpj, agg)
-        score, classe = calcular_risk_score(t.valor, d.disposicao, sit, porte, meio, vr, sm, car, pv, acum)
-        pf = periodo_fiscal(t.data)
-        h_linha = hash_linha(t.data, t.valor, t.memo or "", t.fitid or "")
+        acum, pv, vr, sm, car = d.acum, d.pv, d.vr, d.sm, d.car
+        score, classe = d.score, d.classe
+        pf = d.pf
+        h_linha = d.hash_linha
         is_alerta = d.disposicao == "ALERTA_POS_BAIXA"
         is_critico = classe == "CRITICO"
 
