@@ -12,8 +12,6 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-import re
-import threading
 import uuid
 import zipfile
 from typing import List, Optional
@@ -63,17 +61,17 @@ from api.services.fiscal_persistence import (
 )
 from api.services.storage import read_limited
 from api.services import laudo_forense as laudo
+from api.services.laudo_async import (
+    FORMATOS_LAUDO,
+    LaudoEntradaInvalida,
+    gerar_laudo_documento,
+    sanitize_filename as _sanitize_filename,
+)
 from api.services import calculadora_cbs_ibs
 from api.schemas_cbs_ibs import OperacaoFiscalInput
 
 router = APIRouter(tags=["fiscal"], prefix="/fiscal")
 log = logging.getLogger("orgconc.fiscal")
-
-_SAFE_FILENAME_RE = re.compile(r"[^\w.\-]")
-
-
-def _sanitize_filename(name: str) -> str:
-    return _SAFE_FILENAME_RE.sub("_", name)[:120] or "arquivo"
 
 
 def _separar_arquivos_fiscal(arquivos: list[tuple[str, bytes]]) -> tuple[Optional[bytes], list[tuple[str, bytes]]]:
@@ -250,12 +248,6 @@ async def processar_fiscal(
     })
 
 
-_LAUDO_LOCK = threading.Lock()
-
-
-_FORMATOS_LAUDO = {"xlsx", "html", "pdf"}
-
-
 @router.post("/apurar")
 @limiter.limit("30/minute")
 async def apurar_cbs_ibs(
@@ -345,93 +337,87 @@ async def gerar_laudo(
     Aceita extratos OFX e, opcionalmente, XMLs/ZIPs de NF-e/CT-e — quando enviados,
     o MESMO documento ganha as abas/seções fiscais (12. Documentos Fiscais e
     13. Conformidade Fiscal). Formatos: xlsx (abas), html, pdf (WeasyPrint).
-    Usa o cache de CNPJ existente (sem rede em-request).
+    Usa o cache de CNPJ existente (sem rede em-request). Núcleo compartilhado
+    com o caminho assíncrono: api/services/laudo_async.gerar_laudo_documento.
     """
-    formato = (formato or "xlsx").lower()
-    if formato not in _FORMATOS_LAUDO:
-        raise HTTPException(400, f"formato invalido: use {sorted(_FORMATOS_LAUDO)}")
+    uploads = await _coletar_uploads_laudo(arquivos)
+    try:
+        saida, fname, mime = await gerar_laudo_documento(
+            uploads, empresa_cnpj=empresa_cnpj, conta=conta, formato=formato)
+    except LaudoEntradaInvalida as e:
+        raise HTTPException(e.status, str(e))
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
+    disposition = "inline" if mime.startswith("text/html") else "attachment"
+    return Response(
+        content=saida,
+        media_type=mime,
+        headers={"Content-Disposition": f'{disposition}; filename="{fname}"'},
+    )
+
+
+async def _coletar_uploads_laudo(arquivos: List[UploadFile]) -> list[tuple[str, bytes]]:
+    """Lê os uploads dentro dos limites e devolve [(nome, bytes)]."""
     if not arquivos:
         raise HTTPException(400, "Envie ao menos 1 arquivo OFX.")
-
-    transacoes = []
-    fiscais: list[tuple[str, bytes]] = []
+    uploads: list[tuple[str, bytes]] = []
     total = 0
     for up in arquivos:
         conteudo = await read_limited(up, MAX_UPLOAD_BYTES)
         total += len(conteudo)
         if total > MAX_UPLOAD_TOTAL_BYTES:
             raise HTTPException(413, f"Total de uploads excede {MAX_UPLOAD_TOTAL_MB} MB.")
-        nome = (up.filename or "").lower()
-        if nome.endswith(".ofx"):
-            try:
-                transacoes.extend(await asyncio.to_thread(ler_ofx, conteudo))
-            except Exception:
-                raise HTTPException(400, f"Falha ao ler OFX: {up.filename}")
-        elif nome.endswith(".xml") or nome.endswith(".zip"):
-            fiscais.append((_sanitize_filename(up.filename or "doc"), conteudo))
-    if not transacoes:
+        uploads.append((up.filename or "arquivo", conteudo))
+    return uploads
+
+
+@router.post("/laudo/async")
+@limiter.limit("3/minute")
+async def gerar_laudo_async(
+    request: Request,
+    empresa_cnpj: str = Form(..., description="CNPJ da entidade auditada (14 dígitos)"),
+    conta: str = Form("", description="escopar a uma conta (substring do ID da conta no OFX)"),
+    arquivos: List[UploadFile] = File(..., description="1+ extratos OFX + (opcional) XMLs/ZIPs de NF-e/CT-e"),
+    formato: str = Query("xlsx", description="xlsx | html | pdf"),
+    user: TokenPayload = Depends(current_user),
+):
+    """Versão assíncrona do laudo (P1 #9): enfileira e devolve job_id.
+
+    O worker (api/services/job_queue) gera o MESMO documento do endpoint
+    síncrono. Polling em GET /jobs/{id}; download em GET /jobs/{id}/resultado.
+    Requer banco configurado e organização no token (o job pertence à org).
+    """
+    if not DB_DISPONIVEL or SessionLocal is None:
+        raise HTTPException(503, "Fila de jobs requer banco de dados configurado.")
+    if not user.org_id:
+        raise HTTPException(403, "Job assíncrono requer organização no token.")
+    formato = (formato or "xlsx").lower()
+    if formato not in FORMATOS_LAUDO:
+        raise HTTPException(400, f"formato invalido: use {sorted(FORMATOS_LAUDO)}")
+    uploads = await _coletar_uploads_laudo(arquivos)
+    if not any((n or "").lower().endswith(".ofx") for n, _ in uploads):
         raise HTTPException(400, "Nenhum arquivo OFX válido fornecido.")
 
-    # dedup por (conta, fitid) + filtro de conta
-    vistos: set = set()
-    dedup = []
-    for t in transacoes:
-        k = (t.conta, t.fitid) if t.fitid else (t.conta, t.data, round(t.valor, 2), t.memo, t.nome)
-        if k in vistos:
-            continue
-        vistos.add(k)
-        dedup.append(t)
-    if conta:
-        dedup = [t for t in dedup if conta in (t.conta or "")]
-    if not dedup:
-        raise HTTPException(400, "Nenhuma transação para a conta informada.")
+    from api.db.models import Job
+    from api.services.job_queue import TIPO_LAUDO, empacotar_uploads
 
-    def _build():
-        from io import BytesIO
-
-        from api.matchers.cnpj_enricher import _carregar_cache
-        cache = _carregar_cache()
-        # NF-e/CT-e pela própria engine (alimenta as abas/seções fiscais).
-        nfes, ctes, _n = laudo.carregar_docs_xmls(fiscais) if fiscais else ([], [], 0)
-        todos, saldos = laudo.montar_dados(dedup)
-        # EMPRESA é global do módulo laudo — serializa a geração para evitar race.
-        with _LAUDO_LOCK:
-            laudo.EMPRESA = laudo.construir_empresa(empresa_cnpj, cache)
-            razao = laudo.EMPRESA.get("razao_social", "laudo")
-            wb, stats = laudo.gerar_laudo_workbook(todos, saldos, cache, nfes, ctes)
-            if formato == "xlsx":
-                buf = BytesIO()
-                wb.save(buf)
-                return buf.getvalue(), razao
-            # html / pdf usam o mesmo stats -> gerar_md -> gerar_html
-            md, _totais = laudo.gerar_md(stats)
-            html = laudo.gerar_html(md, stats.get("periodo_str", ""))
-            return html, razao
-
-    saida, razao = await asyncio.to_thread(_build)
-    fname = re.sub(r"[^\w]+", "_", razao).strip("_")[:40] or "laudo"
-
-    if formato == "xlsx":
-        return Response(
-            content=saida,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.xlsx"'},
-        )
-    if formato == "html":
-        return Response(
-            content=saida,
-            media_type="text/html; charset=utf-8",
-            headers={"Content-Disposition": f'inline; filename="laudo_{fname}.html"'},
-        )
-    # pdf
-    blob = await laudo.html_para_pdf_bytes(saida, landscape=True)
-    if not blob:
-        raise HTTPException(500, "Falha ao gerar PDF.")
-    return Response(
-        content=blob,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="laudo_{fname}.pdf"'},
+    job = Job(
+        org_id=uuid.UUID(user.org_id),
+        tipo=TIPO_LAUDO,
+        params={"empresa_cnpj": empresa_cnpj, "conta": conta, "formato": formato},
+        arquivos=empacotar_uploads(uploads),
     )
+    async with SessionLocal() as db:
+        db.add(job)
+        await db.commit()
+        job_id = str(job.id)
+    log.info("laudo async enfileirado: job=%s formato=%s", job_id, formato)
+    return JSONResponse(status_code=202, content={
+        "job_id": job_id,
+        "status": "PENDENTE",
+        "polling": f"/v1/jobs/{job_id}",
+        "resultado": f"/v1/jobs/{job_id}/resultado",
+    })
 
 
 @router.post("/laudo/resumo")

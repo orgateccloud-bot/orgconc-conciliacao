@@ -37,6 +37,7 @@ from api.routers import (
     fiscal as fiscal_router,
     guias as guias_router,
     health,
+    jobs as jobs_router,
     matchers as matchers_router,
     metrics as metrics_router,
     transacoes as transacoes_router,
@@ -86,6 +87,7 @@ app.include_router(matchers_router.router)
 app.include_router(guias_router.router)
 app.include_router(contratos_router.router)
 app.include_router(fiscal_router.router)
+app.include_router(jobs_router.router)
 
 # === Versionamento de API: /v1 (dual-mount, P2 #10) ===
 # As rotas de negócio respondem TAMBÉM sob /v1/* (alias estável p/ clientes de
@@ -111,6 +113,7 @@ _V1_ROUTERS = (
     guias_router.router,
     contratos_router.router,
     fiscal_router.router,
+    jobs_router.router,
 )
 for _v1_router in _V1_ROUTERS:
     app.include_router(_v1_router, prefix="/v1", include_in_schema=False)

@@ -178,7 +178,20 @@ async def lifespan(app: FastAPI):
         log.info("Banco configurado")
     else:
         log.info("Banco nao configurado — persistencia JSON local")
+    # Worker da fila de jobs (P1 #9): 1 loop por réplica; claim com SKIP LOCKED
+    # evita duplicação entre réplicas. Sem DB não há fila — não inicia.
+    worker_task = None
+    if db_ok and _config.JOBS_WORKER_ENABLED:
+        import asyncio
+
+        from api.services.job_queue import worker_loop
+
+        worker_task = asyncio.create_task(worker_loop(), name="orgconc-job-worker")
     yield
+    if worker_task is not None:
+        worker_task.cancel()
+        with contextlib.suppress(Exception):
+            await worker_task
     if _config.DB_DISPONIVEL and engine:
         await engine.dispose()
 

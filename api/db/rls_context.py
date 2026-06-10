@@ -23,6 +23,9 @@ from sqlalchemy.orm import Session
 _org_atual: ContextVar[Optional[str]] = ContextVar("orgconc_org_id", default=None)
 # Superadmin (leitura cross-org): só o admin por env. Default False.
 _superadmin_atual: ContextVar[bool] = ContextVar("orgconc_superadmin", default=False)
+# Worker de jobs (fila P1 #9): habilita a policy worker_access na tabela jobs
+# (claim/finalização cross-org). Só o loop do worker seta — nunca um request.
+_worker_atual: ContextVar[bool] = ContextVar("orgconc_worker", default=False)
 
 
 def set_org_context(org_id: Optional[str]) -> Token:
@@ -57,6 +60,16 @@ def get_superadmin_context() -> bool:
     return _superadmin_atual.get()
 
 
+def set_worker_context(valor: bool) -> Token:
+    """Marca a task atual como worker de jobs (policy worker_access da tabela
+    jobs). Par: reset_worker_context. Restrito ao loop de api/services/job_queue."""
+    return _worker_atual.set(bool(valor))
+
+
+def reset_worker_context(token: Token) -> None:
+    _worker_atual.reset(token)
+
+
 async def aplicar_rls(session: AsyncSession) -> None:
     """Aplica `SET LOCAL app.org_id` na sessão a partir do contexto (one-shot).
 
@@ -84,3 +97,6 @@ def _set_org_no_begin(session, transaction, connection) -> None:
     if _superadmin_atual.get():
         # Habilita a policy superadmin_read (FOR SELECT) — leitura cross-org.
         connection.execute(text("SELECT set_config('app.superadmin', 'on', true)"))
+    if _worker_atual.get():
+        # Habilita a policy worker_access da tabela jobs (claim cross-org do worker).
+        connection.execute(text("SELECT set_config('app.worker', 'on', true)"))
