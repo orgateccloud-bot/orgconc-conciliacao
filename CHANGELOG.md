@@ -16,6 +16,18 @@ Todas as mudanças relevantes do OrgConc. Formato baseado em
   asyncio embutido nas réplicas (claim `FOR UPDATE SKIP LOCKED`, retry de
   órfãos, TTL). Núcleo do laudo compartilhado (`laudo_async`) — síncrono e
   assíncrono geram o mesmo documento. Validado no staging ponta-a-ponta.
+- **UI do laudo via fila (#124)**: LaudoPage/AuditoriaForense geram pelo
+  `gerarLaudoComFila` (fases na UI + fallback síncrono em 503/403).
+- **Observabilidade do banco (#123)**: ping de DB loga o erro real por
+  tentativa + error final; monitor sintético ganhou a sonda "Runtime com
+  banco" (`POST /auth/refresh` sem cookie: 401 ok / 503 alarme).
+
+### Corrigido (3ª rodada 2026-06-10)
+- **Incidente: produção rodou ~32h sem banco no runtime** (senha do
+  `app_orgconc` divergente na `DATABASE_URL` — rotação parcial; o preDeploy
+  seguia passando pelo `ALEMBIC_DATABASE_URL`, mascarando). Corrigido com
+  reset da senha via owner + variável + redeploy; prevenções no #123. Ver
+  `docs/postmortems/2026-06-10-prod-sem-db-senha-app-orgconc.md` e RUNBOOK §5.
 
 ### Adicionado
 - Cobertura de testes do frontend para 17/17 páginas + componentes

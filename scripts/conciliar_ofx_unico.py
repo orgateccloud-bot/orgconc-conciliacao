@@ -28,13 +28,12 @@ from openpyxl.utils import get_column_letter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _logo_helper import html_logo_inline, inserir_logo_xlsx, logo_data_uri
+from _logo_helper import html_logo_inline, inserir_logo_xlsx
 from api.matchers.cascata import Disposicao, classificar, ler_ofx
 from api.matchers.cnpj_enricher import (
     _carregar_cache,
     _salvar_cache,
     buscar_cnpj_por_nome_no_cache,
-    buscar_cnpj_por_nome_rfb,
     enriquecer_um,
 )
 from api.matchers.forensics import (
@@ -170,7 +169,6 @@ def _classificar_disposicao(res) -> tuple[str, str, str]:
 
     Sem matcher de BD ativo, decide pelo estagio + heuristicas locais.
     """
-    t = res.transacao
     if res.metodo == "transferencia_interna":
         return "TRANSFERENCIA_INTERNA", "regra", "nao e evento economico"
     if res.metodo == "tarifa_bancaria":
@@ -963,7 +961,6 @@ def aba_partes_relacionadas(wb, d: dict, empresa: dict) -> None:
     # Detecta vinculos
     socios_empresa = (empresa.get("socios") or "").upper()
     nomes_empresa = (empresa.get("nome") or "").upper()
-    grupos_inferidos = {}  # nome_grupo -> [transacoes]
 
     # Estrategia: detecta MESMA TIT, e tambem nomes recorrentes (top 5)
     from collections import Counter
@@ -1280,7 +1277,6 @@ def main() -> None:
     else:
         # Tenta extrair conta+periodo do OFX
         raw = ofx_path.read_text(encoding="latin-1", errors="ignore")
-        ag = re.search(r"<BRANCHID>([^<\s]+)", raw)
         ct = re.search(r"<ACCTID>([^<\s]+)", raw)
         ini = re.search(r"<DTSTART>(\d{6})", raw)
         prefixo = f"CONCILIACAO_{ct.group(1) if ct else 'X'}_{ini.group(1) if ini else 'X'}"

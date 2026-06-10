@@ -105,8 +105,11 @@ Varredura read-only (10 agentes) cruzando roadmap × código. Achados que mudam 
 | ✅ Mergeado em prod | 2.4 fase 2 — agregados das abas (risco/fluxos/MEIs/tributário/pós-baixa/transf. internas) na fase pura; prova ao centavo 0/262.939 células | [#118](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/118) |
 | ✅ Mergeado em prod | Frontend migrado p/ `/v1` (rotas de negócio; `/auth` na raiz pelo cookie de refresh); vitest 345 + E2E real 24/24 | [#119](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/119) |
 | ✅ Mergeado em prod | 2.4 fase 3 — risk score por transação anexado na fase pura (`_anexar_risco_disps`); abas 5/6 só renderizam; **desmembramento cálculo×render COMPLETO**; prova ao centavo 0/262.939 | [#120](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/120) |
-| 🟢 PR aberto | **P1 #9 jobs assíncronos SEM infra nova**: fila em Postgres (migration 023 + RLS `worker_access`) + worker asyncio nas réplicas (SKIP LOCKED); `POST /fiscal/laudo/async` + `GET /jobs/*`; **validado no staging ponta-a-ponta** (migration no preDeploy + smoke: submit → CONCLUIDO <3s → XLSX 20.599 bytes) | [#122](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/122) |
-| ⏭️ Restante | UI do fluxo async no frontend (follow-up do #122) · validação live da calculadora (🔑 spec) · migração do `/auth` p/ `/v1` (🔑 cookie path coordenado) · SLO aprovar / rotação executar (🔑) | — |
+| ✅ Mergeado em prod | **P1 #9 jobs assíncronos SEM infra nova**: fila em Postgres (migration 023 + RLS `worker_access`) + worker asyncio nas réplicas (SKIP LOCKED); `POST /fiscal/laudo/async` + `GET /jobs/*`; **validado no staging ponta-a-ponta** (migration no preDeploy + smoke: submit → CONCLUIDO <3s → XLSX 20.599 bytes) | [#122](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/122) |
+| ✅ Mergeado em prod | UI do laudo via fila (fases na UI + fallback síncrono em 503/403); E2E real exercitou o fallback | [#124](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/124) |
+| ✅ Mergeado em prod | Observabilidade do incidente: ping de DB com log do erro real + sonda de banco no monitor (30min) | [#123](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/123) |
+| 🔧 Incidente resolvido | Prod ~32h sem DB no runtime (senha `app_orgconc` divergente — rotação parcial); reset via owner + variável + redeploy; senha do `app_orgconc` portanto JÁ rotacionada | post-mortem em `docs/postmortems/` · RUNBOOK §5 |
+| ⏭️ Restante | validação live da calculadora (🔑 spec) · migração do `/auth` p/ `/v1` (🔑 cookie path coordenado) · SLO aprovar (🔑) · rotação dos DEMAIS segredos (JWT/service/Anthropic — 🔑) | — |
 
 ## Execução 2026-06-09 — itens → PRs
 

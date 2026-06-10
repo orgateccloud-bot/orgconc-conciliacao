@@ -76,12 +76,29 @@ Slowapi já protege com 120/min global, 20/min upload, 5/min auth. Se ainda assi
 3. Sentry `before_send` em `api/core/observability.py` aplica o mesmo `mask_pii`.
 4. Para logs já enviados ao Sentry: use API de delete events.
 
-### 5. DB indisponível
+### 5. DB indisponível (runtime sem banco)
 
-`DB_DISPONIVEL=False` durante startup → app sobe normalmente, mas endpoints `/clientes`, `/conciliacoes` retornam 503. Conciliações funcionam em modo JSON local (`./data/{rid}.json`).
+`DB_DISPONIVEL=False` no startup → o app sobe, mas login de usuários de org, refresh e
+`/clientes`/`/conciliacoes` retornam 503; só o admin-env loga. Conciliações funcionam em
+modo JSON local (`./data/{rid}.json`). ⚠️ O `/health` de prod responde `{"status":"ok"}`
+MESMO sem banco — não use como sonda.
 
-Para forçar reconexão sem restart:
-- Não é suportado hoje. Restart é necessário (`_db_ping_sync` roda apenas no import).
+**Sonda (sem credencial):** `curl -X POST <BASE>/auth/refresh` → **503** = runtime sem DB ·
+**401** = DB ok. O monitor sintético roda essa sonda a cada 30min desde o #123.
+
+Diagnóstico (incidente real de 2026-06-10 — ver
+`docs/postmortems/2026-06-10-prod-sem-db-senha-app-orgconc.md`):
+1. Logs do startup agora mostram o erro do ping (`Ping do DB falhou: ...`) — leia-o primeiro.
+2. **Migrations passam mas o runtime falha?** Compare `DATABASE_URL` (user `app_orgconc.<ref>`)
+   × `ALEMBIC_DATABASE_URL` (owner) — rotação parcial de senha é a causa clássica.
+3. Senha divergente: `ALTER ROLE app_orgconc PASSWORD ...` via conexão owner → aguarde
+   ~30–60s (o pooler Supavisor cacheia credenciais) → atualize `DATABASE_URL` no Railway →
+   redeploy → repita a sonda (deve dar 401).
+4. Projeto Supabase free pausado dá outro sintoma (timeout no handshake) — retomar no
+   dashboard. Host direto `db.<ref>.supabase.co` não resolve mais; use só o pooler.
+
+Para forçar reconexão sem restart: não é suportado (`_db_ping_sync` roda só no lifespan).
+Restart/redeploy é necessário.
 
 ## Deploy
 
@@ -91,11 +108,11 @@ Para forçar reconexão sem restart:
 2. Healthcheck `/health` deve responder em <30s.
 3. Variáveis obrigatórias em prod: `ORGCONC_ENV=production`, `ORGCONC_JWT_SECRET` (>=32 chars), `ORGCONC_ADMIN_EMAIL`, `ORGCONC_ADMIN_SENHA_HASH`, `ANTHROPIC_API_KEY`, `ORGCONC_CORS_ORIGINS`, `DATABASE_URL`.
 
-### Frontend (GitHub Pages)
+### Frontend (same-origin no Railway)
 
-1. `git push origin main` aciona `.github/workflows/deploy.yml`.
-2. Build `npm run build` em `orgconc-react/dist/` é publicado.
-3. URL: `https://<org>.github.io/<repo>/app/`.
+1. O build React é gerado no Dockerfile multi-stage e servido pela própria API em `/app`
+   (GitHub Pages foi removido). `git push origin main` = deploy único de backend+frontend.
+2. Netlify gera apenas deploy-preview de PRs (dashboard-only, sem backend — não é produção).
 
 ## Rollback de versão
 
