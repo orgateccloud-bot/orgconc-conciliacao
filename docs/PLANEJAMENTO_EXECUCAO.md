@@ -105,7 +105,8 @@ Varredura read-only (10 agentes) cruzando roadmap × código. Achados que mudam 
 | ✅ Mergeado em prod | 2.4 fase 2 — agregados das abas (risco/fluxos/MEIs/tributário/pós-baixa/transf. internas) na fase pura; prova ao centavo 0/262.939 células | [#118](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/118) |
 | ✅ Mergeado em prod | Frontend migrado p/ `/v1` (rotas de negócio; `/auth` na raiz pelo cookie de refresh); vitest 345 + E2E real 24/24 | [#119](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/119) |
 | ✅ Mergeado em prod | 2.4 fase 3 — risk score por transação anexado na fase pura (`_anexar_risco_disps`); abas 5/6 só renderizam; **desmembramento cálculo×render COMPLETO**; prova ao centavo 0/262.939 | [#120](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/120) |
-| ⏭️ Restante | P1 #9 jobs assíncronos (🔑 worker) · validação live da calculadora (🔑 spec) · migração do `/auth` p/ `/v1` (🔑 cookie path coordenado) · SLO aprovar / rotação executar (🔑) | — |
+| 🟢 PR aberto | **P1 #9 jobs assíncronos SEM infra nova**: fila em Postgres (migration 023 + RLS `worker_access`) + worker asyncio nas réplicas (SKIP LOCKED); `POST /fiscal/laudo/async` + `GET /jobs/*`; **validado no staging ponta-a-ponta** (migration no preDeploy + smoke: submit → CONCLUIDO <3s → XLSX 20.599 bytes) | [#122](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/122) |
+| ⏭️ Restante | UI do fluxo async no frontend (follow-up do #122) · validação live da calculadora (🔑 spec) · migração do `/auth` p/ `/v1` (🔑 cookie path coordenado) · SLO aprovar / rotação executar (🔑) | — |
 
 ## Execução 2026-06-09 — itens → PRs
 
