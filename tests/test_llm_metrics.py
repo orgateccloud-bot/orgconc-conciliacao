@@ -15,7 +15,7 @@ def _limpar_estado():
     llm_metrics.resetar_acumulador_para_testes()
     for var in [
         "ORGCONC_LLM_COST_ALERT_USD",
-        "ORGCONC_LLM_PRICE_OPUS_IN", "ORGCONC_LLM_PRICE_OPUS_OUT",
+        "ORGCONC_LLM_PRICE_FABLE_IN", "ORGCONC_LLM_PRICE_FABLE_OUT",
         "ORGCONC_LLM_PRICE_SONNET_IN", "ORGCONC_LLM_PRICE_SONNET_OUT",
         "ORGCONC_LLM_PRICE_HAIKU_IN", "ORGCONC_LLM_PRICE_HAIKU_OUT",
     ]:
@@ -24,13 +24,13 @@ def _limpar_estado():
     llm_metrics.resetar_acumulador_para_testes()
 
 
-def test_calcular_custo_opus_usa_default():
-    m = llm_metrics.calcular_custo("claude-opus-4-7", 1_000_000, 1_000_000)
-    # Opus 4.5+ = $5/$25 (tabela oficial 2026)
-    assert m["cost_input_usd"] == 5.0
-    assert m["cost_output_usd"] == 25.0
-    assert m["cost_total_usd"] == 30.0
-    assert m["model_id"] == "claude-opus-4-7"
+def test_calcular_custo_fable_usa_default():
+    m = llm_metrics.calcular_custo("claude-fable-5", 1_000_000, 1_000_000)
+    # Fable 5 = $10/$50 (tabela oficial 2026)
+    assert m["cost_input_usd"] == 10.0
+    assert m["cost_output_usd"] == 50.0
+    assert m["cost_total_usd"] == 60.0
+    assert m["model_id"] == "claude-fable-5"
 
 
 def test_calcular_custo_sonnet_pequeno():
@@ -52,18 +52,18 @@ def test_calcular_custo_modelo_desconhecido_cai_em_haiku():
 
 
 def test_override_preco_via_env():
-    os.environ["ORGCONC_LLM_PRICE_OPUS_IN"] = "20.0"
-    os.environ["ORGCONC_LLM_PRICE_OPUS_OUT"] = "100.0"
-    m = llm_metrics.calcular_custo("claude-opus-4-7", 1_000_000, 1_000_000)
+    os.environ["ORGCONC_LLM_PRICE_FABLE_IN"] = "20.0"
+    os.environ["ORGCONC_LLM_PRICE_FABLE_OUT"] = "100.0"
+    m = llm_metrics.calcular_custo("claude-fable-5", 1_000_000, 1_000_000)
     assert m["cost_input_usd"] == 20.0
     assert m["cost_output_usd"] == 100.0
 
 
 def test_override_preco_invalido_cai_em_default(caplog):
-    os.environ["ORGCONC_LLM_PRICE_OPUS_IN"] = "nao-eh-numero"
+    os.environ["ORGCONC_LLM_PRICE_FABLE_IN"] = "nao-eh-numero"
     with caplog.at_level(logging.WARNING):
-        m = llm_metrics.calcular_custo("claude-opus-4-7", 1_000_000, 0)
-    assert m["cost_input_usd"] == 5.0
+        m = llm_metrics.calcular_custo("claude-fable-5", 1_000_000, 0)
+    assert m["cost_input_usd"] == 10.0
 
 
 def test_registrar_uso_loga_estruturado(caplog):
@@ -98,7 +98,7 @@ def test_threshold_dispara_warning_uma_vez(caplog):
 def test_threshold_zero_nao_dispara(caplog):
     os.environ["ORGCONC_LLM_COST_ALERT_USD"] = "0"
     with caplog.at_level(logging.WARNING, logger="orgconc.llm.metrics"):
-        llm_metrics.registrar_uso("claude-opus-4-7", "O", 1_000_000, 1_000_000)
+        llm_metrics.registrar_uso("claude-fable-5", "F", 1_000_000, 1_000_000)
     assert not any(r.message == "llm_custo_threshold_atingido" for r in caplog.records)
 
 
@@ -152,7 +152,7 @@ def test_confirmar_persistido_dia_diferente_eh_noop():
 
 
 def test_calcular_custo_sonnet_usa_default_exato():
-    # Garante o ramo "sonnet" do prefixo (entre opus e haiku).
+    # Garante o ramo "sonnet" do prefixo (entre fable e haiku).
     m = llm_metrics.calcular_custo("claude-sonnet-4-6", 1_000_000, 1_000_000)
     assert m["cost_input_usd"] == 3.0
     assert m["cost_output_usd"] == 15.0
@@ -174,10 +174,10 @@ def test_override_preco_sonnet_out_via_env():
 
 
 def test_calcular_custo_arredonda_seis_casas():
-    # 1 token de input em opus = 5/1M = 0.000005 → mantem 6 casas.
-    m = llm_metrics.calcular_custo("claude-opus-4-7", 1, 0)
-    assert m["cost_input_usd"] == 0.000005
-    assert m["cost_total_usd"] == 0.000005
+    # 1 token de input em fable = 10/1M = 0.00001 → mantem 6 casas.
+    m = llm_metrics.calcular_custo("claude-fable-5", 1, 0)
+    assert m["cost_input_usd"] == 0.00001
+    assert m["cost_total_usd"] == 0.00001
 
 
 def test_calcular_custo_converte_tokens_para_int():

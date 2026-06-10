@@ -147,7 +147,7 @@ _MODELOS_VALIDOS = dict(_model_registry.DEFAULTS)  # {familia: (id, label)}
 def _multi_de_validos() -> list[tuple[str, str, str]]:
     return [
         (_MODELOS_VALIDOS[f][0], _MODELOS_VALIDOS[f][1], _model_registry.EMOJI.get(f, ""))
-        for f in ("opus", "sonnet", "haiku")
+        for f in ("fable", "sonnet", "haiku")
         if f in _MODELOS_VALIDOS
     ]
 

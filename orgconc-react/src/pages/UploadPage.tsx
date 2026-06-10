@@ -12,14 +12,14 @@ import { toast } from "sonner";
 import { Upload, FileText, X } from "lucide-react";
 import { cn, formatBytes } from "@/lib/utils";
 
-type Modo = "simulacao" | "haiku" | "sonnet" | "opus" | "multi";
+type Modo = "simulacao" | "haiku" | "sonnet" | "fable" | "multi";
 type Formato = "ofx" | "csv";
 
 const MODO_LABELS: Record<Modo, string> = {
   simulacao: "Simulação",
   haiku: "Haiku",
   sonnet: "Sonnet",
-  opus: "Opus",
+  fable: "Fable 5",
   multi: "Multi-modelo",
 };
 
@@ -132,7 +132,7 @@ export function UploadPage() {
         {/* Mode selector */}
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
-            {(["simulacao", "haiku", "sonnet", "opus", "multi"] as Modo[]).map(
+            {(["simulacao", "haiku", "sonnet", "fable", "multi"] as Modo[]).map(
               (m) => (
                 <Button
                   key={m}
@@ -145,10 +145,10 @@ export function UploadPage() {
               )
             )}
           </div>
-          {modo === "opus" && (
+          {modo === "fable" && (
             <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
               <span>⚠️</span>
-              <span>Opus consome ~10× mais créditos que Sonnet</span>
+              <span>Fable 5 custa ~3× mais que o Sonnet ($10/$50 por 1M tokens)</span>
             </p>
           )}
         </div>

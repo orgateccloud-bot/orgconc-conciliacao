@@ -67,13 +67,13 @@ def registrar_llm_prometheus(
 ) -> None:
     """Incrementa contadores de tokens/custo LLM. No-op se lib ausente.
 
-    Normaliza o model_id para a família (opus/sonnet/haiku) para evitar
+    Normaliza o model_id para a família (fable/sonnet/haiku) para evitar
     explosão de cardinalidade por sufixos de versão/data.
     """
     if not _PROMETHEUS_OK:
         return
     familia = (
-        "opus" if "opus" in model_id
+        "fable" if "fable" in model_id
         else "sonnet" if "sonnet" in model_id
         else "haiku" if "haiku" in model_id
         else "outro"

@@ -279,14 +279,15 @@ def test_conciliar_ofx_modelo_invalido_retorna_400():
 
 
 def test_modelos_validos_mapping():
-    """O dicionario _MODELOS_VALIDOS deve ter haiku, sonnet, opus mapeados."""
+    """O dicionario _MODELOS_VALIDOS deve ter haiku, sonnet, fable mapeados."""
     from api.main import _MODELOS_VALIDOS
 
     assert "haiku" in _MODELOS_VALIDOS
     assert "sonnet" in _MODELOS_VALIDOS
-    assert "opus" in _MODELOS_VALIDOS
+    assert "fable" in _MODELOS_VALIDOS
     assert _MODELOS_VALIDOS["haiku"][0] == "claude-haiku-4-5-20251001"
     assert _MODELOS_VALIDOS["sonnet"][0] == "claude-sonnet-4-6"
+    assert _MODELOS_VALIDOS["fable"][0] == "claude-fable-5"
 
 
 def test_conciliar_csv_exige_auth_quando_token_definido():
@@ -1626,7 +1627,7 @@ def test_conciliar_ofx_llm_rate_limit_retorna_msg_amigavel():
         patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-mock"}),
     ):
         r = client.post(
-            "/conciliar/ofx?modelo=opus",
+            "/conciliar/ofx?modelo=fable",
             files={"arquivos": ("test.ofx", io.BytesIO(OFX_SAMPLE2.encode()), "text/plain")},
         )
 
@@ -1671,9 +1672,9 @@ def test_conciliar_ofx_multi_modelo_mockado():
     data = r.json()
     assert data["modo"] == "multi_modelo"
     assert data["score_consenso"] == 0.85
-    assert len(data["modelos"]) == 3  # opus + sonnet + haiku
+    assert len(data["modelos"]) == 3  # fable + sonnet + haiku
     assert {m["modelo"] for m in data["modelos"]} == {
-        "claude-opus-4-8",
+        "claude-fable-5",
         "claude-sonnet-4-6",
         "claude-haiku-4-5-20251001",
     }

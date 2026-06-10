@@ -19,9 +19,8 @@ def _fake_model(model_id: str, iso: str, display: str | None = None):
 
 def test_descobrir_modelos_pega_mais_recente_por_familia():
     fake_models = [
-        _fake_model("claude-opus-4-7", "2026-04-14", "Opus 4.7"),
-        _fake_model("claude-opus-4-8", "2026-05-28", "Opus 4.8"),
-        _fake_model("claude-opus-4-1-20250805", "2025-08-05", "Opus 4.1"),
+        _fake_model("claude-fable-5", "2026-06-09", "Fable 5"),
+        _fake_model("claude-fable-4", "2025-12-01", "Fable 4"),
         _fake_model("claude-sonnet-4-6", "2026-02-17", "Sonnet 4.6"),
         _fake_model("claude-haiku-4-5-20251001", "2025-10-15", "Haiku 4.5"),
     ]
@@ -31,7 +30,7 @@ def test_descobrir_modelos_pega_mais_recente_por_familia():
     with patch("anthropic.Anthropic", return_value=fake_client):
         r = model_registry.descobrir_modelos("sk-ant-fake")
 
-    assert r["opus"] == ("claude-opus-4-8", "Opus 4.8")   # mais recente, nao o 4.7/4.1
+    assert r["fable"] == ("claude-fable-5", "Fable 5")   # mais recente, nao o Fable 4
     assert r["sonnet"][0] == "claude-sonnet-4-6"
     assert r["haiku"][0] == "claude-haiku-4-5-20251001"
 
@@ -42,13 +41,13 @@ def test_atualizar_modelos_atualiza_in_place():
     try:
         with (
             patch("api.core.config._model_registry.descobrir_modelos",
-                  return_value={"opus": ("claude-opus-9-0", "Opus 9.0")}),
+                  return_value={"fable": ("claude-fable-9", "Fable 9")}),
             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-x", "ORGCONC_MODELS_AUTO": "1"}),
         ):
             config.atualizar_modelos()
-        assert config._MODELOS_VALIDOS["opus"] == ("claude-opus-9-0", "Opus 9.0")
-        # _MODELOS_MULTI reconstruido in-place (mesma lista) refletindo o novo opus
-        assert any(m[0] == "claude-opus-9-0" for m in config._MODELOS_MULTI)
+        assert config._MODELOS_VALIDOS["fable"] == ("claude-fable-9", "Fable 9")
+        # _MODELOS_MULTI reconstruido in-place (mesma lista) refletindo o novo fable
+        assert any(m[0] == "claude-fable-9" for m in config._MODELOS_MULTI)
     finally:
         config._MODELOS_VALIDOS.clear()
         config._MODELOS_VALIDOS.update(orig)
@@ -83,5 +82,5 @@ def test_atualizar_modelos_falha_api_mantem_defaults():
     assert config._MODELOS_VALIDOS == orig  # defaults preservados
 
 
-def test_default_opus_e_4_8():
-    assert model_registry.DEFAULTS["opus"][0] == "claude-opus-4-8"
+def test_default_fable_e_5():
+    assert model_registry.DEFAULTS["fable"][0] == "claude-fable-5"
