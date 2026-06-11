@@ -33,7 +33,7 @@
 | # | Item | Tipo | Entrega |
 |---|------|------|---------|
 | 10 | 🟢 CHANGELOG ✅ ([#105](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/105)) · ⚠️ `/v1` adiado | 🤖 | CHANGELOG (Keep a Changelog + SemVer) em prod; `/v1` é breaking (16 routers + 40+ paths) — confirmar abordagem dual-mount |
-| 11 | Staging dedicado | 🔑 | Railway env + Supabase branch (a maior lacuna citada por todos) |
+| 11 | 🟢 Staging dedicado ✅ (parcial) | 🔑 | Railway env `staging` + Postgres + `web-staging` NO AR (validar migrations lá antes de prod — ver DEPLOY.md §2); falta Supabase branch p/ paridade de RLS |
 | 12 | SLA/SLO + observabilidade pós-deploy | 🔑 | metas + Sentry/logs centralizados confirmados em prod |
 | 13 | Rotação de segredos / key management | 🔑 | rotação do JWT secret + chaves |
 

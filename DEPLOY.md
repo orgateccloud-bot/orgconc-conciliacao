@@ -119,6 +119,30 @@ PORT=8000
 WORKERS=2
 ```
 
+### Ambiente de staging (Railway)
+
+Existe um environment **staging** no mesmo projeto Railway (serviço
+`web-staging` + Postgres próprio do Railway, separado do Supabase de prod).
+Uso principal: **validar migrations Alembic antes de produção**.
+
+```bash
+railway environment staging        # troca o contexto da CLI
+railway up                         # deploy manual da branch atual no staging
+```
+
+Particularidades do staging:
+- O banco foi **bootstrapado** com `create_all` + `alembic stamp head` — as
+  migrations antigas NÃO são re-executáveis do zero ali; valide apenas as
+  migrations NOVAS (upgrade incremental a partir do head).
+- asyncpg exige **1 statement por `op.execute()`** — migration com múltiplos
+  comandos num único execute passa no SQLite/psycopg2 e quebra no staging/prod.
+- Staging não tem RLS de prod nem dados reais — não serve para validar
+  isolamento de tenant (use os testes `tests/test_rls_*.py` no CI para isso).
+
+Fluxo recomendado para migration de risco: deploy no staging → `alembic
+upgrade head` lá → smoke test → só então merge na main (deploy de prod roda a
+migration via `preDeployCommand`).
+
 ---
 
 ## 3. Supabase — Configuração

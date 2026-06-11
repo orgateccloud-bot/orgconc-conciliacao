@@ -1,5 +1,12 @@
 # OrgConc — Dashboard de Pontuação & Prioridades
 
+> 📜 **DOCUMENTO HISTÓRICO (arquivado em 2026-06-11).** Snapshot do baseline
+> 6.4/10 de 2026-05-28. Dos 5 problemas P0 listados, 4 foram resolvidos até
+> 2026-06-09 (deploy Railway same-origin, 17/17 páginas testadas com gate
+> 84/86, DEPLOY/RUNBOOK/BACKUP escritos, `_legacy/` removido); os quick-wins
+> TS strict e pre-commit entraram em 2026-06-11. Para o estado atual, ver
+> `docs/ESTADO_PROJETO_2026-06-11.md` e `PROJETO_MAPEAMENTO_COMPLETO.md`.
+
 **Atualizado:** 2026-05-28
 
 ---
