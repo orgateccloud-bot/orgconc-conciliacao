@@ -21,6 +21,31 @@ Todas as mudanças relevantes do OrgConc. Formato baseado em
 - **Observabilidade do banco (#123)**: ping de DB loga o erro real por
   tentativa + error final; monitor sintético ganhou a sonda "Runtime com
   banco" (`POST /auth/refresh` sem cookie: 401 ok / 503 alarme).
+- **Pipeline CBS/IBS validado AO VIVO contra a Calculadora oficial (#127)**:
+  a API do Portal RTC é ABERTA (sem credencial) — `apurar_via_calculadora`
+  reproduziu o gabarito do Manual RTC na produção oficial (NCM 8425.31.10,
+  cClassTrib 200031: CBS R$ 36,00 + IBS-UF R$ 4,00, base V0033, memória
+  citando o Art. 132 da LC 214/2025); 9/9 verificações no
+  `scripts/validar_calculadora_live.py`. Ajustes do contrato real:
+  `dhFatoGerador` (substitui o deprecated `dataHoraEmissao`) e pre-flight de
+  versão no caminho oficial `/calculadora/dados-abertos/versao`. Para volume
+  em produção, a RFB recomenda o componente OFFLINE self-hosted (mesmo motor;
+  `CALCULADORA_BASE_URL` aponta para ele sem mudança de código).
+- **Auth sob `/v1` (#126)**: dual-mount completo; frontend usa `/v1/auth/*`
+  — exceto `refresh`/`logout`, que leem o cookie httpOnly (path `/auth`) e
+  ficam na raiz por design.
+
+### Alterado (3ª rodada 2026-06-10)
+- **SLO vigente**: as 5 metas de `docs/SLO.md` foram aprovadas pelo owner
+  (P2 #12 concluído) — disponibilidade ≥99,5%, 5xx <1%, p95 leitura <800ms,
+  p95 fiscal síncrono <60s, RPO≤24h/RTO≤4h.
+
+### Segurança (3ª rodada 2026-06-10)
+- **Rotação de segredos executada** (runbook P2 #13): `ORGCONC_JWT_SECRET` e
+  `ORGCONC_AUTH_TOKEN` rotacionados em produção (2026-06-10, sem downtime —
+  refresh tokens são opacos e independem do JWT secret); senha do role
+  `app_orgconc` rotacionada na correção do incidente. Pendentes (somente
+  owner): `ANTHROPIC_API_KEY` (console Anthropic) e `ORGCONC_ADMIN_SENHA_HASH`.
 
 ### Corrigido (3ª rodada 2026-06-10)
 - **Incidente: produção rodou ~32h sem banco no runtime** (senha do

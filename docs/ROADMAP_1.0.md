@@ -44,15 +44,16 @@ Feito e em prod: **P0 #1,#2,#3** ([#104](https://github.com/orgateccloud-bot/org
 Preparado, HOLD (aplicar = 🔑): **P0 #4 + P1 #7** ([#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107) draft).
 Descartado: **P1 #8** (rural). Adiado: **P0 #5**, **2.4** refator laudo, **/v1**. 🔑 infra: **#9, #11, #12, #13** + spec live do #6.
 
-## Critério de 1.0 (status — atualizado 2026-06-10)
-- [x] ✅ **Cobertura: backend 81.6%** (gate 80, #110) · **frontend 88.6%** (gate 86, #109) — ambos com gate no CI.
+## Critério de 1.0 (status — atualizado 2026-06-11) — **TODOS CUMPRIDOS** ✅
+- [x] ✅ **Cobertura: backend 80.9%** (gate 80, #110) · **frontend 88.6%** (gate 86, #109) — ambos com gate no CI.
 - [x] ✅ E2E: happy paths + fluxos profundos com backend real (#114; 24/24, exercitando `/v1` desde #119).
-- [x] ✅ CBS/IBS sem SERPRO (#106) + apuração persistida idempotente aplicada em prod (#107).
+- [x] ✅ CBS/IBS sem SERPRO (#106) + apuração idempotente em prod (#107) + **pipeline validado AO VIVO na Calculadora oficial** (#127 — API aberta, gabarito do Manual RTC ao centavo).
 - [x] ✅ Hardening P0: refresh revogável, rate-limit testado, RLS sem drift aplicado em prod (#107).
-- [~] Staging ✅ criado (`docs/STAGING.md`); SLO proposto / rotação runbook — 🔑 aprovar/executar.
-- [x] ✅ CHANGELOG (#105) + `/v1` dual-mount (#113) + **frontend no `/v1`** (#119; `/auth` na raiz pelo cookie — migração coordenada futura).
+- [x] ✅ Staging criado e validando migrations (`docs/STAGING.md`) · rollback documentado (RUNBOOK) · **SLO VIGENTE** (aprovado 2026-06-10) · **rotação executada** (JWT/service/app_orgconc; restam ANTHROPIC_API_KEY/admin = só owner).
+- [x] ✅ CHANGELOG (#105) + `/v1` dual-mount (#113) + frontend no `/v1` (#119) + **auth no `/v1`** (#126; só refresh/logout na raiz, pelo cookie).
 
 > Refactor 2.4 do laudo completo (fases 1–3: #115, #118, #120) — cálculo 100% separado do render,
 > todas com prova de regressão ao centavo nos dados reais (0 divergências em 262.939 células).
+> P1 #9 (jobs assíncronos) entregue sem infra nova (#122/#124) — fila Postgres + worker nas réplicas.
 
 > Histórico desta maratona (2026-06-09): #89–94 (dashboard), #95 (login), #96–98 (deps), #99 (bcrypt 5/sem passlib), #100 (Tailwind 4).
