@@ -36,22 +36,18 @@ npm run dev          # Vite em http://127.0.0.1:5176, proxy da API para :8765
 
 ### Deploy no Railway (recomendado)
 
-#### Automático (CI/CD — preferido)
+#### Automático (preferido)
 
-O job `deploy-backend` em `.github/workflows/deploy.yml` faz deploy a cada push
-na `main`, **após** os testes de backend passarem (Python 3.12). Em seguida roda
-um smoke test que aguarda até 5 min pelo `/health` retornar 200 antes de marcar
-o deploy como bem-sucedido.
+O deploy é **nativo do Railway via integração GitHub**: push na `main` →
+Railway builda a imagem (Dockerfile multi-stage), roda `preDeployCommand`
+(`alembic upgrade head` com a URL de owner) e só promove o deploy se o
+healthcheck `/health` responder dentro do timeout (`railway.json`). Não há
+workflow de deploy no GitHub Actions nem `RAILWAY_TOKEN` — o
+`.github/workflows/deploy.yml` foi removido por redundante.
 
-Configure no GitHub (Settings → Secrets and variables → Actions):
-
-| Tipo | Nome | Valor |
-|---|---|---|
-| Secret | `RAILWAY_TOKEN` | Token do projeto Railway (`railway login` → account token) |
-| Variable | `RAILWAY_SERVICE` | Nome do serviço backend no Railway |
-| Variable | `PROD_HEALTH_URL` | URL pública do `/health` (ex.: `https://api.orgconc.com/health`) |
-
-Sem esses valores o job é pulado; o deploy manual abaixo continua válido.
+Verificação pós-deploy: a sonda externa `synthetic-monitor.yml` testa
+`/health` e `/app` a cada 30 min; para checagem imediata use
+`curl https://<dominio>/health`.
 
 #### Manual
 
