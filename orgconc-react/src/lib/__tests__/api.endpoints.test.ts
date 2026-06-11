@@ -288,7 +288,7 @@ describe("login / fetchMe", () => {
     const fn = stubFetch(jsonOk({ access_token: "tok", token_type: "bearer" }));
     const out = await login("a@b.com", "segredo");
     const [url, init] = callAt(fn);
-    expect(url).toBe("/auth/login");
+    expect(url).toBe("/v1/auth/login");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ email: "a@b.com", senha: "segredo" });
     expect(out.access_token).toBe("tok");
@@ -298,7 +298,7 @@ describe("login / fetchMe", () => {
     const fn = stubFetch(jsonOk({ sub: "u1", role: "admin" } satisfies UserMe));
     const out = await fetchMe();
     const [url, init] = callAt(fn);
-    expect(url).toBe("/auth/me");
+    expect(url).toBe("/v1/auth/me");
     expect(init?.method).toBeUndefined();
     expect(out.role).toBe("admin");
   });
@@ -715,14 +715,14 @@ describe("admin orgs e usuários", () => {
   it("listarOrgs faz GET /auth/orgs", async () => {
     const fn = stubFetch(jsonOk([]));
     await listarOrgs();
-    expect(callAt(fn)[0]).toBe("/auth/orgs");
+    expect(callAt(fn)[0]).toBe("/v1/auth/orgs");
   });
 
   it("criarOrg faz POST /auth/orgs com JSON", async () => {
     const fn = stubFetch(jsonOk({ id: "o1", nome: "Org", plano: "free" }));
     await criarOrg({ nome: "Org" });
     const [url, init] = callAt(fn);
-    expect(url).toBe("/auth/orgs");
+    expect(url).toBe("/v1/auth/orgs");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ nome: "Org" });
   });
@@ -730,14 +730,14 @@ describe("admin orgs e usuários", () => {
   it("listarUsuarios codifica o org_id na query", async () => {
     const fn = stubFetch(jsonOk([]));
     await listarUsuarios("org/com espaço");
-    expect(callAt(fn)[0]).toBe("/auth/usuarios?org_id=org%2Fcom%20espa%C3%A7o");
+    expect(callAt(fn)[0]).toBe("/v1/auth/usuarios?org_id=org%2Fcom%20espa%C3%A7o");
   });
 
   it("criarUsuario faz POST /auth/usuarios com JSON", async () => {
     const fn = stubFetch(jsonOk({ id: "u1", email: "x@y.com", org_id: "o1", role: "user" }));
     await criarUsuario({ email: "x@y.com", senha: "s", org_id: "o1" });
     const [url, init] = callAt(fn);
-    expect(url).toBe("/auth/usuarios");
+    expect(url).toBe("/v1/auth/usuarios");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toMatchObject({ email: "x@y.com", org_id: "o1" });
   });
@@ -746,7 +746,7 @@ describe("admin orgs e usuários", () => {
     const fn = stubFetch(jsonOk({ detail: "ok" }));
     const out = await resetarSenhaUsuario("u1", "novaSenha");
     const [url, init] = callAt(fn);
-    expect(url).toBe("/auth/usuarios/u1/senha");
+    expect(url).toBe("/v1/auth/usuarios/u1/senha");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ senha_nova: "novaSenha" });
     expect(out.detail).toBe("ok");

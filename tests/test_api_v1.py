@@ -1,8 +1,10 @@
 """Versionamento /v1 (dual-mount, P2 #10).
 
-As rotas de negócio respondem em /v1/* E na raiz (retrocompat do frontend).
-auth/sessão, /metrics e /app ficam fora do /v1 de propósito (cookie de refresh
-com path fixo /auth; infra não-versionada). OpenAPI documenta só a raiz.
+As rotas de negócio E de auth respondem em /v1/* E na raiz (retrocompat).
+Exceção de USO (não de mount): refresh/logout via browser devem usar a raiz —
+o cookie httpOnly de refresh tem path fixo "/auth" e não alcança /v1/auth/*
+(detalhe coberto em tests/test_auth_v1_mount.py). /metrics e /app ficam fora
+do /v1 (infra não-versionada). OpenAPI documenta só a raiz.
 """
 from fastapi.testclient import TestClient
 
@@ -28,10 +30,12 @@ def test_v1_rotas_de_negocio_existem():
         assert v1.status_code != 404, f"/v1{caminho} deveria existir"
 
 
-def test_auth_fica_fora_do_v1():
-    # Sessão por cookie (path=/auth) não é versionada — /v1/auth não existe.
-    assert client.post("/v1/auth/login", json={"email": "x@y.com", "senha": "12345678"}).status_code == 404
-    assert client.post("/auth/login", json={"email": "x@y.com", "senha": "12345678"}).status_code != 404
+def test_auth_responde_na_raiz_e_no_v1():
+    # Auth dual-mounted: login existe nos dois caminhos com o mesmo comportamento.
+    raiz = client.post("/auth/login", json={"email": "x@y.com", "senha": "12345678"})
+    v1 = client.post("/v1/auth/login", json={"email": "x@y.com", "senha": "12345678"})
+    assert raiz.status_code != 404
+    assert v1.status_code == raiz.status_code
 
 
 def test_openapi_documenta_so_o_caminho_canonico():
