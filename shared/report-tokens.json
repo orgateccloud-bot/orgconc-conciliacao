@@ -1,0 +1,33 @@
+{
+  "_comment": "Tokens centralizados de design para XLSX, HTML e PDF. Derivados do app (Tailwind 4 @theme). Não duplicar em outros lugares.",
+  "paleta": {
+    "ink":          "#0E2A47",
+    "ink-soft":     "#3F5A78",
+    "navy":         "#1A3A6B",
+    "blue":         "#5BA9D6",
+    "pale":         "#B8DDEE",
+    "cloud":        "#F4F9FC",
+    "surface":      "#FFFFFF",
+    "rule":         "#DDE1E5",
+    "neutral":      "#94A3B8"
+  },
+  "severidade": {
+    "CRITICO": { "bg": "#FEE2E2", "texto": "#991B1B", "solido": "#B91C1C", "label": "CRÍTICO" },
+    "ALTO":    { "bg": "#FFEDD5", "texto": "#9A3412", "solido": "#C2410C", "label": "ALTO"    },
+    "MEDIO":   { "bg": "#FEF9C3", "texto": "#854D0E", "solido": "#A16207", "label": "MÉDIO"   },
+    "BAIXO":   { "bg": "#DCFCE7", "texto": "#166534", "solido": "#15803D", "label": "BAIXO"   }
+  },
+  "financeiro": {
+    "credito": "#16A34A",
+    "debito":  "#DC2626",
+    "neutro":  "#94A3B8"
+  },
+  "tipografia": {
+    "corpo":         "Manrope",
+    "display":       "Instrument Serif",
+    "mono":          "JetBrains Mono",
+    "fallback_corpo": "Segoe UI, Arial, sans-serif",
+    "fallback_serif": "Georgia, 'Times New Roman', serif",
+    "fallback_mono":  "Consolas, 'Courier New', monospace"
+  }
+}

@@ -10,9 +10,9 @@ import api.services.laudo_forense as laudo
 from api.matchers.cascata import Transacao
 
 ABAS = [
-    "1. Capa", "2. Identificacao", "3. Resumo Executivo", "4. Transacoes",
-    "5. Disposicoes", "6. Risk Heatmap", "7. CNPJs", "8. Partes Relacionadas",
-    "9. MEIs Teto", "10. Status Tributario", "11. Pos-Baixa",
+    "1. Capa", "2. Identificação", "3. Resumo Executivo", "4. Transações",
+    "5. Disposições", "6. Risk Heatmap", "7. CNPJs", "8. Partes Relacionadas",
+    "9. MEIs Teto", "10. Status Tributário", "11. Pós-Baixa",
 ]
 
 
@@ -45,7 +45,7 @@ def test_gerar_laudo_workbook_11_abas():
     assert stats["n_meses"] == 3
     # gerar_md não pode quebrar sem MEIs/pós-baixa (regressão: total_exc indefinido)
     md, totais = laudo.gerar_md(stats)
-    assert "Sumario Executivo" in md
+    assert "Sumário Executivo" in md
     assert isinstance(totais, dict) and "total_exc" in totais
 
 

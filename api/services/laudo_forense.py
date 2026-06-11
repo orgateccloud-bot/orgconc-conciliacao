@@ -31,6 +31,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from api.services.report_utils import format_brl, format_num, format_pct, font_faces_css
+
 _LOGO_PATH = Path(__file__).resolve().parents[2] / "assets" / "orgatec_logo.png"
 
 
@@ -357,7 +359,7 @@ async def coletar_dados(pasta: str, conta_filtro: str, empresa_cnpj: str, enrich
     if conta_filtro:
         dedup = [t for t in dedup if conta_filtro in (t.conta or "")]
     dedup.sort(key=lambda t: t.data or "")
-    print(f"  {len(arquivos)} arquivos, {len(brutas):,} linhas -> {len(dedup):,} após dedup"
+    print(f"  {len(arquivos)} arquivos, {format_num(len(brutas))} linhas -> {format_num(len(dedup))} após dedup"
           + (f" (conta '{conta_filtro}')" if conta_filtro else ""))
 
     # bucket por mês via montar_dados (mesma lógica reusada pela API)
@@ -375,7 +377,7 @@ async def coletar_dados(pasta: str, conta_filtro: str, empresa_cnpj: str, enrich
         cache = _carregar_cache()
 
     empresa = set_empresa(construir_empresa(empresa_cnpj, cache))
-    print(f"  {len(todos):,} transacoes | {len(saldos)} meses | {len(cnpjs)} CNPJs"
+    print(f"  {format_num(len(todos))} transacoes | {len(saldos)} meses | {len(cnpjs)} CNPJs"
           f" | empresa: {empresa['razao_social']}")
     return todos, saldos, cache
 
@@ -524,7 +526,7 @@ def aba_documentos_fiscais(wb, nfes, ctes):
     start = cabecalho(ws, 6, "Documentos Fiscais")
     nfe_vol = sum(n["valor"] for n in nfes)
     cte_vol = sum(c["valor"] for c in ctes)
-    ws.cell(row=start, column=1, value=f"DOCUMENTOS FISCAIS PROCESSADOS - {len(nfes) + len(ctes):,} XMLs").font = TITLE_FONT
+    ws.cell(row=start, column=1, value=f"DOCUMENTOS FISCAIS PROCESSADOS - {format_num(len(nfes) + len(ctes))} XMLs").font = TITLE_FONT
     ws.merge_cells(f"A{start}:F{start}")
 
     def _per(docs):
@@ -704,10 +706,29 @@ def aba_conformidade_fiscal(wb, conf):
     ws.freeze_panes = f"A{start + 2}"
 
 
+def _parse_data_xlsx(data_str: str | None):
+    """Converte string ISO 'YYYY-MM-DD' em datetime.date para o Excel tratar como data real."""
+    if not data_str:
+        return None
+    try:
+        return date.fromisoformat(str(data_str)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
 def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     wb = Workbook()
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
+
+    # ── Metadados do workbook ─────────────────────────────────────────────
+    emp = _emp()
+    razao_wb = emp.get("razao_social", "ORGATEC")
+    wb.properties.title = f"Laudo de Auditoria — {razao_wb}"
+    wb.properties.subject = "Auditoria Bancária Forense"
+    wb.properties.creator = "ORGATEC — OrgAudi"
+    wb.properties.company = "ORGATEC Contabilidade e Auditoria"
+    wb.properties.keywords = "auditoria; forense; bancário; OFX; ORGATEC"
 
     # ── Pre-calculos ────────────────────────────────────────────────────
     n_total = len(todos)
@@ -846,13 +867,13 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     r += 1
     resumo = [
         ("Periodo analisado", f"{periodo_str} ({n_meses} meses)"),
-        ("Total de transacoes", f"{n_total:,}"),
-        ("Volume bruto movimentado", f"R$ {volume_bruto:,.2f}"),
-        ("Volume liquido (excl. transf. internas)", f"R$ {volume_liquido:,.2f}"),
-        ("Volume anualizado projetado", f"R$ {anualizado:,.2f}"),
-        ("Saldo inicial do periodo", f"R$ {saldo_ini_jan:,.2f}"),
-        ("Saldo final do periodo", f"R$ {saldo_fim_mai:,.2f}"),
-        ("Variacao do periodo", f"R$ {saldo_fim_mai - saldo_ini_jan:,.2f}"),
+        ("Total de transacoes", f"{format_num(n_total)}"),
+        ("Volume bruto movimentado", f"R$ {format_brl(volume_bruto)}"),
+        ("Volume liquido (excl. transf. internas)", f"R$ {format_brl(volume_liquido)}"),
+        ("Volume anualizado projetado", f"R$ {format_brl(anualizado)}"),
+        ("Saldo inicial do periodo", f"R$ {format_brl(saldo_ini_jan)}"),
+        ("Saldo final do periodo", f"R$ {format_brl(saldo_fim_mai)}"),
+        ("Variacao do periodo", f"R$ {format_brl(saldo_fim_mai - saldo_ini_jan)}"),
         ("CNPJs identificados", f"{sum(1 for d in todas_disps if d.cnpj)}"),
         ("Alertas pos-baixa", f"{sum(1 for d in todas_disps if d.disposicao == 'ALERTA_POS_BAIXA')}"),
     ]
@@ -875,7 +896,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     # ════════════════════════════════════════════════════════════════════
     # Aba 2: Identificacao Cadastral
     # ════════════════════════════════════════════════════════════════════
-    ws = wb.create_sheet("2. Identificacao")
+    ws = wb.create_sheet("2. Identificação")
     start = cabecalho(ws, 5, "Identificacao Cadastral")
     ws.cell(row=start, column=1, value="DADOS CADASTRAIS DA EMPRESA AUDITADA").font = TITLE_FONT
     ws.merge_cells(f"A{start}:E{start}")
@@ -894,11 +915,11 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         ("Situacao Cadastral", _emp()["situacao"]),
         ("Data de Abertura", _emp()["data_abertura"]),
         ("Porte Declarado", _emp()["porte_declarado"]),
-        ("Natureza Juridica", _emp()["natureza_juridica"]),
-        ("Capital Social", f"R$ {_emp()['capital_social']:,.2f}"),
+        ("Natureza Jurídica", _emp()["natureza_juridica"]),
+        ("Capital Social", f"R$ {format_brl(_emp()['capital_social'])}"),
         ("CNAE Principal", _emp()["cnae_principal"]),
-        ("CNAE Secundario", _emp()["cnae_secundario"]),
-        ("Endereco Sede", _emp()["endereco_sede"]),
+        ("CNAE Secundário", _emp()["cnae_secundario"]),
+        ("Endereço Sede", _emp()["endereco_sede"]),
         ("Escritorio Administrativo", _emp()["endereco_admin"]),
         ("Email", _emp()["email"]),
         ("Telefones", _emp()["telefones"]),
@@ -947,10 +968,10 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     divergencias = []
     if _mult > 1:
         divergencias.append(("[!] Porte EPP vs Movimentacao",
-                             f"Teto EPP: R$ 4.800.000/ano | Anualizado: R$ {_anual:,.2f} ({_mult:.1f}x o teto)"))
+                             f"Teto EPP: R$ 4.800.000/ano | Anualizado: R$ {format_brl(_anual)} ({_mult:.1f}x o teto)"))
     if _cap > 0 and _anual > 0:
         divergencias.append(("[!] Capital vs Giro",
-                             f"Capital R$ {_cap:,.2f} | Giro anualizado R$ {_anual:,.2f} (razao 1:{_anual / _cap:.0f})"))
+                             f"Capital R$ {format_brl(_cap)} | Giro anualizado R$ {format_brl(_anual)} (razao 1:{_anual / _cap:.0f})"))
     if _mult > 1:
         divergencias.append(("[!] Regime tributario",
                              "Volume anualizado pode exceder o sublimite Simples/EPP — verificar enquadramento"))
@@ -1066,11 +1087,11 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     # ════════════════════════════════════════════════════════════════════
     # Aba 4: Transacoes (extrato com saldo acumulado)
     # ════════════════════════════════════════════════════════════════════
-    ws = wb.create_sheet("4. Transacoes")
+    ws = wb.create_sheet("4. Transações")
     start = cabecalho(ws, 9, "Transacoes")
-    ws.cell(row=start, column=1, value=f"EXTRATO DETALHADO - {n_total:,} TRANSACOES").font = TITLE_FONT
+    ws.cell(row=start, column=1, value=f"EXTRATO DETALHADO - {format_num(n_total)} TRANSACOES").font = TITLE_FONT
     ws.merge_cells(f"A{start}:I{start}")
-    ws.cell(row=start+1, column=1, value=f"Saldo inicial: R$ {saldo_ini_jan:,.2f} | Saldo final: R$ {saldo_fim_mai:,.2f}").font = Font(italic=True, color="64748B", size=9)
+    ws.cell(row=start+1, column=1, value=f"Saldo inicial: R$ {format_brl(saldo_ini_jan)} | Saldo final: R$ {format_brl(saldo_fim_mai)}").font = Font(italic=True, color="64748B", size=9)
     ws.merge_cells(f"A{start+1}:I{start+1}")
 
     headers_t = ["#", "Mes", "Data", "Tipo", "Valor (R$)", "Memo", "Nome", "Contraparte (RFB)", "Saldo Acumulado (R$)"]
@@ -1087,7 +1108,8 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         saldo_corrente += t.valor
         ws.cell(row=r, column=1, value=i)
         ws.cell(row=r, column=2, value=d.mes)
-        ws.cell(row=r, column=3, value=t.data)
+        dc = ws.cell(row=r, column=3, value=_parse_data_xlsx(t.data))
+        dc.number_format = "DD/MM/YYYY"
         ws.cell(row=r, column=4, value=t.tipo)
         cv = ws.cell(row=r, column=5, value=round(t.valor, 2))
         cv.number_format = "#,##0.00"
@@ -1114,7 +1136,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     # ════════════════════════════════════════════════════════════════════
     # Aba 5: Disposicoes Forenses (27 colunas)
     # ════════════════════════════════════════════════════════════════════
-    ws = wb.create_sheet("5. Disposicoes")
+    ws = wb.create_sheet("5. Disposições")
     start = cabecalho(ws, 27, "Disposicoes Forenses")
     ws.cell(row=start, column=1, value="DISPOSICOES POR TRANSACAO - Auditoria Forense").font = TITLE_FONT
     ws.merge_cells(f"A{start}:AA{start}")
@@ -1163,7 +1185,8 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         is_critico = classe == "CRITICO"
 
         # Preenche linha
-        ws.cell(row=r, column=1, value=t.data)
+        dc2 = ws.cell(row=r, column=1, value=_parse_data_xlsx(t.data))
+        dc2.number_format = "DD/MM/YYYY"
         ws.cell(row=r, column=2, value=t.tipo)
         cv = ws.cell(row=r, column=3, value=round(t.valor, 2))
         cv.number_format = "#,##0.00"
@@ -1247,7 +1270,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
 
     cores = {
         "CRITICO": ("B33A3A", "FEE2E2", "Auditoria imediata - investigar"),
-        "ALTO":    ("D97706", "FEF3C7", "Revisao prioritaria"),
+        "ALTO":    ("D97706", "FEF3C7", "Revisão prioritária"),
         "MEDIO":   ("1F7FB8", "DBEAFE", "Conferir em lote"),
         "BAIXO":   ("2F7D4F", "DCFCE7", "Auto-aprovar apos confirmacao"),
     }
@@ -1309,7 +1332,8 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         c_sit = ws.cell(row=r, column=3, value=info.get("situacao", ""))
         if is_baixada:
             c_sit.font = Font(bold=True, color="B33A3A")
-        ws.cell(row=r, column=4, value=info.get("data_situacao", ""))
+        dc3 = ws.cell(row=r, column=4, value=_parse_data_xlsx(info.get("data_situacao", "")))
+        dc3.number_format = "DD/MM/YYYY"
         ws.cell(row=r, column=5, value=info.get("uf", ""))
         ws.cell(row=r, column=6, value=info.get("municipio", ""))
         ws.cell(row=r, column=7, value=info.get("cnae_descricao", "")[:55])
@@ -1448,11 +1472,11 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     style_header(ws, r, 6)
     r += 1
     linhas_sum = [
-        ("MEI-TAC (caminhoneiros)", f"R$ {LIMITE_MEI_TAC:,.0f}/ano",
+        ("MEI-TAC (caminhoneiros)", f"R$ {format_brl(LIMITE_MEI_TAC)}/ano",
          len(meis_tac_ok) + len(meis_tac_estourados),
          len(meis_tac_ok), len(meis_tac_estourados),
          "OK" if not meis_tac_estourados else "ATENCAO"),
-        ("MEI Padrao (outros CNAEs)", f"R$ {LIMITE_MEI_PADRAO:,.0f}/ano",
+        ("MEI Padrao (outros CNAEs)", f"R$ {format_brl(LIMITE_MEI_PADRAO)}/ano",
          len(meis_padrao_ok) + len(meis_padrao_estourados),
          len(meis_padrao_ok), len(meis_padrao_estourados),
          "OK" if not meis_padrao_estourados else "ATENCAO"),
@@ -1549,7 +1573,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     # ════════════════════════════════════════════════════════════════════
     # Aba 10: Status Tributario
     # ════════════════════════════════════════════════════════════════════
-    ws = wb.create_sheet("10. Status Tributario")
+    ws = wb.create_sheet("10. Status Tributário")
     start = cabecalho(ws, ncol_trib, "Status Tributario")
     ws.cell(row=start, column=1, value=f"STATUS TRIBUTARIO CONSOLIDADO - {n_meses} MESES").font = TITLE_FONT
     ws.merge_cells(f"A{start}:{get_column_letter(ncol_trib)}{start}")
@@ -1622,7 +1646,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     # ════════════════════════════════════════════════════════════════════
     # Aba 11: Pagamentos Pos-Baixa
     # ════════════════════════════════════════════════════════════════════
-    ws = wb.create_sheet("11. Pos-Baixa")
+    ws = wb.create_sheet("11. Pós-Baixa")
     start = cabecalho(ws, 7, "Pagamentos Pos-Baixa")
     ws.cell(row=start, column=1, value="PAGAMENTOS APOS BAIXA DO CNPJ - CRITICO").font = TITLE_FONT
     ws.merge_cells(f"A{start}:G{start}")
@@ -1656,12 +1680,15 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         razao = p["info"].get("razao_social", "")[:35]
         ws.cell(row=r, column=1, value=i)
         ws.cell(row=r, column=2, value=p["mes"])
-        ws.cell(row=r, column=3, value=p["t"].data)
+        dpb = ws.cell(row=r, column=3, value=_parse_data_xlsx(p["t"].data))
+        dpb.number_format = "DD/MM/YYYY"
         cv = ws.cell(row=r, column=4, value=round(p["t"].valor, 2))
         cv.number_format = "#,##0.00"
         cv.font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=5, value=f"{cnpj_fmt} - {razao}")
-        ws.cell(row=r, column=6, value=p["info"].get("data_situacao", "")).font = Font(bold=True, color="B33A3A")
+        db2 = ws.cell(row=r, column=6, value=_parse_data_xlsx(p["info"].get("data_situacao", "")))
+        db2.number_format = "DD/MM/YYYY"
+        db2.font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=7, value=p["dias"]).font = Font(bold=True, color="B33A3A")
         ws.cell(row=r, column=7).number_format = "#,##0"
         for c in range(1, 8):
@@ -1695,6 +1722,15 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
             "criticos": [c for c in conf if c["classe"] in ("CRITICO", "ALTO")][:10],
         }
 
+    # ── Print setup em todas as abas (Fase 3) ─────────────────────────────
+    for _ws in wb.worksheets:
+        _ws.page_setup.orientation = "landscape"
+        _ws.page_setup.fitToWidth = 1
+        _ws.page_setup.fitToHeight = 0
+        _ws.sheet_properties.pageSetUpPr.fitToPage = True
+        if _ws.title not in ("1. Capa",):
+            _ws.print_title_rows = "1:2"
+
     return wb, {
         "fiscal": fiscal,
         "anualizado": anualizado, "multiplo": multiplo, "meses_obs": meses_obs,
@@ -1725,65 +1761,65 @@ def gerar_md(stats):
     saldo_fim = stats["saldo_fim"]
 
     lines = [
-        f"# RELATORIO INTEGRADO DE AUDITORIA — {_emp()['razao_social']}",
+        f"# RELATÓRIO INTEGRADO DE AUDITORIA — {_emp()['razao_social']}",
         "",
         "**ORGATEC · Contabilidade · Auditoria · Compliance**",
         "",
         f"**Gerado em:** {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-        f"**Periodo:** {stats['periodo_str']} ({stats['n_meses']} meses, {n:,} transacoes)",
+        f"**Periodo:** {stats['periodo_str']} ({stats['n_meses']} meses, {format_num(n)} transacoes)",
         f"**CNPJ:** {_emp()['cnpj']}",
         "",
         "---",
         "",
-        "## 1. Sumario Executivo",
+        "## 1. Sumário Executivo",
         "",
         "| Indicador | Valor |",
         "|---|---:|",
-        f"| Total de transacoes | {n:,} |",
-        f"| Volume de creditos | R$ {cred:,.2f} |",
-        f"| Volume de debitos | R$ {deb:,.2f} |",
-        f"| Volume bruto movimentado | **R$ {vol:,.2f}** |",
-        f"| Volume liquido (excl. transf. internas) | **R$ {stats.get('volume_liquido', vol):,.2f}** |",
-        f"| Saldo inicial do periodo | R$ {saldo_ini:,.2f} |",
-        f"| Saldo final do periodo | R$ {saldo_fim:,.2f} |",
-        f"| Variacao do periodo | R$ {saldo_fim - saldo_ini:,.2f} |",
-        f"| **Volume anualizado projetado** | **R$ {stats['anualizado']:,.2f}** |",
+        f"| Total de transacoes | {format_num(n)} |",
+        f"| Volume de creditos | R$ {format_brl(cred)} |",
+        f"| Volume de debitos | R$ {format_brl(deb)} |",
+        f"| Volume bruto movimentado | **R$ {format_brl(vol)}** |",
+        f"| Volume liquido (excl. transf. internas) | **R$ {format_brl(stats.get('volume_liquido', vol))}** |",
+        f"| Saldo inicial do periodo | R$ {format_brl(saldo_ini)} |",
+        f"| Saldo final do periodo | R$ {format_brl(saldo_fim)} |",
+        f"| Variacao do periodo | R$ {format_brl(saldo_fim - saldo_ini)} |",
+        f"| **Volume anualizado projetado** | **R$ {format_brl(stats['anualizado'])}** |",
         "| Limite EPP (referencia) | R$ 4.800.000,00 |",
         f"| **Multiplo do teto EPP** | **{stats['multiplo']:.1f}x** |",
         f"| Alertas pos-baixa | {len(stats['pos_baixa'])} |",
-        f"| Retencao estimada no periodo | R$ {stats['total_ret_5m']:,.2f} |",
+        f"| Retencao estimada no periodo | R$ {format_brl(stats['total_ret_5m'])} |",
         "",
-        "## 2. Identificacao Cadastral",
+        "## 2. Identificação Cadastral",
         "",
-        "### Dados da Pessoa Juridica (Contrato Social + Cartao CNPJ)",
+        "### Dados da Pessoa Jurídica (Contrato Social + Cartão CNPJ)",
         "",
         "| Campo | Valor |",
         "|---|---|",
     ]
     dados_pj = [
-        ("Razao Social", _emp()["razao_social"]),
-        ("Razao Anterior", _emp()["razao_anterior"]),
+        ("Razão Social", _emp()["razao_social"]),
+        ("Razão Anterior", _emp()["razao_anterior"]),
         ("Nome Fantasia", _emp()["nome_fantasia"]),
         ("CNPJ", _emp()["cnpj"]),
-        ("Situacao", _emp()["situacao"]),
+        ("Situação", _emp()["situacao"]),
         ("Data Abertura", _emp()["data_abertura"]),
         ("Porte Declarado", _emp()["porte_declarado"]),
-        ("Natureza Juridica", _emp()["natureza_juridica"]),
-        ("Capital Social", f"R$ {_emp()['capital_social']:,.2f}"),
+        ("Natureza Jurídica", _emp()["natureza_juridica"]),
+        ("Capital Social", f"R$ {format_brl(_emp()['capital_social'])}"),
         ("CNAE Principal", _emp()["cnae_principal"]),
-        ("CNAE Secundario", _emp()["cnae_secundario"]),
-        ("Endereco Sede", _emp()["endereco_sede"]),
-        ("Escritorio Admin", _emp()["endereco_admin"]),
+        ("CNAE Secundário", _emp()["cnae_secundario"]),
+        ("Endereço Sede", _emp()["endereco_sede"]),
+        ("Escritório Admin", _emp()["endereco_admin"]),
         ("Email", _emp()["email"]),
         ("Telefones", _emp()["telefones"]),
-        ("Ultima Alteracao", _emp()["ultima_alteracao"]),
+        ("Última Alteração", _emp()["ultima_alteracao"]),
     ]
     for k, v in dados_pj:
         lines.append(f"| **{k}** | {v} |")
 
     lines += [
         "",
-        "### Quadro Societario",
+        "### Quadro Societário",
         "",
         "| Socio | CPF | Quotas | % |",
         "|---|---|---:|---:|",
@@ -1791,59 +1827,59 @@ def gerar_md(stats):
         "",
         f"- **Nascimento:** {_emp()['socio_nascimento']}",
         f"- **Endereco:** {_emp()['socio_endereco']}",
-        "- **Funcao:** Administrador unico por prazo indeterminado",
+        "- **Função:** Administrador único por prazo indeterminado",
         "",
-        "## 3. Evolucao Mensal",
+        "## 3. Evolução Mensal",
         "",
-        "| Mes | Transacoes | Creditos (R$) | Debitos (R$) | Saldo Final |",
+        "| Mês | Transações | Créditos (R$) | Débitos (R$) | Saldo Final |",
         "|---|---:|---:|---:|---:|",
     ]
     for mes in stats["meses"]:
         s = stats["saldos"][mes]
-        lines.append(f"| {mes} | {s['n']:,} | {s['cred']:,.2f} | {s['deb']:,.2f} | {s['saldo_final']:,.2f} |")
-    lines.append(f"| **TOTAL** | **{n:,}** | **{cred:,.2f}** | **{deb:,.2f}** | **{saldo_fim:,.2f}** |")
+        lines.append(f"| {mes} | {format_num(s['n'])} | {format_brl(s['cred'])} | {format_brl(s['deb'])} | {format_brl(s['saldo_final'])} |")
+    lines.append(f"| **TOTAL** | **{format_num(n)}** | **{format_brl(cred)}** | **{format_brl(deb)}** | **{format_brl(saldo_fim)}** |")
 
     # Risk Heatmap
     lines += [
         "",
-        "## 4. Risk Heatmap (Distribuicao por Classe)",
+        "## 4. Risk Heatmap (Distribuição por Classe)",
         "",
-        "| Classe | Transacoes | % | Volume (R$) | Acao |",
+        "| Classe | Transações | % | Volume (R$) | Ação |",
         "|---|---:|---:|---:|---|",
     ]
     cores_md = {"CRITICO": "🔴", "ALTO": "🟠", "MEDIO": "🔵", "BAIXO": "🟢"}
-    acoes_md = {"CRITICO": "Auditoria imediata", "ALTO": "Revisao prioritaria",
+    acoes_md = {"CRITICO": "Auditoria imediata", "ALTO": "Revisão prioritária",
                 "MEDIO": "Conferir em lote", "BAIXO": "Auto-aprovar"}
     total_qtd = sum(v[0] for v in stats["classe_counts"].values())
     for classe in ("CRITICO", "ALTO", "MEDIO", "BAIXO"):
         qtd, vol_c = stats["classe_counts"][classe]
         pct = 100 * qtd / max(total_qtd, 1)
-        lines.append(f"| {cores_md[classe]} {classe} | {qtd:,} | {pct:.1f}% | {vol_c:,.2f} | {acoes_md[classe]} |")
+        lines.append(f"| {cores_md[classe]} {classe} | {format_num(qtd)} | {pct:.1f}% | {format_brl(vol_c)} | {acoes_md[classe]} |")
 
     # Partes Relacionadas
     lines += [
         "",
         "## 5. Partes Relacionadas",
         "",
-        "| Entidade | Trans | Creditos (R$) | Debitos (R$) | Volume (R$) |",
+        "| Entidade | Trans | Créditos (R$) | Débitos (R$) | Volume (R$) |",
         "|---|---:|---:|---:|---:|",
     ]
     total_pr = 0.0
     for nome, dados in stats["fluxos"].items():
         v = dados["cred"] + abs(dados["deb"])
-        lines.append(f"| {nome} | {dados['n']} | {dados['cred']:,.2f} | {dados['deb']:,.2f} | {v:,.2f} |")
+        lines.append(f"| {nome} | {dados['n']} | {format_brl(dados['cred'])} | {format_brl(dados['deb'])} | {format_brl(v)} |")
         total_pr += v
-    lines.append(f"| **TOTAL** | | | | **R$ {total_pr:,.2f}** |")
+    lines.append(f"| **TOTAL** | | | | **R$ {format_brl(total_pr)}** |")
 
     # MEIs (com reclassificacao MEI-TAC vs Padrao)
     lines += [
         "",
-        "## 6. MEIs Fornecedores - Reclassificacao MEI-TAC vs Padrao",
+        "## 6. MEIs Fornecedores — Reclassificação MEI-TAC vs Padrão",
         "",
-        "**Aplicacao do limite correto** apos confirmacao do cliente que muitos sao caminhoneiros:",
+        "**Aplicação do limite correto** após confirmação do cliente que muitos são caminhoneiros:",
         "",
         "- **MEI-TAC** (caminhoneiros, CNAEs 4930-*, 5320-*, 4911-*): teto **R$ 251.600/ano** (LC 188/2021)",
-        "- **MEI Padrao** (outros CNAEs): teto **R$ 81.000/ano** (LC 123/2006)",
+        "- **MEI Padrão** (outros CNAEs): teto **R$ 81.000/ano** (LC 123/2006)",
         "",
         f"### Casos acima do teto correspondente ({len(stats['meis'])} fornecedores)",
         "",
@@ -1851,24 +1887,24 @@ def gerar_md(stats):
     total_exc = 0.0
     if stats["meis"]:
         lines += [
-            "| # | CNPJ | Razao Social | CNAE | Anualizado | Excesso |",
+            "| # | CNPJ | Razão Social | CNAE | Anualizado | Excesso |",
             "|---|---|---|---|---:|---:|",
         ]
         for i, m in enumerate(stats["meis"][:15], start=1):
             fmt = f"{m['cnpj'][:2]}.{m['cnpj'][2:5]}.{m['cnpj'][5:8]}/{m['cnpj'][8:12]}-{m['cnpj'][12:14]}"
             cnae_desc = m.get("cnae_desc", "") or m.get("cnae", "")
-            lines.append(f"| {i} | {fmt} | {m['razao'][:30]} | {cnae_desc[:25]} | **R$ {m['anualizado']:,.2f}** | R$ {m['excesso']:,.2f} |")
+            lines.append(f"| {i} | {fmt} | {m['razao'][:30]} | {cnae_desc[:25]} | **R$ {format_brl(m['anualizado'])}** | R$ {format_brl(m['excesso'])} |")
             total_exc += m["excesso"]
-        lines.append(f"| | | | **TOTAL EXCESSO:** | | **R$ {total_exc:,.2f}** |")
+        lines.append(f"| | | | **TOTAL EXCESSO:** | | **R$ {format_brl(total_exc)}** |")
     else:
         lines.append("**Nenhum MEI excede o teto legal correspondente.**")
 
     # Status Tributario
     lines += [
         "",
-        "## 7. Status Tributario Consolidado",
+        "## 7. Status Tributário Consolidado",
         "",
-        "| Categoria | Qtd | Volume (R$) | Retencao (R$) |",
+        "| Categoria | Qtd | Volume (R$) | Retenção (R$) |",
         "|---|---:|---:|---:|",
     ]
     CATS_ORD = ["RETENCAO_PJ", "RETENCAO_PF", "OPERACAO_CREDITO", "IOF", "JUROS",
@@ -1880,25 +1916,25 @@ def gerar_md(stats):
             continue
         vol_c = stats["cat_volume"][cat]
         ret = stats["cat_retencao"][cat]
-        ret_fmt = f"**{ret:,.2f}**" if ret > 0 else "—"
-        lines.append(f"| {cat} | {qtd:,} | {vol_c:,.2f} | {ret_fmt} |")
-    lines.append(f"| **TOTAL** | **{sum(stats['cat_count'].values()):,}** | | **R$ {stats['total_ret_5m']:,.2f}** |")
+        ret_fmt = f"**{format_brl(ret)}**" if ret > 0 else "—"
+        lines.append(f"| {cat} | {format_num(qtd)} | {format_brl(vol_c)} | {ret_fmt} |")
+    lines.append(f"| **TOTAL** | **{format_num(sum(stats['cat_count'].values()))}** | | **R$ {format_brl(stats['total_ret_5m'])}** |")
 
     # Pos-Baixa
     lines += [
         "",
-        f"## 8. Pagamentos Pos-Baixa ({len(stats['pos_baixa'])} alertas)",
+        f"## 8. Pagamentos Pós-Baixa ({len(stats['pos_baixa'])} alertas)",
         "",
-        "| Mes | Data | Valor (R$) | Razao Social | Data Baixa | Dias Apos |",
+        "| Mês | Data | Valor (R$) | Razão Social | Data Baixa | Dias Após |",
         "|---|---|---:|---|---|---:|",
     ]
     total_pb = 0.0
     for p in stats["pos_baixa"]:
         cnpj_fmt = f"{p['cnpj'][:2]}.{p['cnpj'][2:5]}.{p['cnpj'][5:8]}/{p['cnpj'][8:12]}-{p['cnpj'][12:14]}"
         razao = p["info"].get("razao_social", "")[:30]
-        lines.append(f"| {p['mes']} | {p['t'].data} | **{p['t'].valor:,.2f}** | {cnpj_fmt} - {razao} | {p['info'].get('data_situacao','')} | **{p['dias']}** |")
+        lines.append(f"| {p['mes']} | {p['t'].data} | **{format_brl(p['t'].valor)}** | {cnpj_fmt} - {razao} | {p['info'].get('data_situacao','')} | **{p['dias']}** |")
         total_pb += abs(p["t"].valor)
-    lines.append(f"| | | **R$ {total_pb:,.2f}** | TOTAL | | |")
+    lines.append(f"| | | **R$ {format_brl(total_pb)}** | TOTAL | | |")
 
     # Conclusao
     # Conclusao DATA-DRIVEN — só afirma achados que existem (honesto p/ caso limpo/modelo).
@@ -1908,152 +1944,272 @@ def gerar_md(stats):
         achados.append(f"**Regime x teto** — volume anualizado ≈ **{mult:.1f}x** o teto EPP (R$ 4,8M); "
                        "indicador de porte/incompatibilidade a verificar")
     if stats["total_ret_5m"] > 0:
-        achados.append(f"**Retencoes estimadas na fonte** — R$ {stats['total_ret_5m']:,.2f} em "
+        achados.append(f"**Retenções estimadas na fonte** — R$ {format_brl(stats['total_ret_5m'])} em "
                        f"{stats['n_meses']} meses (PIS/COFINS/CSLL/IRRF sobre pagamentos a PJ de servico)")
     if stats["meis"]:
-        achados.append(f"**{len(stats['meis'])} fornecedores PJ acima do teto MEI** — risco de pejotizacao")
+        achados.append(f"**{len(stats['meis'])} fornecedores PJ acima do teto MEI** — risco de pejotização")
     if stats["pos_baixa"]:
-        achados.append(f"**{len(stats['pos_baixa'])} pagamentos pos-baixa** — R$ {total_pb:,.2f} a CNPJ ja baixado")
+        achados.append(f"**{len(stats['pos_baixa'])} pagamentos pós-baixa** — R$ {format_brl(total_pb)} a CNPJ já baixado")
     if total_pr > 0:
-        achados.append(f"**R$ {total_pr:,.2f} com partes relacionadas** — necessita lastro contratual")
+        achados.append(f"**R$ {format_brl(total_pr)} com partes relacionadas** — necessita lastro contratual")
     fisc = stats.get("fiscal")
     if fisc:
-        lines += ["", "## Conformidade Fiscal (OFX x NF-e x CT-e)", "",
-                  f"**Documentos:** {fisc['n_nfe']:,} NF-e (R$ {fisc['vol_nfe']:,.2f}) + "
-                  f"{fisc['n_cte']:,} CT-e (R$ {fisc['vol_cte']:,.2f}).", ""]
+        lines += ["", "## Conformidade Fiscal (OFX × NF-e × CT-e)", "",
+                  f"**Documentos:** {format_num(fisc['n_nfe'])} NF-e (R$ {format_brl(fisc['vol_nfe'])}) + "
+                  f"{format_num(fisc['n_cte'])} CT-e (R$ {format_brl(fisc['vol_cte'])}).", ""]
         if fisc["criticos"]:
             lines += ["Fornecedores com **gap de conformidade** (pago sem cobertura fiscal proporcional):", "",
                       "| Fornecedor | Pago (OFX) | NF-e+CT-e | Conf % | Classe |", "|---|---:|---:|---:|:--:|"]
             for c in fisc["criticos"]:
-                lines.append(f"| {c['nome'][:34].title()} | R$ {c['vp']:,.2f} | "
-                             f"R$ {c['vn'] + c['vc']:,.2f} | {c['conf']:.0f}% | {c['classe']} |")
+                lines.append(f"| {c['nome'][:34].title()} | R$ {format_brl(c['vp'])} | "
+                             f"R$ {format_brl(c['vn'] + c['vc'])} | {c['conf']:.0f}% | {c['classe']} |")
         else:
-            lines.append("Sem fornecedores em faixa critica de conformidade no recorte.")
+            lines.append("Sem fornecedores em faixa crítica de conformidade no recorte.")
 
-    lines += ["", "## 9. Conclusao", ""]
+    lines += ["", "## 9. Conclusão", ""]
     if achados:
-        lines.append("Os testes deterministicos aplicados apontam os seguintes **pontos de atencao**, que "
-                     "demandam verificacao documental e, se confirmados, regularizacao:")
+        lines.append("Os testes determinísticos aplicados apontam os seguintes **pontos de atenção**, que "
+                     "demandam verificação documental e, se confirmados, regularização:")
         lines.append("")
         lines += [f"{i}. {a}" for i, a in enumerate(achados, 1)]
-        lines += ["", "Recomenda-se a verificacao dos itens acima e, quando aplicavel, o acionamento das "
-                  "medidas formais cabiveis (ex.: denuncia espontanea — CTN art. 138)."]
+        lines += ["", "Recomenda-se a verificação dos itens acima e, quando aplicável, o acionamento das "
+                  "medidas formais cabíveis (ex.: denúncia espontânea — CTN art. 138)."]
     else:
-        lines.append("Nos testes deterministicos aplicados a este recorte **nao foram identificados achados "
-                     "materiais** (regime compativel com o teto, sem pagamentos pos-baixa, sem retencoes "
+        lines.append("Nos testes determinísticos aplicados a este recorte **não foram identificados achados "
+                     "materiais** (regime compatível com o teto, sem pagamentos pós-baixa, sem retenções "
                      "estimadas e sem MEIs acima do teto). Ver ressalvas de escopo e enriquecimento cadastral.")
     lines += ["", "---", "",
-              "*Documento gerado pelo OrgConc — Sistema OrgAudi. Indicadores deterministicos; "
-              "NAO constituem conclusao de auditoria sem verificacao documental.*"]
+              "*Documento gerado pelo OrgConc — Sistema OrgAudi. Indicadores determinísticos; "
+              "NÃO constituem conclusão de auditoria sem verificação documental.*"]
 
     return "\n".join(lines), {"total_pr": total_pr, "total_exc": total_exc, "total_pb": total_pb}
 
 
-def gerar_html(md_text, periodo="", titulo=None, objeto=None, razao=None, cnpj=None, subtitulo=None):
-    """Envelopa um corpo Markdown no template visual padrão dos laudos ORGATEC
-    (capa + CSS Playfair/Source Sans + assinatura). Reutilizável por outros
-    laudos (notas, fiscal) para visual idêntico — basta passar titulo/objeto."""
+def gerar_html(md_text, periodo="", titulo=None, objeto=None, razao=None, cnpj=None, subtitulo=None, laudo_id=None):
+    """HTML do laudo com fontes embarcadas (Manrope/Instrument Serif/JetBrains Mono),
+    tarja CONFIDENCIAL em todas as páginas, capa modernizada e responsável técnico.
+    Reutilizável por outros laudos — basta passar titulo/objeto.
+    """
     import markdown as mdlib
     body = mdlib.markdown(md_text, extensions=["tables", "fenced_code"])
-    # A capa já carrega título/empresa/período — remove o cabeçalho redundante do MD
-    # (tudo antes da primeira seção "## N.") para o conteúdo começar direto nas seções.
+    # Remove cabeçalho redundante do MD (antes do primeiro ## N.) — a capa já tem o título.
     if "<h2" in body:
         body = body[body.index("<h2"):]
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     razao = razao or (_emp().get("razao_social", "") or "—")
     cnpj = cnpj or _emp().get("cnpj", "—")
-    titulo = titulo or "Laudo de Auditoria<br>Bancária Forense"
+    titulo_display = titulo or "Laudo de Auditoria<br><em>Bancária Forense</em>"
     subtitulo = subtitulo or "Sistema OrgAudi · Auditoria Bancária Forense"
     objeto = objeto or (
         razao + " — análise forense de extratos bancários (OFX): regime × teto, "
         "retenções na fonte, tipologias (smurfing, carrossel, pós-baixa) e cruzamento cadastral RFB/BrasilAPI."
     )
-    css = """
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
-@page { size: A4 landscape; margin: 14mm 14mm 16mm 14mm;
-  @bottom-center { content: "ORGATEC · Sistema OrgAudi · Auditoria Bancária Forense   —   página " counter(page) " de " counter(pages); font-family: 'Source Sans 3', sans-serif; font-size: 8pt; color: #8a93a0; }
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Source Sans 3', 'Segoe UI', Arial, sans-serif; font-size: 10pt; color: #1b2733; line-height: 1.55; }
+    laudo_id = laudo_id or f"ORG-{datetime.now().strftime('%Y%m%d-%H%M')}"
 
-/* ---------- CAPA (altura cabe na pág. landscape margeada; sem @page:first p/ Chromium) ---------- */
-.capa { height: 176mm; padding: 14mm 24mm; display: flex; flex-direction: column;
-  justify-content: space-between; page-break-after: always; position: relative; color: #2a3a4a;
+    # Logo SVG inline (~500B) — sem dependência de arquivo PNG externo; sem problema de alt
+    logo_svg = (
+        '<svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg"'
+        ' role="img" aria-label="ORGATEC">'
+        '<rect width="52" height="52" rx="7" fill="#1A3A6B"/>'
+        '<text x="26" y="18" text-anchor="middle" font-family="Consolas,monospace"'
+        ' font-size="9" font-weight="700" fill="#5BA9D6" letter-spacing="1">ORG</text>'
+        '<text x="26" y="31" text-anchor="middle" font-family="Consolas,monospace"'
+        ' font-size="9" font-weight="700" fill="#B8DDEE" letter-spacing="1">AUD</text>'
+        '<text x="26" y="44" text-anchor="middle" font-family="Consolas,monospace"'
+        ' font-size="6.5" fill="#5BA9D6" letter-spacing="0.5">ORGATEC</text>'
+        '</svg>'
+    )
+
+    font_css = font_faces_css()  # @font-face data-URIs; vazio se fontes ausentes (fallback seguro)
+
+    css = f"""
+{font_css}
+
+/* ── Página CSS Paged Media Level 3 (WeasyPrint) ── */
+@page {{
+  size: A4 landscape;
+  margin: 14mm 16mm 18mm 16mm;
+  @top-right {{
+    content: "CONFIDENCIAL \2014 USO RESTRITO";
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    font-size: 7pt; color: #991B1B; letter-spacing: 0.08em;
+    border-bottom: 0.5pt solid #B91C1C; padding-bottom: 1mm;
+  }}
+  @top-left {{
+    content: string(seccao-atual);
+    font-family: 'Manrope', 'Segoe UI', Arial, sans-serif;
+    font-size: 7pt; color: #3F5A78;
+  }}
+  @bottom-center {{
+    content: "ORGATEC \00B7 OrgAudi \00B7 Auditoria Banc\00e1ria Forense  \2014  p\00e1gina " counter(page) " de " counter(pages);
+    font-family: 'Manrope', 'Segoe UI', Arial, sans-serif;
+    font-size: 7pt; color: #94A3B8;
+  }}
+}}
+@page :first {{ @top-left {{ content: ""; }} @top-right {{ content: ""; }} }}
+
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{
+  font-family: 'Manrope', 'Segoe UI', Arial, sans-serif;
+  font-size: 10pt; color: #0E2A47; line-height: 1.6;
+}}
+
+/* ── Capa ── */
+.capa {{
+  height: 176mm; padding: 14mm 24mm;
+  display: flex; flex-direction: column; justify-content: space-between;
+  page-break-after: always; position: relative;
   background:
-    radial-gradient(ellipse 60% 45% at 12% 8%, rgba(120,198,233,0.42), transparent 60%),
-    radial-gradient(ellipse 55% 42% at 90% 16%, rgba(142,182,224,0.40), transparent 63%),
-    linear-gradient(180deg, #d3e6f3 0%, #e2eef6 32%, #eef5fa 56%, #f8fbfc 78%, #ffffff 100%); }
-.capa::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 5mm;
-  background: linear-gradient(90deg, #1f7fb8 0%, #38c4e6 52%, #7fe0ec 100%); }
-.capa-brand { display: flex; align-items: center; }
-.capa-brand img { width: 52px !important; height: 52px !important; margin-right: 14px !important; filter: drop-shadow(0 1mm 2mm rgba(40,100,150,0.22)); }
-.capa-wm .nome { font-size: 22pt; font-weight: 700; letter-spacing: 0.20em; color: #12345e; line-height: 1; }
-.capa-wm .desc { font-size: 8pt; letter-spacing: 0.26em; text-transform: uppercase; color: #5a82a8; margin-top: 2mm; }
-.capa-sub { font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase; color: #7593af; margin-top: 7mm; }
-.capa-mid { display: flex; flex-direction: column; }
-.capa-titulo { font-family: 'Playfair Display', Georgia, serif; font-size: 34pt; font-weight: 700; line-height: 1.14; color: #12345e; }
-.capa-rule { width: 42mm; height: 2.4pt; margin: 8mm 0; background: linear-gradient(90deg, #1f7fb8, #38c4e6, #8fe6ee); }
-.capa-objeto { font-size: 11.5pt; color: #3f5468; max-width: 170mm; }
-.capa-selo { margin-top: 8mm; display: inline-block; align-self: flex-start; border: 0.7pt solid #1f7fb8; color: #1f7fb8; font-size: 7.6pt; letter-spacing: 0.14em; text-transform: uppercase; padding: 2mm 4mm; }
-.capa-meta { border-top: 0.5pt solid #c4d4e2; padding-top: 5mm; display: flex; gap: 20mm; font-size: 8.6pt; color: #65778a; }
-.capa-meta strong { color: #12345e; font-weight: 600; display: block; font-size: 9.4pt; margin-bottom: 1mm; }
+    radial-gradient(ellipse 60% 45% at 12% 8%, rgba(91,169,214,.28), transparent 60%),
+    radial-gradient(ellipse 55% 42% at 90% 16%, rgba(184,221,238,.35), transparent 63%),
+    linear-gradient(180deg,#d8eef7 0%,#e6f3f9 30%,#f0f7fb 56%,#f8fbfc 78%,#fff 100%);
+}}
+.capa::before {{
+  content:""; position:absolute; top:0; left:0; right:0; height:5mm;
+  background:linear-gradient(90deg,#1A3A6B 0%,#5BA9D6 60%,#B8DDEE 100%);
+}}
+.capa-brand {{ display:flex; align-items:center; gap:14px; }}
+.capa-wm .nome {{
+  font-size:20pt; font-weight:700; letter-spacing:.18em; color:#1A3A6B; line-height:1;
+}}
+.capa-wm .desc {{
+  font-family:'JetBrains Mono',Consolas,monospace;
+  font-size:7pt; letter-spacing:.24em; text-transform:uppercase; color:#3F5A78; margin-top:1.5mm;
+}}
+.capa-eyebrow {{
+  font-family:'JetBrains Mono',Consolas,monospace;
+  font-size:7.5pt; letter-spacing:.14em; text-transform:uppercase; color:#5BA9D6; margin-top:6mm;
+}}
+.capa-mid {{ display:flex; flex-direction:column; }}
+.capa-titulo {{
+  font-size:28pt; font-weight:300; line-height:1.16; color:#1A3A6B;
+}}
+.capa-titulo em {{
+  font-family:'Instrument Serif',Georgia,serif;
+  font-style:italic; font-weight:400; color:#5BA9D6;
+}}
+.capa-rule {{
+  width:42mm; height:2.4pt; margin:7mm 0;
+  background:linear-gradient(90deg,#1A3A6B,#5BA9D6,#B8DDEE);
+}}
+.capa-objeto {{ font-size:10.5pt; color:#3F5A78; max-width:170mm; line-height:1.5; }}
+.capa-selo {{
+  margin-top:7mm; display:inline-block; align-self:flex-start;
+  border:0.7pt solid #5BA9D6; color:#1A3A6B;
+  font-family:'JetBrains Mono',Consolas,monospace;
+  font-size:7pt; letter-spacing:.12em; text-transform:uppercase; padding:1.5mm 3.5mm;
+}}
+.capa-meta {{
+  border-top:0.5pt solid #B8DDEE; padding-top:5mm;
+  display:flex; gap:18mm; font-size:8.5pt; color:#3F5A78;
+}}
+.capa-meta strong {{
+  font-family:'JetBrains Mono',Consolas,monospace;
+  color:#1A3A6B; font-weight:600; display:block; font-size:7pt;
+  letter-spacing:.1em; text-transform:uppercase; margin-bottom:1mm;
+}}
 
-/* ---------- CONTEÚDO ---------- */
-.conteudo { padding-top: 2mm; }
-h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 15pt; color: #12345e; margin: 22px 0 8px; padding-bottom: 5px; border-bottom: 1.4pt solid #12345e; page-break-after: avoid; }
-h1::after { content: ""; display: block; height: 2px; width: 60px; margin-top: 5px; background: linear-gradient(90deg, #1f7fb8, #38c4e6, #8fe6ee); }
-h2 { font-family: 'Playfair Display', Georgia, serif; font-size: 12.5pt; color: #12345e; margin: 18px 0 6px; padding: 3px 0 3px 10px; border-left: 3pt solid #1f7fb8; page-break-after: avoid; }
-h3 { font-size: 10.5pt; color: #1f7fb8; margin: 12px 0 5px; font-weight: 700; }
-p { margin-bottom: 6px; }
-table { width: 100%; border-collapse: collapse; margin: 6px 0 14px; font-size: 8.8pt; border: 0.6pt solid #d4dde6; page-break-inside: avoid; }
-th { background: #12345e; color: #eef4fb; padding: 5px 9px; text-align: left; font-weight: 600; font-size: 8.4pt; }
-td { padding: 4px 9px; border: 0.5pt solid #d4dde6; vertical-align: top; }
-tr:nth-child(even) td { background: #eff4f9; }
-strong { color: #12345e; font-weight: 600; }
-ul, ol { padding-left: 22px; margin-bottom: 8px; }
-li { margin-bottom: 3px; }
-em { color: #65778a; font-size: 8.6pt; }
-hr { border: none; border-top: 0.5pt solid #c4d4e2; margin: 14px 0; }
-blockquote { border-left: 3pt solid #1f7fb8; background: #eef6fb; padding: 3mm 4mm; margin: 4mm 0; color: #364a5e; font-size: 9.6pt; }
+/* ── Conteúdo ── */
+.conteudo {{ padding-top:2mm; }}
+h1 {{
+  font-size:14pt; font-weight:700; color:#1A3A6B;
+  margin:20px 0 8px; padding-bottom:4px;
+  border-bottom:1.4pt solid #1A3A6B; page-break-after:avoid;
+  string-set:seccao-atual content();
+}}
+h2 {{
+  font-size:11.5pt; font-weight:600; color:#1A3A6B;
+  margin:16px 0 6px; padding:3px 0 3px 10px;
+  border-left:3pt solid #5BA9D6; page-break-after:avoid;
+  string-set:seccao-atual content();
+}}
+h3 {{ font-size:10pt; color:#5BA9D6; margin:10px 0 5px; font-weight:600; }}
+p {{ margin-bottom:6px; }}
+table {{
+  width:100%; border-collapse:collapse; margin:6px 0 14px;
+  font-size:8.8pt; border:0.6pt solid #DDE1E5;
+}}
+thead {{ display:table-header-group; }}
+th {{ background:#1A3A6B; color:#F4F9FC; padding:5px 9px; text-align:left; font-weight:600; font-size:8.4pt; }}
+td {{ padding:4px 9px; border:0.5pt solid #DDE1E5; vertical-align:top; }}
+tr:nth-child(even) td {{ background:#F4F9FC; }}
+td.num,th.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
+strong {{ color:#1A3A6B; font-weight:700; }}
+ul,ol {{ padding-left:22px; margin-bottom:8px; }}
+li {{ margin-bottom:3px; page-break-inside:avoid; }}
+em {{ color:#3F5A78; font-style:italic; }}
+hr {{ border:none; border-top:0.5pt solid #DDE1E5; margin:14px 0; }}
+blockquote {{
+  border-left:3pt solid #5BA9D6; background:#F4F9FC;
+  padding:3mm 4mm; margin:4mm 0; color:#0E2A47; font-size:9.6pt;
+}}
 
-/* ---------- ASSINATURA ---------- */
-.assinatura { margin-top: 14mm; page-break-inside: avoid; }
-.assinatura .linha { border-top: 0.6pt solid #12345e; width: 86mm; margin-bottom: 1.4mm; }
-.assinatura .nome { font-weight: 600; color: #12345e; }
-.assinatura .cargo { font-size: 8.6pt; color: #51616f; }
+/* ── Chips de severidade (cor + rótulo — imprimíveis sem cor) ── */
+.sev-critico {{ background:#FEE2E2; color:#991B1B; padding:1px 5px; border-radius:3px; font-weight:700; }}
+.sev-alto    {{ background:#FFEDD5; color:#9A3412; padding:1px 5px; border-radius:3px; font-weight:700; }}
+.sev-medio   {{ background:#FEF9C3; color:#854D0E; padding:1px 5px; border-radius:3px; font-weight:700; }}
+.sev-baixo   {{ background:#DCFCE7; color:#166534; padding:1px 5px; border-radius:3px; font-weight:700; }}
+
+/* ── Responsável técnico / Assinatura ── */
+.assinatura {{
+  margin-top:14mm; page-break-inside:avoid;
+  border-top:0.5pt solid #DDE1E5; padding-top:6mm;
+}}
+.assinatura .linha {{ border-top:0.6pt solid #1A3A6B; width:76mm; margin-bottom:1.5mm; }}
+.assinatura .nome {{ font-weight:700; color:#1A3A6B; font-size:9pt; }}
+.assinatura .cargo {{ color:#3F5A78; margin-top:1mm; font-size:8.6pt; }}
+.assinatura .id-laudo {{
+  font-family:'JetBrains Mono',Consolas,monospace;
+  font-size:7pt; color:#94A3B8; margin-top:3mm; letter-spacing:.05em;
+}}
 """
-    capa = f"""<section class="capa">
+
+    capa_html = f"""<section class="capa">
   <div>
-    <div class="capa-brand">{html_logo_inline()}<div class="capa-wm">
-      <div class="nome">ORGATEC</div><div class="desc">Contabilidade e Auditoria</div></div></div>
-    <div class="capa-sub">{subtitulo}</div>
+    <div class="capa-brand">{logo_svg}<div class="capa-wm">
+      <div class="nome">ORGATEC</div>
+      <div class="desc">Contabilidade &middot; Auditoria &middot; Compliance</div>
+    </div></div>
+    <div class="capa-eyebrow">{subtitulo}</div>
   </div>
   <div class="capa-mid">
-    <div class="capa-titulo">{titulo}</div>
+    <div class="capa-titulo">{titulo_display}</div>
     <div class="capa-rule"></div>
     <div class="capa-objeto">{objeto}</div>
-    <div class="capa-selo">Parecer técnico · assessoria · caráter indicativo</div>
+    <div class="capa-selo">Parecer t&eacute;cnico &middot; assessoria &middot; car&aacute;ter indicativo</div>
   </div>
   <div class="capa-meta">
     <div><strong>Entidade auditada</strong>{razao}<br>CNPJ {cnpj}</div>
-    <div><strong>Período</strong>{periodo or '—'}</div>
-    <div><strong>Emissão</strong>{agora}</div>
+    <div><strong>Per&iacute;odo</strong>{periodo or '&mdash;'}</div>
+    <div><strong>Emiss&atilde;o</strong>{agora}</div>
+    <div><strong>ID do laudo</strong><span style="font-family:'JetBrains Mono',Consolas,monospace;font-size:8pt">{laudo_id}</span></div>
   </div>
 </section>"""
-    assinatura = """<div class="assinatura">
+
+    assinatura_html = f"""<div class="assinatura">
   <div class="linha"></div>
-  <div class="nome">ORGATEC — Contabilidade e Auditoria</div>
-  <div class="cargo">Sistema OrgAudi · Auditoria Bancária Forense assistida</div>
+  <div class="nome">ORGATEC &mdash; Contabilidade e Auditoria</div>
+  <div class="cargo">Sistema OrgAudi &middot; Auditoria Banc&aacute;ria Forense assistida por IA</div>
+  <div class="id-laudo">Laudo {laudo_id} &middot; Gerado em {agora}</div>
 </div>"""
-    return f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Laudo de Auditoria · {razao}</title><style>{css}</style></head>
+
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="description" content="Laudo de Auditoria Banc&aacute;ria Forense &mdash; {razao}">
+<meta name="generator" content="OrgConc OrgAudi">
+<title>Laudo de Auditoria &middot; {razao}</title>
+<style>{css}</style>
+</head>
 <body>
-{capa}
+{capa_html}
 <section class="conteudo">
 {body}
-{assinatura}
+{assinatura_html}
 </section>
-</body></html>"""
+</body>
+</html>"""
 
 
 def _block_url_fetcher(url, **_kwargs):
