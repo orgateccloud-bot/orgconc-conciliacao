@@ -9,9 +9,9 @@ import logging
 import os
 
 from fastapi import HTTPException
-from fastapi.staticfiles import StaticFiles
 
 from api.core.bootstrap import criar_app
+from api.core.spa_static import SPAStaticFiles
 from api.core.prometheus_metrics import metrics_endpoint
 from api.core.config import (
     DB_DISPONIVEL,  # noqa: F401 — re-export p/ testes
@@ -124,9 +124,10 @@ for _v1_router in _V1_ROUTERS:
 # Frontend React (SPA) — servido em /app quando o build existe (orgconc-react/dist).
 # Em produção o build é gerado no Dockerfile multi-stage e servido same-origin pela
 # própria API (GitHub Pages foi removido); este mount cobre prod e o uso local/Docker
-# após `npm run build` em orgconc-react/.
+# após `npm run build` em orgconc-react/. SPAStaticFiles: deep-link/F5 em rota
+# interna (ex.: /app/laudo) serve o index.html — sem ele dava 404 em produção.
 if REACT_DIST.exists():
-    app.mount("/app", StaticFiles(directory=str(REACT_DIST), html=True), name="react_app")
+    app.mount("/app", SPAStaticFiles(directory=str(REACT_DIST), html=True), name="react_app")
 else:
     _frontend_log = logging.getLogger("orgconc.frontend")
 
