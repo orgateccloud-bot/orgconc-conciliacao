@@ -155,16 +155,23 @@ Tabelas resultantes: `orgs`, `clientes`, `conciliacoes`, `transacoes`,
 `conformidade_fornecedor`, `carta_versao`.
 
 ### Políticas de Segurança (RLS)
-```sql
--- Habilitar RLS nas tabelas base
-ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE conciliacoes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transacoes ENABLE ROW LEVEL SECURITY;
 
--- Política: usuários autenticados (a app já isola por cliente_id na camada de aplicação)
-CREATE POLICY "usuarios_autenticados" ON clientes
-  FOR ALL USING (auth.role() = 'authenticated');
+**Fonte de verdade: [`db/rls/`](db/rls/)** — não copie SQL deste documento.
+O isolamento multi-tenant é por `org_id` (policy `org_isolation`, GUC
+`app.org_id`, role `app_orgconc` NOBYPASSRLS, FORCE RLS), ativo em produção
+desde 2026-06-07. Para provisionar um ambiente novo:
+
+```bash
+# Na ordem, com a URL de OWNER (não a de runtime):
+psql "$DATABASE_URL_OWNER" -f db/rls/rollout_grants.sql
+psql "$DATABASE_URL_OWNER" -f db/rls/org_isolation.sql
+psql "$DATABASE_URL_OWNER" -f db/rls/contraparte_org_isolation.sql
+psql "$DATABASE_URL_OWNER" -f db/rls/infra_allow_all.sql
 ```
+
+> ⚠️ Policies como `USING (auth.role() = 'authenticated')` ou `USING (true)`
+> em tabelas de negócio **anulam o isolamento entre escritórios** — nunca as
+> use fora das tabelas de infra listadas em `infra_allow_all.sql`.
 
 ---
 

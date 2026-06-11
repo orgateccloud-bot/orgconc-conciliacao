@@ -55,7 +55,13 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
 
     Le o limite live de config._MAX_BODY_BYTES para que testes possam ajustar
     o teto sem reiniciar a app.
+
+    Anti-bypass: métodos com corpo SEM Content-Length (Transfer-Encoding:
+    chunked) recebem 411 Length Required — sem isso o limite seria
+    contornável por streaming. Content-Length malformado recebe 400.
     """
+
+    _METODOS_COM_BODY = ("POST", "PUT", "PATCH")
 
     async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
         cl = request.headers.get("content-length")
@@ -68,7 +74,17 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                         media_type="application/json",
                     )
             except ValueError:
-                pass
+                return StarletteResponse(
+                    content='{"detail":"Content-Length invalido"}',
+                    status_code=400,
+                    media_type="application/json",
+                )
+        elif request.method in self._METODOS_COM_BODY:
+            return StarletteResponse(
+                content='{"detail":"Content-Length obrigatorio"}',
+                status_code=411,
+                media_type="application/json",
+            )
         return await call_next(request)
 
 

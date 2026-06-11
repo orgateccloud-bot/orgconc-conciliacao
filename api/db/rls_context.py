@@ -6,9 +6,10 @@ no início de CADA transação (listener `after_begin`), para a policy
 `org_isolation` (db/rls/org_isolation.sql) filtrar as linhas no banco.
 
 O contextvar é populado por `RLSContextMiddleware` (api/core/bootstrap.py) a
-partir do JWT. Enquanto a conexão for `postgres` (BYPASSRLS), o `SET LOCAL` é
-inócuo (a RLS não se aplica ao role); o isolamento real liga quando o backend
-passar a conectar como `app_orgconc` (NOBYPASSRLS). Ver db/rls/README.md.
+partir do JWT. Em produção o backend conecta como `app_orgconc` (NOBYPASSRLS)
+desde 2026-06-07 — o `SET LOCAL` aqui é o que efetivamente isola os tenants
+(policy fail-closed: sem `app.org_id` setado → zero linhas). Em dev com a
+conexão `postgres` (BYPASSRLS) o SET é inócuo. Ver db/rls/README.md.
 """
 from __future__ import annotations
 

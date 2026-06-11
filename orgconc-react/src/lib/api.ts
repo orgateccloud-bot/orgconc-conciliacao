@@ -28,20 +28,32 @@ export async function apiLogout(): Promise<void> {
 /**
  * Renova o access token via cookie de refresh httpOnly (POST /auth/refresh).
  * Retorna o novo access token, ou null se não foi possível renovar.
+ *
+ * Mutex: o backend rotaciona o refresh token (single-use + reuse-detection);
+ * N requests com 401 simultâneo compartilham UMA chamada — sem o mutex, a 2ª
+ * apresentaria o cookie já rotacionado e derrubaria a sessão inteira.
  */
+let _refreshing: Promise<string | null> | null = null;
+
 export async function apiRefresh(): Promise<string | null> {
-  try {
-    const res = await fetch("/auth/refresh", { method: "POST", credentials: "include" });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { access_token?: string };
-    if (data.access_token) {
-      setToken(data.access_token);
-      return data.access_token;
+  if (_refreshing) return _refreshing;
+  _refreshing = (async () => {
+    try {
+      const res = await fetch("/auth/refresh", { method: "POST", credentials: "include" });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { access_token?: string };
+      if (data.access_token) {
+        setToken(data.access_token);
+        return data.access_token;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      _refreshing = null;
     }
-    return null;
-  } catch {
-    return null;
-  }
+  })();
+  return _refreshing;
 }
 
 export interface HealthResponse {

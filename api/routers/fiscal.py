@@ -27,6 +27,7 @@ from api.core.config import (
 )
 from api.core.rate_limit import limiter
 from api.matchers.auditoria_forense import (
+    _meses_observados,
     analisar_auditoria,
     cnpjs_das_transacoes,
     construir_cadastro,
@@ -44,7 +45,7 @@ from api.matchers.xml_fiscal import (
     parse_lote_xmls,
 )
 from api.services.auth import TokenPayload, autorizar_cliente, current_user
-from api.services.audit import registrar_audit
+from api.services.audit import gravar_audit_independente, registrar_audit
 from api.services.carta_constatacao import (
     gerar_carta_automatica,
     renderizar_pdf_async,
@@ -178,7 +179,12 @@ async def processar_fiscal(
             scores_conformidade = await asyncio.to_thread(
                 calcular_conformidade_fornecedor, documentos, transacoes
             )
-            riscos = {r.cnpj_fornecedor: r for r in estimar_risco_tributario_anual(scores_conformidade)}
+            # Anualização sobre o período REAL dos extratos (não os 5 meses default)
+            meses_reais = _meses_observados(transacoes)
+            riscos = {
+                r.cnpj_fornecedor: r
+                for r in estimar_risco_tributario_anual(scores_conformidade, meses_observados=meses_reais)
+            }
             for sc in scores_conformidade:
                 risco_tributario_anual = riscos.get(sc.cnpj_fornecedor)
                 classe = classificar_risco(sc)
@@ -397,6 +403,15 @@ async def gerar_laudo(
 
     saida, razao = await asyncio.to_thread(_build)
     fname = re.sub(r"[^\w]+", "_", razao).strip("_")[:40] or "laudo"
+
+    # Trilha de auditoria: laudo forense é o artefato mais sensível do produto
+    await gravar_audit_independente(
+        action="fiscal.laudo.gerar",
+        resource_type="laudo",
+        resource_id=empresa_cnpj,
+        payload={"formato": formato, "n_transacoes": len(dedup), "n_docs_fiscais": len(fiscais)},
+        actor=user,
+    )
 
     if formato == "xlsx":
         return Response(

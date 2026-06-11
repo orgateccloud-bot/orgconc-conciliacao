@@ -1,13 +1,13 @@
 # RLS por organização (tenant = `org_id`) — rollout
 
 Isolamento multi-tenant **no banco** (defense-in-depth), por organização (a firma
-contábil). Hoje a RLS do OrgConc é **nominal** (`allow_all` / `USING (true)`): o
-isolamento real está só na camada de aplicação. Estes artefatos trocam isso por
-isolamento de verdade — **mas a ativação tem pré-requisitos** (abaixo).
+contábil). Este diretório é a **fonte de verdade versionada** das policies.
 
-> **Estado:** este diretório PREPARA a RLS real (SQL + infra de backend + testes).
-> **NÃO está ativo em produção** — `main` continua com `allow_all` até o rollout
-> ser executado no Supabase.
+> **Estado: ATIVO EM PRODUÇÃO desde 2026-06-07** (re-auditado live em
+> 2026-06-08, fail-closed provado). O backend conecta como `app_orgconc`
+> (NOBYPASSRLS); 11 tabelas de negócio com FORCE RLS + policy `org_isolation`.
+> As seções de pré-requisitos/rollout abaixo permanecem como referência para
+> provisionar **ambientes novos** (staging, DR, dev com Postgres real).
 
 ## Arquivos
 
