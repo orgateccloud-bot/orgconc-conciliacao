@@ -30,6 +30,7 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from api.services.report_utils import format_brl, format_num, format_pct, font_faces_css
 
@@ -193,6 +194,16 @@ def style_header(ws, row, n_cols):
         cell.font = HEADER_FONT
         cell.alignment = Alignment(horizontal="left", vertical="center")
         cell.border = THIN_BORDER
+
+
+def _add_table(ws, ref, name, style="TableStyleMedium2"):
+    """ListObject (Table) com zebra automático via estilo de tabela do Excel."""
+    tbl = Table(displayName=name, ref=ref)
+    tbl.tableStyleInfo = TableStyleInfo(
+        name=style, showFirstColumn=False, showLastColumn=False,
+        showRowStripes=True, showColumnStripes=False,
+    )
+    ws.add_table(tbl)
 
 
 def cabecalho(ws, ultima_col, secao):
@@ -1131,7 +1142,15 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     for col, w in {1: 5, 2: 10, 3: 12, 4: 8, 5: 14, 6: 32, 7: 30, 8: 35, 9: 20}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = f"A{start + 4}"
-    ws.auto_filter.ref = f"A{start + 3}:I{r - 1}"
+    if r > start + 4:
+        _add_table(ws, f"A{start+3}:I{r-1}", "Transacoes")
+    _tot4 = ws.cell(row=r, column=1, value="TOTAL")
+    _tot4.font = TOTAL_FONT
+    _tv4 = ws.cell(row=r, column=5, value=f"=SUBTOTAL(109,E{start+4}:E{r-1})")
+    _tv4.number_format = "#,##0.00"
+    for _c4 in range(1, 10):
+        ws.cell(row=r, column=_c4).fill = TOTAL_FILL
+        ws.cell(row=r, column=_c4).font = TOTAL_FONT
 
     # ════════════════════════════════════════════════════════════════════
     # Aba 5: Disposicoes Forenses (27 colunas)
@@ -1233,7 +1252,15 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     for col, w in larguras.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = f"F{start + 4}"
-    ws.auto_filter.ref = f"A{start + 3}:AA{r - 1}"
+    if r > start + 4:
+        _add_table(ws, f"A{start+3}:AA{r-1}", "Disposicoes")
+    _tot5 = ws.cell(row=r, column=1, value="TOTAL")
+    _tot5.font = TOTAL_FONT
+    _tv5 = ws.cell(row=r, column=3, value=f"=SUBTOTAL(109,C{start+4}:C{r-1})")
+    _tv5.number_format = "#,##0.00"
+    for _c5 in range(1, 28):
+        ws.cell(row=r, column=_c5).fill = TOTAL_FILL
+        ws.cell(row=r, column=_c5).font = TOTAL_FONT
 
     # ════════════════════════════════════════════════════════════════════
     # Aba 6: Risk Heatmap
@@ -1349,7 +1376,8 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     for col, w in {1: 20, 2: 42, 3: 14, 4: 13, 5: 5, 6: 22, 7: 38, 8: 24}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.freeze_panes = f"A{start + 3}"
-    ws.auto_filter.ref = f"A{start + 2}:H{r - 1}"
+    if r > start + 3:
+        _add_table(ws, f"A{start+2}:H{r-1}", "CNPJsEnriquecidos", "TableStyleMedium7")
 
     # ════════════════════════════════════════════════════════════════════
     # Aba 8: Partes Relacionadas
@@ -1698,10 +1726,15 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         r += 1
 
     ws.cell(row=r, column=1, value=f"TOTAL ({len(pos_baixa)} alertas)").font = TOTAL_FONT
-    ws.cell(row=r, column=4, value=round(total_pb, 2)).number_format = "#,##0.00"
+    _pbv = ws.cell(row=r, column=4, value=(
+        f"=SUBTOTAL(109,D{start+4}:D{r-1})" if pos_baixa else round(total_pb, 2)
+    ))
+    _pbv.number_format = "#,##0.00"
     for c in range(1, 8):
         ws.cell(row=r, column=c).fill = TOTAL_FILL
         ws.cell(row=r, column=c).font = TOTAL_FONT
+    if pos_baixa:
+        _add_table(ws, f"A{start+3}:G{r-1}", "PagamentosPosBaixa", "TableStyleMedium10")
 
     for col, w in {1: 4, 2: 10, 3: 12, 4: 14, 5: 60, 6: 13, 7: 12}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
@@ -1722,7 +1755,20 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
             "criticos": [c for c in conf if c["classe"] in ("CRITICO", "ALTO")][:10],
         }
 
-    # ── Print setup em todas as abas (Fase 3) ─────────────────────────────
+    # ── Print setup + cores de aba + link de navegação (Fase 3) ──────────
+    _TAB_CORES = {
+        "1. Capa": "1A3A6B",
+        "2. Identificação": "12345E",
+        "3. Resumo Executivo": "12345E",
+        "4. Transações": "1F7FB8",
+        "5. Disposições": "1F7FB8",
+        "6. Risk Heatmap": "B33A3A",
+        "7. CNPJs": "D97706",
+        "8. Partes Relacionadas": "D97706",
+        "9. MEIs Teto": "D97706",
+        "10. Status Tributário": "D97706",
+        "11. Pós-Baixa": "991B1B",
+    }
     for _ws in wb.worksheets:
         _ws.page_setup.orientation = "landscape"
         _ws.page_setup.fitToWidth = 1
@@ -1730,6 +1776,13 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
         _ws.sheet_properties.pageSetUpPr.fitToPage = True
         if _ws.title not in ("1. Capa",):
             _ws.print_title_rows = "1:2"
+        if _ws.title in _TAB_CORES:
+            _ws.sheet_properties.tabColor = _TAB_CORES[_ws.title]
+        if _ws.title != "1. Capa":
+            _nav = _ws.cell(row=4, column=1, value="← Voltar à Capa")
+            _nav.hyperlink = "#'1. Capa'!A1"
+            _nav.font = Font(color="1F7FB8", underline="single", size=9)
+            _nav.alignment = Alignment(horizontal="left", vertical="center", indent=1)
 
     return wb, {
         "fiscal": fiscal,
@@ -2047,6 +2100,17 @@ def gerar_html(md_text, periodo="", titulo=None, objeto=None, razao=None, cnpj=N
   }}
 }}
 @page :first {{ @top-left {{ content: ""; }} @top-right {{ content: ""; }} }}
+@page capa-page {{
+  size: A4 portrait;
+  margin: 18mm 20mm 22mm 20mm;
+  @top-left {{ content: ""; }}
+  @top-right {{ content: ""; }}
+  @bottom-center {{
+    content: "ORGATEC \00B7 OrgAudi \00B7 Auditoria Banc\00e1ria Forense";
+    font-family: 'Manrope', 'Segoe UI', Arial, sans-serif;
+    font-size: 7pt; color: #94A3B8;
+  }}
+}}
 
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
@@ -2054,11 +2118,11 @@ body {{
   font-size: 10pt; color: #0E2A47; line-height: 1.6;
 }}
 
-/* ── Capa ── */
+/* ── Capa (página nomeada portrait — Fase 4 PDF/A) ── */
 .capa {{
-  height: 176mm; padding: 14mm 24mm;
+  height: 223mm; padding: 14mm 22mm;
   display: flex; flex-direction: column; justify-content: space-between;
-  page-break-after: always; position: relative;
+  page-break-after: always; page: capa-page; position: relative;
   background:
     radial-gradient(ellipse 60% 45% at 12% 8%, rgba(91,169,214,.28), transparent 60%),
     radial-gradient(ellipse 55% 42% at 90% 16%, rgba(184,221,238,.35), transparent 63%),
@@ -2199,6 +2263,12 @@ blockquote {{
 <meta charset="UTF-8">
 <meta name="description" content="Laudo de Auditoria Banc&aacute;ria Forense &mdash; {razao}">
 <meta name="generator" content="OrgConc OrgAudi">
+<meta name="DC.title" content="Laudo de Auditoria Banc&aacute;ria Forense &mdash; {razao}">
+<meta name="DC.creator" content="ORGATEC &mdash; OrgAudi">
+<meta name="DC.date" content="{datetime.now().strftime('%Y-%m-%d')}">
+<meta name="DC.identifier" content="{laudo_id}">
+<meta name="DC.format" content="application/pdf">
+<meta name="DC.type" content="Laudo Pericial / Auditoria Banc&aacute;ria Forense">
 <title>Laudo de Auditoria &middot; {razao}</title>
 <style>{css}</style>
 </head>
