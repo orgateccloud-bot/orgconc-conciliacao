@@ -132,8 +132,10 @@ Particularidades do staging:
   migrations NOVAS (upgrade incremental a partir do head).
 - asyncpg exige **1 statement por `op.execute()`** — migration com múltiplos
   comandos num único execute passa no SQLite/psycopg2 e quebra no staging/prod.
-- Staging não tem RLS de prod nem dados reais — não serve para validar
-  isolamento de tenant (use os testes `tests/test_rls_*.py` no CI para isso).
+- **Staging tem RLS com paridade de prod desde 2026-06-12** (role `app_orgconc`
+  NOBYPASSRLS + policies de `db/rls/`; runtime conecta como `app_orgconc`,
+  migrations como owner — ver docs/STAGING.md §RLS). Serve para validar
+  isolamento de tenant fora de prod; sem dados reais de clientes.
 
 Fluxo recomendado para migration de risco: deploy no staging → `alembic
 upgrade head` lá → smoke test → só então merge na main (deploy de prod roda a

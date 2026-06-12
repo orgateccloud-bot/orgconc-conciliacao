@@ -49,11 +49,11 @@ CI/CD Deploy            6.0 →  6.0   Railway nativo + preDeploy; falta smoke o
 Observability           8.0 →  8.0   Eixo mais forte; 22 testes diretos dos middlewares (06-11)
 Deployment Docs         7.0 →  7.5   DEPLOY/STAGING/RUNBOOK reais; fluxo fantasma removido (06-12)
 Railway Config          7.0 →  8.0   #133: container non-root (uid 10001, código read-only)
-Staging Env             5.5 →  5.5   Existe e valida migrations; sem paridade RLS/Supabase branch
-Disaster Recovery       5.5 →  7.0   #132: restore REAPLICA RLS; render.yaml/Procfile removidos
-                                     #135: sonda do incidente 06-10 + rotação app_orgconc no RUNBOOK
+Staging Env             5.5 →  7.0   RLS REAL aplicado 06-12 (app_orgconc + policies, 9/9 testes); falta Supabase branch
+Disaster Recovery       5.5 →  7.5   #132: restore REAPLICA RLS; render.yaml/Procfile removidos
+                                     #135: sonda + rotação no RUNBOOK · dr-drill.yml: drill trimestral c/ issue automática
 ─────────────────────────────────────
-média                   6.5 →  7.2   (era 3.0 em 05-28)
+média                   6.5 →  7.4   (era 3.0 em 05-28)
 ```
 
 ## 🧪 TESTES (2026-06-12)
@@ -77,7 +77,7 @@ RLS (CI)           ████████░░  Postgres real + role NOBYPASS
 | 4 | Rate-limiter e custo-LLM in-memory (degradam multi-instância) | 🟡 P1 | memória multi-instância |
 | 5 | `pdf.py` sem testes + sem limites estruturais; `fitid` morto | 🟡 P1 | repontuação parsers |
 | 6 | Duplicação `db/clientes.py` × `infra/repositories/clientes.py` | 🟡 P2 | repontuação domain |
-| 7 | Staging: paridade RLS (Supabase branch) + deploy automático | 🟡 P2 | repontuação DevOps |
+| 7 | Staging: ~~paridade RLS~~ ✅ (06-12) · resta Supabase branch + deploy automático | 🟡 P2 | repontuação DevOps |
 | 8 | Exports do frontend via `apiFetchBlob` (links `<a href>` dão 401 limpo) | 🟢 P2 | ESTADO_PROJETO §5.6 |
 
 ## ✅ FECHADO DESDE O SNAPSHOT DE 05-28
