@@ -40,7 +40,10 @@ DECLARE
     'clientes', 'conciliacoes', 'transacoes', 'apuracao_cbs_ibs',
     -- Tabelas fiscais + disposição (org_id adicionado na migration 020).
     'documento_fiscal', 'cruzamento_fiscal', 'conformidade_fornecedor',
-    'guia_tributo', 'contrato', 'carta_versao', 'transacao_disposicao'
+    'guia_tributo', 'contrato', 'carta_versao', 'transacao_disposicao',
+    -- Fila de jobs assíncronos (migration 023) — tem AINDA a policy adicional
+    -- worker_access (criada na migration/abaixo), p/ o loop do worker.
+    'jobs'
   ];
 BEGIN
   FOREACH t IN ARRAY tabelas LOOP
@@ -90,4 +93,17 @@ BEGIN
 
     EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO app_orgconc', t);
   END LOOP;
+END $$;
+
+-- 3. Fila de jobs (P1 #9): o LOOP do worker precisa claimar/finalizar jobs de
+--    qualquer org. Policy permissiva via GUC app.worker — setado apenas por
+--    api/services/job_queue (nunca em request). Inerte sem o GUC (fail-closed).
+DO $$
+BEGIN
+  IF to_regclass('public.jobs') IS NOT NULL THEN
+    DROP POLICY IF EXISTS worker_access ON public.jobs;
+    CREATE POLICY worker_access ON public.jobs FOR ALL
+      USING      (current_setting('app.worker', true) = 'on')
+      WITH CHECK (current_setting('app.worker', true) = 'on');
+  END IF;
 END $$;

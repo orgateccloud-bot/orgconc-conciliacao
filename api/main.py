@@ -10,9 +10,9 @@ import logging
 import os
 
 from fastapi import HTTPException, Request
-from fastapi.staticfiles import StaticFiles
 
 from api.core.bootstrap import criar_app
+from api.core.spa_static import SPAStaticFiles
 from api.core.prometheus_metrics import metrics_endpoint
 from api.core.config import (
     DB_DISPONIVEL,  # noqa: F401 — re-export p/ testes
@@ -38,6 +38,7 @@ from api.routers import (
     fiscal as fiscal_router,
     guias as guias_router,
     health,
+    jobs as jobs_router,
     matchers as matchers_router,
     metrics as metrics_router,
     transacoes as transacoes_router,
@@ -87,13 +88,47 @@ app.include_router(matchers_router.router)
 app.include_router(guias_router.router)
 app.include_router(contratos_router.router)
 app.include_router(fiscal_router.router)
+app.include_router(jobs_router.router)
+
+# === Versionamento de API: /v1 (dual-mount, P2 #10) ===
+# As rotas de negócio respondem TAMBÉM sob /v1/* (alias estável p/ clientes de
+# API), mantendo a raiz como retrocompat do frontend atual — nada quebra.
+# auth_routes TAMBÉM responde sob /v1 — com UMA exceção de uso: o cookie
+# httpOnly de refresh é emitido com path fixo "/auth" (escopo mínimo), então o
+# browser só o envia para /auth/* — refresh e logout DEVEM ser chamados na
+# raiz (/auth/refresh, /auth/logout). Login/me/orgs/usuarios funcionam em
+# ambos (Set-Cookie no login define o path do cookie independentemente da URL
+# chamada). Documentado também em orgconc-react/src/lib/api.ts.
+# Fora do /v1, de propósito: /metrics e /app (infra Prometheus/SPA).
+# include_in_schema=False: o OpenAPI documenta o caminho canônico (raiz) uma vez.
+_V1_ROUTERS = (
+    health.router,
+    auth_routes.router,
+    clientes.router,
+    conciliacao.router,
+    exports.router,
+    conciliacoes_list.router,
+    metrics_router.router,
+    audit_router.router,
+    ai_router.router,
+    activity_router.router,
+    transacoes_router.router,
+    matchers_router.router,
+    guias_router.router,
+    contratos_router.router,
+    fiscal_router.router,
+    jobs_router.router,
+)
+for _v1_router in _V1_ROUTERS:
+    app.include_router(_v1_router, prefix="/v1", include_in_schema=False)
 
 # Frontend React (SPA) — servido em /app quando o build existe (orgconc-react/dist).
 # Em produção o build é gerado no Dockerfile multi-stage e servido same-origin pela
 # própria API (GitHub Pages foi removido); este mount cobre prod e o uso local/Docker
-# após `npm run build` em orgconc-react/.
+# após `npm run build` em orgconc-react/. SPAStaticFiles: deep-link/F5 em rota
+# interna (ex.: /app/laudo) serve o index.html — sem ele dava 404 em produção.
 if REACT_DIST.exists():
-    app.mount("/app", StaticFiles(directory=str(REACT_DIST), html=True), name="react_app")
+    app.mount("/app", SPAStaticFiles(directory=str(REACT_DIST), html=True), name="react_app")
 else:
     _frontend_log = logging.getLogger("orgconc.frontend")
 

@@ -24,6 +24,9 @@ skills-lock.json
 # Dados bancários reais (não publicar)
 *.ofx
 *.OFX
+# Exceção: fixtures SINTÉTICAS de teste (zero dados reais; e2e precisa delas no CI)
+!tests/fixtures/*.ofx
+!orgconc-react/e2e/fixtures/*.ofx
 
 # Scripts legacy com API keys hardcoded
 conciliar_ofx.py
@@ -75,3 +78,7 @@ orgconc-react/coverage/
 coverage/
 .coverage
 htmlcov/
+
+# Artefatos do Playwright
+orgconc-react/test-results/
+orgconc-react/playwright-report/

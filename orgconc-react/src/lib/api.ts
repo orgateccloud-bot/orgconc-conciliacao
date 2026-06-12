@@ -1,3 +1,8 @@
+// Rotas de NEGÓCIO e de AUTH usam o prefixo versionado /v1 (dual-mount do
+// backend). DUAS exceções ficam na raiz de propósito: /auth/refresh e
+// /auth/logout — são os únicos endpoints que LEEM o cookie httpOnly de
+// refresh, emitido com path fixo "/auth" (escopo mínimo); sob /v1 o browser
+// não o enviaria e a rotação de sessão quebraria silenciosamente.
 const TOKEN_KEY = "orgconc.access_token";
 
 export function getToken(): string | null {
@@ -15,6 +20,7 @@ export function setToken(token: string | null) {
 
 export async function apiLogout(): Promise<void> {
   try {
+    // Raiz de propósito: lê o cookie de refresh (path "/auth") p/ revogá-lo.
     await fetch("/auth/logout", {
       method: "POST",
       credentials: "include",
@@ -39,6 +45,7 @@ export async function apiRefresh(): Promise<string | null> {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
     try {
+      // Raiz de propósito: único endpoint que o cookie de refresh alcança.
       const res = await fetch("/auth/refresh", { method: "POST", credentials: "include" });
       if (!res.ok) return null;
       const data = (await res.json()) as { access_token?: string };
@@ -65,7 +72,7 @@ export interface HealthResponse {
 
 // Endpoint publico: usa fetch simples (sem auth/sem efeito de logout do apiFetch).
 export async function fetchHealth(): Promise<HealthResponse> {
-  const res = await fetch("/health", { credentials: "include" });
+  const res = await fetch("/v1/health", { credentials: "include" });
   return res.json();
 }
 
@@ -195,14 +202,14 @@ export interface ConciliacaoResponse {
 }
 
 export async function login(email: string, senha: string) {
-  return apiFetch<LoginResponse>("/auth/login", {
+  return apiFetch<LoginResponse>("/v1/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, senha }),
   });
 }
 
 export async function fetchMe() {
-  return apiFetch<UserMe>("/auth/me");
+  return apiFetch<UserMe>("/v1/auth/me");
 }
 
 export async function conciliarOfx(
@@ -216,7 +223,7 @@ export async function conciliarOfx(
   else if (opts.multi_modelo) params.set("multi_modelo", "true");
   else if (opts.modelo) params.set("modelo", opts.modelo);
   const q = params.toString() ? `?${params}` : "";
-  return apiFetch<ConciliacaoResponse>(`/conciliar/ofx${q}`, { method: "POST", body: fd });
+  return apiFetch<ConciliacaoResponse>(`/v1/conciliar/ofx${q}`, { method: "POST", body: fd });
 }
 
 export interface Cliente {
@@ -237,7 +244,7 @@ export async function listarClientes() {
   if (_clientesCache !== null && (performance.now() - _clientesCacheAt) < CLIENTES_TTL_MS) {
     return _clientesCache as Cliente[];
   }
-  const result = await apiFetch<Cliente[]>("/clientes");
+  const result = await apiFetch<Cliente[]>("/v1/clientes");
   _clientesCache = result;
   _clientesCacheAt = performance.now();
   return result;
@@ -268,7 +275,7 @@ export function limparDadosTenant(): void {
 }
 
 export async function criarCliente(data: Partial<Cliente>) {
-  return apiFetch<Cliente>("/clientes", { method: "POST", body: JSON.stringify(data) });
+  return apiFetch<Cliente>("/v1/clientes", { method: "POST", body: JSON.stringify(data) });
 }
 
 export interface ConciliacaoMeta {
@@ -284,7 +291,7 @@ export async function listarConciliacoes(clienteId?: string) {
   const params = new URLSearchParams();
   if (clienteId) params.set("cliente_id", clienteId);
   const q = params.toString() ? `?${params}` : "";
-  return apiFetch<ConciliacaoMeta[]>(`/conciliacoes${q}`);
+  return apiFetch<ConciliacaoMeta[]>(`/v1/conciliacoes${q}`);
 }
 
 const HIST_KEY = "orgconc.historico.v1";
@@ -316,7 +323,7 @@ export function carregarHistoricoLocal() {
 }
 
 export async function atualizarCliente(id: string, data: Partial<Cliente>) {
-  return apiFetch<Cliente>(`/clientes/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+  return apiFetch<Cliente>(`/v1/clientes/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
 export async function conciliarCsv(
@@ -330,11 +337,11 @@ export async function conciliarCsv(
   else if (opts.multi_modelo) params.set("multi_modelo", "true");
   else if (opts.modelo) params.set("modelo", opts.modelo);
   const q = params.toString() ? `?${params}` : "";
-  return apiFetch<ConciliacaoResponse>(`/conciliar/csv${q}`, { method: "POST", body: fd });
+  return apiFetch<ConciliacaoResponse>(`/v1/conciliar/csv${q}`, { method: "POST", body: fd });
 }
 
 export async function listarConciliacoesDoCliente(clienteId: string) {
-  return apiFetch<ConciliacaoMeta[]>(`/conciliacoes/por-cliente/${clienteId}`);
+  return apiFetch<ConciliacaoMeta[]>(`/v1/conciliacoes/por-cliente/${clienteId}`);
 }
 
 // ── Matchers (OrgNeural2) ─────────────────────────────────────────────────
@@ -371,7 +378,7 @@ export async function conciliarMatchers(
   const fd = new FormData();
   fd.append("cliente_id", clienteId);
   arquivos.forEach((f) => fd.append("arquivos", f));
-  return apiFetch<MatchersResponse>("/matchers/conciliar", { method: "POST", body: fd });
+  return apiFetch<MatchersResponse>("/v1/matchers/conciliar", { method: "POST", body: fd });
 }
 
 // ── Guias tributárias ─────────────────────────────────────────────────────
@@ -391,7 +398,7 @@ export interface Guia {
 
 export async function listarGuias(clienteId?: string): Promise<Guia[]> {
   const q = clienteId ? `?cliente_id=${clienteId}` : "";
-  return apiFetch<Guia[]>(`/guias${q}`);
+  return apiFetch<Guia[]>(`/v1/guias${q}`);
 }
 
 export async function criarGuia(data: {
@@ -403,7 +410,7 @@ export async function criarGuia(data: {
   data_vencimento?: string | null;
   conta_contabil?: string | null;
 }): Promise<Guia> {
-  return apiFetch<Guia>("/guias", { method: "POST", body: JSON.stringify(data) });
+  return apiFetch<Guia>("/v1/guias", { method: "POST", body: JSON.stringify(data) });
 }
 
 // ── Contratos recorrentes ─────────────────────────────────────────────────
@@ -422,7 +429,7 @@ export interface Contrato {
 
 export async function listarContratos(clienteId?: string): Promise<Contrato[]> {
   const q = clienteId ? `?cliente_id=${clienteId}` : "";
-  return apiFetch<Contrato[]>(`/contratos${q}`);
+  return apiFetch<Contrato[]>(`/v1/contratos${q}`);
 }
 
 export async function criarContrato(data: {
@@ -433,7 +440,7 @@ export async function criarContrato(data: {
   padrao_memo?: string | null;
   conta_contabil?: string | null;
 }): Promise<Contrato> {
-  return apiFetch<Contrato>("/contratos", { method: "POST", body: JSON.stringify(data) });
+  return apiFetch<Contrato>("/v1/contratos", { method: "POST", body: JSON.stringify(data) });
 }
 
 // ── Fiscal (Auditoria Cruzada NF-e/CT-e × OFX) ────────────────────────────
@@ -507,7 +514,7 @@ export async function fiscalProcessar(
   fd.append("cliente_id", clienteId);
   arquivos.forEach((f) => fd.append("arquivos", f));
   if (enrichAll) fd.append("enrich_all", "true");
-  return apiFetch<FiscalProcessarResponse>("/fiscal/processar", {
+  return apiFetch<FiscalProcessarResponse>("/v1/fiscal/processar", {
     method: "POST",
     body: fd,
   });
@@ -531,7 +538,7 @@ export async function fiscalLaudo(opts: {
   if (opts.conta) fd.append("conta", opts.conta);
   opts.arquivos.forEach((f) => fd.append("arquivos", f));
 
-  const url = `/fiscal/laudo?formato=${opts.formato}`;
+  const url = `/v1/fiscal/laudo?formato=${opts.formato}`;
   const doFetch = (token: string | null) => {
     const headers = new Headers();
     if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -587,14 +594,14 @@ export async function fiscalConformidade(
 ): Promise<FiscalConformidadeResponse> {
   const q = classeMinima ? `?classe_minima=${classeMinima}` : "";
   return apiFetch<FiscalConformidadeResponse>(
-    `/fiscal/conformidade/${clienteId}${q}`,
+    `/v1/fiscal/conformidade/${clienteId}${q}`,
   );
 }
 
 export async function fiscalRiscoTributario(
   clienteId: string,
 ): Promise<FiscalRiscoResponse> {
-  return apiFetch<FiscalRiscoResponse>(`/fiscal/risco-tributario/${clienteId}`);
+  return apiFetch<FiscalRiscoResponse>(`/v1/fiscal/risco-tributario/${clienteId}`);
 }
 
 export interface FiscalCartaResponse {
@@ -626,7 +633,7 @@ export interface FiscalCartasResponse {
 export async function fiscalGerarCarta(
   clienteId: string,
 ): Promise<FiscalCartaResponse> {
-  return apiFetch<FiscalCartaResponse>(`/fiscal/gerar-carta/${clienteId}`, {
+  return apiFetch<FiscalCartaResponse>(`/v1/fiscal/gerar-carta/${clienteId}`, {
     method: "POST",
   });
 }
@@ -634,7 +641,7 @@ export async function fiscalGerarCarta(
 export async function fiscalListarCartas(
   clienteId: string,
 ): Promise<FiscalCartasResponse> {
-  return apiFetch<FiscalCartasResponse>(`/fiscal/cartas/${clienteId}`);
+  return apiFetch<FiscalCartasResponse>(`/v1/fiscal/cartas/${clienteId}`);
 }
 
 // ── Auditoria Forense (regime×teto + heatmap + sinais) ─────────────────────
@@ -694,7 +701,7 @@ export async function fiscalLaudoResumo(
   fd.append("empresa_cnpj", empresaCnpj);
   fd.append("conta", conta);
   arquivos.forEach((f) => fd.append("arquivos", f));
-  return apiFetch<FiscalAuditoriaResumo>("/fiscal/laudo/resumo", {
+  return apiFetch<FiscalAuditoriaResumo>("/v1/fiscal/laudo/resumo", {
     method: "POST",
     body: fd,
   });
@@ -709,7 +716,103 @@ export async function fiscalLaudoBlob(
   fd.append("empresa_cnpj", empresaCnpj);
   fd.append("conta", conta);
   arquivos.forEach((f) => fd.append("arquivos", f));
-  return apiFetchBlob("/fiscal/laudo", { method: "POST", body: fd });
+  return apiFetchBlob("/v1/fiscal/laudo", { method: "POST", body: fd });
+}
+
+// ── Fila de jobs assíncronos (P1 #9, backend #122) ───────────────────────────
+
+export type JobStatusNome = "PENDENTE" | "EXECUTANDO" | "CONCLUIDO" | "ERRO";
+
+export interface JobStatus {
+  id: string;
+  tipo: string;
+  status: JobStatusNome;
+  erro: string | null;
+  tentativas: number;
+  criado_em: string | null;
+  iniciado_em: string | null;
+  concluido_em: string | null;
+  resultado_nome: string | null;
+  resultado_mime: string | null;
+}
+
+export interface JobSubmetido {
+  job_id: string;
+  status: JobStatusNome;
+  polling: string;
+  resultado: string;
+}
+
+export async function fiscalLaudoAsync(opts: {
+  empresaCnpj: string;
+  conta?: string;
+  arquivos: File[];
+  formato: FormatoLaudo;
+}): Promise<JobSubmetido> {
+  const fd = new FormData();
+  fd.append("empresa_cnpj", opts.empresaCnpj);
+  if (opts.conta) fd.append("conta", opts.conta);
+  opts.arquivos.forEach((f) => fd.append("arquivos", f));
+  return apiFetch<JobSubmetido>(`/v1/fiscal/laudo/async?formato=${opts.formato}`, {
+    method: "POST",
+    body: fd,
+  });
+}
+
+export async function fetchJobStatus(jobId: string): Promise<JobStatus> {
+  return apiFetch<JobStatus>(`/v1/jobs/${jobId}`);
+}
+
+export async function baixarJobResultado(
+  jobId: string,
+): Promise<{ blob: Blob; filename: string | null }> {
+  return apiFetchBlob(`/v1/jobs/${jobId}/resultado`);
+}
+
+/** Fase corrente do laudo via fila, para feedback de UI. */
+export type FaseLaudo = JobStatusNome | "SINCRONO";
+
+/**
+ * Gera o laudo pela FILA (não bloqueia o backend): submete, faz polling e baixa
+ * o resultado. Se a fila não estiver disponível — 503 (sem banco) ou 403 (token
+ * sem organização, ex.: service token) — cai no fluxo síncrono transparente.
+ * `onFase` recebe PENDENTE/EXECUTANDO/CONCLUIDO ou SINCRONO (fallback).
+ */
+export async function gerarLaudoComFila(
+  opts: { empresaCnpj: string; conta?: string; arquivos: File[]; formato: FormatoLaudo },
+  onFase?: (fase: FaseLaudo) => void,
+  pollMs = 3000,
+): Promise<{ blob: Blob; filename: string; viaFila: boolean }> {
+  let sub: JobSubmetido;
+  try {
+    sub = await fiscalLaudoAsync(opts);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 503 || err.status === 403)) {
+      onFase?.("SINCRONO");
+      const { blob, filename } = await fiscalLaudo(opts);
+      return { blob, filename, viaFila: false };
+    }
+    throw err;
+  }
+  onFase?.(sub.status);
+  const limite = Date.now() + 10 * 60_000; // jobs têm timeout no servidor (15min)
+  while (Date.now() < limite) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    const st = await fetchJobStatus(sub.job_id);
+    onFase?.(st.status);
+    if (st.status === "CONCLUIDO") {
+      const { blob, filename } = await baixarJobResultado(sub.job_id);
+      return {
+        blob,
+        filename: filename ?? st.resultado_nome ?? `laudo.${opts.formato}`,
+        viaFila: true,
+      };
+    }
+    if (st.status === "ERRO") {
+      throw new ApiError(st.erro || "Falha ao gerar o laudo (job)", 422);
+    }
+  }
+  throw new ApiError("Tempo esgotado aguardando o laudo na fila", 408);
 }
 
 // ── Dashboard metrics (PR 1 backend) ──────────────────────────────────────
@@ -757,7 +860,7 @@ export interface DashboardBundle {
 }
 
 export async function fetchDashboardBundle(periodo = 30) {
-  return apiFetch<DashboardBundle>(`/metrics/dashboard-bundle?periodo=${periodo}`);
+  return apiFetch<DashboardBundle>(`/v1/metrics/dashboard-bundle?periodo=${periodo}`);
 }
 
 // ── Trust score + audit (PR 4 backend) ────────────────────────────────────
@@ -809,15 +912,15 @@ export interface AuditTimelineResponse {
 }
 
 export async function fetchTrustScore(periodo = 30) {
-  return apiFetch<TrustScore>(`/metrics/trust-score?periodo=${periodo}`);
+  return apiFetch<TrustScore>(`/v1/metrics/trust-score?periodo=${periodo}`);
 }
 
 export async function fetchAuditTimeline(limit = 10) {
-  return apiFetch<AuditTimelineResponse>(`/audit/timeline?limit=${limit}`);
+  return apiFetch<AuditTimelineResponse>(`/v1/audit/timeline?limit=${limit}`);
 }
 
 export async function fetchAuditEvento(eventoId: string) {
-  return apiFetch<AuditEventDetalhe>(`/audit/eventos/${eventoId}`);
+  return apiFetch<AuditEventDetalhe>(`/v1/audit/eventos/${eventoId}`);
 }
 
 // ── PR 5: AI insights, performance modelos, activity feed ────────────────
@@ -846,12 +949,12 @@ export interface AiInsightsResponse {
 }
 
 export async function fetchActivityFeed(limit = 10) {
-  return apiFetch<ActivityFeedItem[]>(`/activity/feed?limit=${limit}`);
+  return apiFetch<ActivityFeedItem[]>(`/v1/activity/feed?limit=${limit}`);
 }
 
 export async function fetchAiInsights(periodo = 30, refresh = false) {
   return apiFetch<AiInsightsResponse>(
-    `/ai/insights/dashboard?periodo=${periodo}&refresh=${refresh}`
+    `/v1/ai/insights/dashboard?periodo=${periodo}&refresh=${refresh}`
   );
 }
 
@@ -876,7 +979,7 @@ export interface UsuarioAdmin {
 }
 
 export async function listarOrgs(): Promise<OrgAdmin[]> {
-  return apiFetch<OrgAdmin[]>("/auth/orgs");
+  return apiFetch<OrgAdmin[]>("/v1/auth/orgs");
 }
 
 export async function criarOrg(data: {
@@ -884,11 +987,11 @@ export async function criarOrg(data: {
   cnpj?: string;
   plano?: string;
 }): Promise<{ id: string; nome: string; plano: string }> {
-  return apiFetch("/auth/orgs", { method: "POST", body: JSON.stringify(data) });
+  return apiFetch("/v1/auth/orgs", { method: "POST", body: JSON.stringify(data) });
 }
 
 export async function listarUsuarios(orgId: string): Promise<UsuarioAdmin[]> {
-  return apiFetch<UsuarioAdmin[]>(`/auth/usuarios?org_id=${encodeURIComponent(orgId)}`);
+  return apiFetch<UsuarioAdmin[]>(`/v1/auth/usuarios?org_id=${encodeURIComponent(orgId)}`);
 }
 
 export async function criarUsuario(data: {
@@ -898,14 +1001,14 @@ export async function criarUsuario(data: {
   role?: string;
   nome?: string;
 }): Promise<{ id: string; email: string; org_id: string; role: string }> {
-  return apiFetch("/auth/usuarios", { method: "POST", body: JSON.stringify(data) });
+  return apiFetch("/v1/auth/usuarios", { method: "POST", body: JSON.stringify(data) });
 }
 
 export async function resetarSenhaUsuario(
   usuarioId: string,
   senhaNova: string,
 ): Promise<{ detail: string }> {
-  return apiFetch(`/auth/usuarios/${usuarioId}/senha`, {
+  return apiFetch(`/v1/auth/usuarios/${usuarioId}/senha`, {
     method: "POST",
     body: JSON.stringify({ senha_nova: senhaNova }),
   });

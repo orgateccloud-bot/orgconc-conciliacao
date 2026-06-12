@@ -9,7 +9,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-from sqlalchemy import String, Boolean, Integer, Date, Numeric, ForeignKey, Text, Index, text
+from sqlalchemy import String, Boolean, Integer, Date, LargeBinary, Numeric, ForeignKey, Text, Index, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS, JSONB
 
 TIMESTAMPTZ = _TS(timezone=True)
@@ -462,6 +462,9 @@ class ApuracaoCBSIBSRow(Base):
         Index("ix_apuracao_cbs_ibs_documento", "documento_id"),
         Index("ix_apuracao_cbs_ibs_criado", text("criado_em DESC")),
         Index("ix_apuracao_cbs_ibs_org", "org_id"),
+        # Idempotência IC-02 §3.2: a mesma operação (documento + versão da base)
+        # não duplica. salvar_apuracao faz UPSERT sobre esta constraint.
+        UniqueConstraint("documento_id", "versao_base", name="uq_apuracao_doc_versao"),
     )
 
     id:                  Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -488,3 +491,33 @@ class ApuracaoCBSIBSRow(Base):
     payload_hash:        Mapped[str | None]   = mapped_column(String(64))
     obtido_em:           Mapped[datetime]     = mapped_column(TIMESTAMPTZ, nullable=False)
     criado_em:           Mapped[datetime]     = mapped_column(TIMESTAMPTZ, default=_now)
+
+
+class Job(Base):
+    """Fila de jobs assíncronos (P1 #9) — tarefas fiscais longas fora do request.
+
+    Claim pelo worker com FOR UPDATE SKIP LOCKED (seguro multi-réplica). RLS:
+    policy org_isolation (usuário só vê os jobs da própria org) + worker_access
+    (loop do worker enxerga a fila inteira via GUC app.worker). Uploads e
+    resultado em BYTEA com TTL de limpeza — ver api/services/job_queue.py.
+    """
+    __tablename__ = "jobs"
+    __table_args__ = (
+        Index("ix_jobs_status_criado", "status", "criado_em"),
+        Index("ix_jobs_org", "org_id"),
+    )
+
+    id:             Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    org_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
+    tipo:           Mapped[str]              = mapped_column(String(40), nullable=False)
+    status:         Mapped[str]              = mapped_column(String(12), nullable=False, default="PENDENTE")
+    params:         Mapped[dict]             = mapped_column(JSONB, nullable=False, default=dict)
+    arquivos:       Mapped[bytes | None]     = mapped_column(LargeBinary)   # uploads empacotados (ZIP)
+    resultado:      Mapped[bytes | None]     = mapped_column(LargeBinary)
+    resultado_nome: Mapped[str | None]       = mapped_column(Text)
+    resultado_mime: Mapped[str | None]       = mapped_column(Text)
+    erro:           Mapped[str | None]       = mapped_column(Text)
+    tentativas:     Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
+    criado_em:      Mapped[datetime]         = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
+    iniciado_em:    Mapped[datetime | None]  = mapped_column(TIMESTAMPTZ)
+    concluido_em:   Mapped[datetime | None]  = mapped_column(TIMESTAMPTZ)
