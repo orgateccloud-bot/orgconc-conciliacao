@@ -42,9 +42,35 @@ Agende via cron ou GitHub Actions (workflow `.github/workflows/backup-db.yml` �
 gunzip -c orgconc-20250525.sql.gz | psql "postgresql://...novo..."
 # 4. Rode migrations pendentes (se houver)
 alembic upgrade head
-# 5. Smoke test
+```
+
+> ⚠️ **OBRIGATÓRIO — reaplicar RLS.** O dump (`--no-owner --no-acl`) **não** traz
+> roles, grants nem garante as policies de RLS num projeto novo. **Sem o passo 5
+> abaixo, o banco restaurado fica SEM isolamento multi-tenant** (qualquer org
+> enxergaria dados das outras). Não pule.
+
+```bash
+# 5. Reaplique o RLS usando a URL de OWNER (postgres) — NÃO a de runtime — NESTA ORDEM:
+psql "$DATABASE_URL_OWNER" -f db/rls/rollout_grants.sql
+psql "$DATABASE_URL_OWNER" -f db/rls/org_isolation.sql
+psql "$DATABASE_URL_OWNER" -f db/rls/contraparte_org_isolation.sql
+psql "$DATABASE_URL_OWNER" -f db/rls/infra_allow_all.sql
+# (banco novo: org_isolation.sql cria o role app_orgconc se não existir; se o
+#  rollout_grants.sql falhar com "role app_orgconc does not exist", rode os
+#  scripts de policies primeiro e repita o rollout_grants.sql)
+
+# 6. Defina senha forte do role de runtime e aponte a DATABASE_URL para ele.
+#    O runtime conecta como app_orgconc (NOBYPASSRLS) — NUNCA como postgres:
+psql "$DATABASE_URL_OWNER" -c "ALTER ROLE app_orgconc PASSWORD '<nova-senha-forte>'"
+
+# 7. Verifique as policies (deve listar org_isolation nas tabelas de negócio):
+psql "$DATABASE_URL_OWNER" -c "SELECT tablename, policyname FROM pg_policies WHERE schemaname='public';"
+# (opcional) rode a suíte de RLS contra o banco novo:
+#   DATABASE_URL=postgresql://app_orgconc:...@...novo... pytest tests/test_rls_real_tables.py
+
+# 8. Smoke test
 curl -s https://api.orgconc.com/health | jq
-# 6. Atualize DATABASE_URL no provedor de prod
+# 9. Atualize DATABASE_URL no provedor de prod (user app_orgconc, NUNCA postgres)
 ```
 
 ### Point-in-time recovery (PITR)
@@ -60,7 +86,7 @@ Não são fonte autoritativa — são cache do output de cada conciliação para
 
 Política:
 - **Sem backup ativo** (são reproduzíveis se o usuário rodar a conciliação de novo).
-- Em produção, montar volume persistente (Railway volume / Render disk) com pelo menos 10GB.
+- Em produção, montar volume persistente (Railway volume) com pelo menos 10GB.
 - Limpar arquivos >30 dias via cron:
   ```bash
   find ./data -name "*.json" -mtime +30 -delete
@@ -70,7 +96,7 @@ Política:
 
 Mantenha duas cópias:
 
-1. **Operacional**: nos painéis dos provedores (Railway/Render env vars, Supabase keys, Anthropic console).
+1. **Operacional**: nos painéis dos provedores (Railway env vars, Supabase keys, Anthropic console).
 2. **Backup**: gerenciador de senhas do owner (1Password / Bitwarden), label `orgconc-secrets-YYYY-MM-DD`.
 
 Rotação:
@@ -83,12 +109,23 @@ Rotação:
 Cenário pior: Supabase down + Railway down ao mesmo tempo.
 
 1. Provisione novo Supabase (region diferente, ex: us-east-1).
-2. Restore do backup mais recente (`pg_dump`).
-3. Provisione backend em Render ou Fly.io (provedor alternativo).
-4. Copie env vars do gerenciador de senhas + atualize `DATABASE_URL`.
+2. Restore do backup mais recente (`pg_dump`) — **incluindo a reaplicação do RLS**
+   (ver [§Restore](#restore), passos 5–7; sem isso o banco novo fica sem isolamento
+   multi-tenant).
+3. Provisione o backend num **novo projeto Railway** (rota primária): mesmo
+   `Dockerfile` + `railway.json` — o `preDeployCommand` roda as migrations
+   (`alembic upgrade head`) antes de subir o web. Alternativa: Fly.io via o mesmo
+   `Dockerfile` (rode `alembic upgrade head` como release command).
+4. Copie env vars do gerenciador de senhas + atualize `DATABASE_URL` (user
+   `app_orgconc`, NUNCA `postgres`).
 5. Atualize DNS (`api.orgconc.com` → novo host).
 6. Smoke test (`/health`, login, conciliação simulada).
 7. Comunique usuários (status page / email).
+
+> **Nota (incidente 2026-06-10):** o Supavisor (pooler do Supabase) cacheia a
+> credencial por ~30s após um `ALTER ROLE ... PASSWORD`. Se a senha nova "não
+> funcionar" logo após a troca, aguarde ~30s e tente de novo antes de concluir
+> que algo deu errado.
 
 ETA esperado: 4h se tudo manual; 1h se houver Terraform configurado (TODO).
 
