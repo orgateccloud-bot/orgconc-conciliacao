@@ -58,9 +58,25 @@ Verificado: `GET /health` → `{"status":"ok","banco_dados":"ok"}` ·
 Serviço + Postgres pequenos (créditos do plano). Para desligar tudo:
 `railway environment delete staging` (remove serviços e banco do env).
 
+## RLS — paridade com produção (desde 2026-06-12)
+
+O staging tem **RLS real, igual a prod**: role `app_orgconc` (LOGIN,
+NOBYPASSRLS) + os 4 scripts de `db/rls/` aplicados (18 tabelas com policy,
+13 com FORCE RLS). O `web-staging` conecta como `app_orgconc` na
+`DATABASE_URL` de runtime; `ALEMBIC_DATABASE_URL` segue com o role owner
+(migrations) — mesmo desenho de produção.
+
+Provado em 2026-06-12: `tests/test_rls_isolation.py` + `test_rls_real_tables.py`
+rodados contra o banco do staging — **9/9 passing** (fail-closed, escrita
+cruzada bloqueada, superadmin read-only). Sonda pós-deploy:
+`POST /auth/refresh` → 401 (DB ok com o role novo).
+
+Para re-aplicar/rotacionar (ex.: banco recriado): rodar os 4 scripts de
+`db/rls/` como owner + `ALTER ROLE app_orgconc PASSWORD '<nova>'` + atualizar
+a `DATABASE_URL` do `web-staging` (Variables) + redeploy.
+
 ## O que o staging NÃO é
 
-- Não tem RLS/Supabase real (o Postgres é do Railway; o rollout RLS usa role
-  `app_orgconc` + policies — replicável via `db/rls/org_isolation.sql` se quiser
-  paridade total).
+- Não usa Supabase (o Postgres é do Railway) — diferenças de pooler/extensões
+  podem não aparecer aqui.
 - Não recebe dados reais de clientes. Não usar OFX/XML reais aqui.

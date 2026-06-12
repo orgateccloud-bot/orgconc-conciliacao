@@ -1,0 +1,62 @@
+name: DR Drill (trimestral)
+
+# Fecha o gap apontado na repontuação DevOps 2026-06-11: o BACKUP.md previa
+# "testar restore uma vez por trimestre", mas sem deadline nem alerta — o
+# drill nunca acontecia. Este workflow abre uma issue trimestral com o
+# checklist executável; a issue aberta É o alerta (aparece no repo até
+# alguém executar e fechar).
+
+on:
+  schedule:
+    - cron: "0 12 1 1,4,7,10 *"   # dia 1 de jan/abr/jul/out, 12:00 UTC (9h BRT)
+  workflow_dispatch: {}            # permite disparar manualmente p/ testar
+
+permissions:
+  issues: write
+
+jobs:
+  abrir-issue-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Criar issue do drill (se não houver uma aberta)
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: abertas } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: "dr-drill",
+              state: "open",
+            });
+            if (abertas.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: abertas[0].number,
+                body: "⏰ Novo trimestre — o drill anterior ainda está aberto. Priorizar.",
+              });
+              return;
+            }
+            const tri = `${new Date().getFullYear()}-T${Math.floor(new Date().getMonth() / 3) + 1}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `DR Drill ${tri} — teste de restore e checklist de backup`,
+              labels: ["dr-drill", "ops"],
+              body: [
+                "Drill trimestral de disaster recovery (BACKUP.md é o guia completo).",
+                "",
+                "## Checklist",
+                "- [ ] Confirmar no dashboard Supabase que o backup automático está ocorrendo",
+                "- [ ] **Testar restore** num banco isolado (staging Railway serve): `gunzip -c <dump> | psql ...`",
+                "- [ ] **Reaplicar RLS no banco restaurado** (BACKUP.md §Restore): os 4 scripts de `db/rls/` na ordem + `ALTER ROLE app_orgconc PASSWORD`",
+                "- [ ] Provar isolamento no banco restaurado: `pytest tests/test_rls_real_tables.py` apontando para ele",
+                "- [ ] Verificar segredos no gerenciador (label `orgconc-secrets-*` atualizado)",
+                "- [ ] Sonda de prod: `curl -X POST <prod>/auth/refresh` → 401 (DB ok)",
+                "- [ ] Limpar `./data/*.json` >30 dias; checar tamanho/custo do banco",
+                "- [ ] Registrar duração real do restore vs RTO de 4h (BACKUP.md §RTO/RPO)",
+                "",
+                "_Issue criada automaticamente por `.github/workflows/dr-drill.yml`. Feche ao concluir._",
+              ].join("\n"),
+            });
