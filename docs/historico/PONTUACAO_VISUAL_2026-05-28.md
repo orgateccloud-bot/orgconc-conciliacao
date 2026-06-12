@@ -5,7 +5,8 @@
 > 2026-06-09 (deploy Railway same-origin, 17/17 páginas testadas com gate
 > 84/86, DEPLOY/RUNBOOK/BACKUP escritos, `_legacy/` removido); os quick-wins
 > TS strict e pre-commit entraram em 2026-06-11. Para o estado atual, ver
-> `docs/ESTADO_PROJETO_2026-06-11.md` e `PROJETO_MAPEAMENTO_COMPLETO.md`.
+> `PONTUACAO_VISUAL.md` (raiz, dashboard vigente), `docs/ESTADO_PROJETO_2026-06-11.md`
+> e `PROJETO_MAPEAMENTO_COMPLETO.md`.
 
 **Atualizado:** 2026-05-28
 
