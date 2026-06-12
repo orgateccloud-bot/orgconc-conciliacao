@@ -134,8 +134,8 @@ jobs:
       - name: bandit (analise estatica de seguranca)
         run: bandit -r api/ -ll
 
-      - name: semgrep SAST
-        run: semgrep --config=auto api/ --error --quiet || true
+      - name: semgrep SAST (bloqueante)
+        run: semgrep --config=auto api/ --error --quiet
 
       - name: Verificar se nao ha credenciais hardcoded
         run: |
@@ -149,13 +149,14 @@ jobs:
             exit 1
           fi
 
-      - name: Trivy — varredura de seguranca de filesystem
-        uses: aquasecurity/trivy-action@master
+      - name: Trivy — varredura de seguranca de filesystem (bloqueante)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: "fs"
           scan-ref: "."
           severity: "HIGH,CRITICAL"
-          exit-code: "0"
+          exit-code: "1"
+          ignore-unfixed: true
           format: "table"
 
   frontend:
