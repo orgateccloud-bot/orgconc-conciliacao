@@ -26,6 +26,10 @@ RUN apt-get update && apt-get install -y \
     libgdk-pixbuf-2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Usuario nao-privilegiado (uid fixo p/ auditoria). O --create-home garante
+# /home/app gravavel — WeasyPrint precisa de home p/ o cache do fontconfig.
+RUN useradd --create-home --uid 10001 app
+
 # Dependencias Python (apenas producao — sem pytest/bandit/semgrep)
 COPY requirements-prod.txt ./requirements-prod.txt
 RUN pip install --no-cache-dir -r requirements-prod.txt
@@ -43,9 +47,16 @@ COPY migrations/ ./migrations/
 # Frontend compilado — FastAPI serve em /app quando orgconc-react/dist existe
 COPY --from=frontend /build/dist ./orgconc-react/dist
 
+# Diretorio de dados gravavel pelo user app (DATA_DIR default = ./data relativo
+# ao WORKDIR; tambem usado pelo cache de CNPJ). chown de /app (nao-recursivo)
+# permite ao runtime criar arquivos no workdir; o codigo continua root-owned
+# (read-only p/ o app — defesa extra contra RCE nos parsers de OFX/XML/PDF).
+RUN mkdir -p /app/data && chown app:app /app /app/data
+
 # Variaveis de ambiente padrao
 ENV PORT=8000
 ENV HOST=0.0.0.0
+ENV HOME=/home/app
 ENV WORKERS=2
 ENV ORGCONC_LOG_LEVEL=INFO
 ENV ORGCONC_MAX_UPLOAD_MB=50
@@ -54,9 +65,12 @@ ENV ORGCONC_MAX_UPLOAD_TOTAL_MB=500
 # Expor porta
 EXPOSE 8000
 
-# Healthcheck
+# Healthcheck — shell-form expande ${PORT} em runtime (Railway injeta a porta)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
+  CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+
+# Roda como non-root: RCE num parser de OFX/XML/PDF nao ganha root no container
+USER app
 
 # Comando de inicializacao.
 # exec → uvicorn vira PID 1 e recebe SIGTERM (graceful shutdown no deploy).
