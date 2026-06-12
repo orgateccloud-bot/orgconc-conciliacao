@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { carregarHistoricoLocal, listarConciliacoes, type ConciliacaoMeta } from "@/lib/api";
+import { baixarExport, carregarHistoricoLocal, listarConciliacoes, type ConciliacaoMeta } from "@/lib/api";
 import { HeroCard } from "@/components/HeroCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -287,23 +287,25 @@ export function RelatoriosPage() {
                     </td>
                     <td className="p-3">
                       <div className="flex items-center justify-center gap-1">
-                        {/* MELHORIA 4: target="_blank" em todos os links de download */}
+                        {/* Download autenticado (Bearer via apiFetchBlob) — link direto dava 401 */}
                         {[
-                          { label: "HTML", path: r.exports.html },
-                          { label: "XLS",  path: r.exports.xlsx },
-                          { label: "PDF",  path: r.exports.pdf },
-                        ].map(({ label, path }) => (
-                          <a
+                          { label: "HTML", path: r.exports.html, ext: "html" },
+                          { label: "XLS",  path: r.exports.xlsx, ext: "xlsx" },
+                          { label: "PDF",  path: r.exports.pdf,  ext: "pdf" },
+                        ].map(({ label, path, ext }) => (
+                          <button
                             key={label}
-                            href={path}
+                            type="button"
                             title={label}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            onClick={() =>
+                              baixarExport(path, `conciliacao_${r.report_id}.${ext}`)
+                                .catch(() => toast.error(`Falha ao baixar ${label}`))
+                            }
                             className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold font-mono border hover:bg-muted transition-colors text-primary"
                           >
                             <Download className="h-2.5 w-2.5" />
                             {label}
-                          </a>
+                          </button>
                         ))}
                       </div>
                     </td>

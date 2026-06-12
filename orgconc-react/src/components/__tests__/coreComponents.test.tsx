@@ -57,6 +57,43 @@ describe("ActivityFeed", () => {
     expect(screen.getByText("Conciliação concluída")).toBeInTheDocument();
     expect(screen.getByText(/ana@x.com/)).toBeInTheDocument();
   });
+
+  it("formata o tempo relativo (agora, minutos, horas, dias)", () => {
+    const agora = Date.now();
+    const ha = (min: number) => new Date(agora - min * 60_000).toISOString();
+    const items: ActivityFeedItem[] = [
+      { id: "1", severidade: "info", titulo: "Login", ator: "ana", ts: ha(0), resource_id: null },
+      { id: "2", severidade: "success", titulo: "Conciliação", ator: "bia", ts: ha(5), resource_id: null },
+      { id: "3", severidade: "warn", titulo: "Anomalia", ator: "caio", ts: ha(180), resource_id: null },
+      { id: "4", severidade: "info", titulo: "Cliente alterado", ator: "duda", ts: ha(2880), resource_id: null },
+    ];
+    render(<ActivityFeed data={items} />);
+    expect(screen.getByText("ana · agora")).toBeInTheDocument();
+    expect(screen.getByText("bia · 5 min")).toBeInTheDocument();
+    expect(screen.getByText("caio · 3h")).toBeInTheDocument();
+    expect(screen.getByText("duda · 2d")).toBeInTheDocument();
+  });
+
+  it("mostra '—' quando o evento não tem timestamp", () => {
+    const items: ActivityFeedItem[] = [
+      { id: "1", severidade: "info", titulo: "Evento sem data", ator: "sys", ts: null, resource_id: null },
+    ];
+    render(<ActivityFeed data={items} />);
+    expect(screen.getByText("sys · —")).toBeInTheDocument();
+  });
+
+  it("usa ícone de fallback (info) para severidade desconhecida sem quebrar", () => {
+    const items = [
+      { id: "1", severidade: "critical", titulo: "Severidade exótica", ator: "sys", ts: null, resource_id: null },
+    ] as unknown as ActivityFeedItem[];
+    render(<ActivityFeed data={items} />);
+    expect(screen.getByText("Severidade exótica")).toBeInTheDocument();
+  });
+
+  it("trata data nula como lista vazia (estado vazio)", () => {
+    render(<ActivityFeed data={null as unknown as ActivityFeedItem[]} />);
+    expect(screen.getByText(/Nenhum evento ainda/)).toBeInTheDocument();
+  });
 });
 
 describe("SecurityRing (Trust Score)", () => {

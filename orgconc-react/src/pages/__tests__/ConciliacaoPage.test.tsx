@@ -5,6 +5,13 @@ import { MemoryRouter } from "react-router-dom";
 import { ConciliacaoPage } from "@/pages/ConciliacaoPage";
 import type { Anomalia, ConciliacaoResponse } from "@/lib/api";
 
+// baixarExport é mockado: o teste valida a chamada autenticada, não o fetch real.
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return { ...actual, baixarExport: vi.fn() };
+});
+import * as apiMod from "@/lib/api";
+
 // useNavigate é espionado; o restante do react-router-dom (MemoryRouter,
 // useLocation) é preservado para que o router state real funcione.
 const navigateMock = vi.fn();
@@ -138,16 +145,19 @@ describe("ConciliacaoPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("renderiza os tres links de export com href correto", () => {
+  it("renderiza os tres botoes de export e baixa via baixarExport (Bearer)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiMod.baixarExport).mockResolvedValue(undefined);
     renderComState(makeResultado({ report_id: "rid-99" }));
-    const html = screen.getByRole("link", { name: /HTML/i });
-    const excel = screen.getByRole("link", { name: /Excel/i });
-    const pdf = screen.getByRole("link", { name: /PDF/i });
-    expect(html).toHaveAttribute("href", "/export/html/rid-99");
-    expect(excel).toHaveAttribute("href", "/export/xlsx/rid-99");
-    expect(pdf).toHaveAttribute("href", "/export/pdf/rid-99");
-    expect(html).toHaveAttribute("target", "_blank");
-    expect(html).toHaveAttribute("rel", "noopener noreferrer");
+    // Botões de download autenticado — link direto não enviava Authorization (401).
+    expect(screen.getByRole("button", { name: /HTML/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Excel/i })).toBeInTheDocument();
+    const pdf = screen.getByRole("button", { name: /PDF/i });
+    await user.click(pdf);
+    expect(apiMod.baixarExport).toHaveBeenCalledWith(
+      "/export/pdf/rid-99",
+      "conciliacao_rid-99.pdf",
+    );
   });
 
   // --------------------------------------------------------------------------
