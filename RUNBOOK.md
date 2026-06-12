@@ -9,7 +9,7 @@ Guia operacional para resposta a incidentes em produção. Mantenha curto e acio
 | On-call primário | ORGATEC owner | orgatec.cloud@gmail.com |
 | Provedor LLM | Anthropic Status | https://status.anthropic.com |
 | Banco | Supabase Status | https://status.supabase.com |
-| Hosting backend | Railway / Render Status | https://status.railway.app |
+| Hosting | Railway Status | https://status.railway.app |
 
 ## Alertas (Sentry)
 
@@ -26,7 +26,7 @@ curl https://api.orgconc.com/health
 ```
 
 Diagnóstico rápido:
-1. Veja logs no provedor (Railway/Render dashboard).
+1. Veja logs no Railway (dashboard do serviço).
 2. Se `init_sentry` falhou no startup: erro de DSN ou rede — remova `SENTRY_DSN` e suba sem.
 3. Se DB unreachable: confira `DATABASE_URL` no painel + status Supabase.
 4. Se Anthropic API key inválida: o app sobe mas requests `/conciliar/*` falham com 502.
@@ -34,12 +34,8 @@ Diagnóstico rápido:
    verifique `orgconc_http_requests_in_progress` (concorrência travada) e a
    distribuição de `orgconc_http_request_duration_seconds`. Ver [MONITORING.md](MONITORING.md) §3.
 
-Rollback (último recurso):
-```bash
-git checkout <SHA_VERSAO_ANTERIOR>
-git push origin main --force-with-lease  # SO se voce e' o owner e ninguem mais
-# Ou via Railway: redeploy da versao anterior pelo dashboard
-```
+Rollback (último recurso): Railway → **Deployments** → deployment anterior → **"Redeploy"**.
+Ver [Rollback de versão](#rollback-de-versão).
 
 ### 2. Custo LLM disparou
 
@@ -83,51 +79,89 @@ Slowapi já protege com 120/min global, 20/min upload, 5/min auth. Se ainda assi
 modo JSON local (`./data/{rid}.json`). ⚠️ O `/health` de prod responde `{"status":"ok"}`
 MESMO sem banco — não use como sonda.
 
-**Sonda (sem credencial):** `curl -X POST <BASE>/auth/refresh` → **503** = runtime sem DB ·
-**401** = DB ok. O monitor sintético roda essa sonda a cada 30min desde o #123.
+**Sonda (sem credencial):**
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" -X POST https://<dominio>/auth/refresh
+# 503 = runtime sem DB · 401 = DB ok (recusou por falta de cookie — esperado)
+```
+
+O monitor sintético roda essa sonda a cada 30min desde o #123.
 
 Diagnóstico (incidente real de 2026-06-10 — ver
 `docs/postmortems/2026-06-10-prod-sem-db-senha-app-orgconc.md`):
 1. Logs do startup agora mostram o erro do ping (`Ping do DB falhou: ...`) — leia-o primeiro.
 2. **Migrations passam mas o runtime falha?** Compare `DATABASE_URL` (user `app_orgconc.<ref>`)
    × `ALEMBIC_DATABASE_URL` (owner) — rotação parcial de senha é a causa clássica.
-3. Senha divergente: `ALTER ROLE app_orgconc PASSWORD ...` via conexão owner → aguarde
-   ~30–60s (o pooler Supavisor cacheia credenciais) → atualize `DATABASE_URL` no Railway →
-   redeploy → repita a sonda (deve dar 401).
-4. Projeto Supabase free pausado dá outro sintoma (timeout no handshake) — retomar no
-   dashboard. Host direto `db.<ref>.supabase.co` não resolve mais; use só o pooler.
+3. Senha divergente/credencial inválida: siga o procedimento completo do **§6** abaixo.
+4. **Projeto Supabase free PAUSADO** (caso comum): TCP/REST do Supabase
+   continuam respondendo, mas o handshake Postgres dá timeout. Solução: retomar o projeto
+   no dashboard do Supabase e reiniciar o backend. Host direto `db.<ref>.supabase.co` não
+   resolve mais; use só o pooler.
 
 Para forçar reconexão sem restart: não é suportado (`_db_ping_sync` roda só no lifespan).
 Restart/redeploy é necessário.
 
+### 6. Credencial de DB inválida / rotação de senha do app_orgconc
+
+Sintomas: app de pé, `/health` pode responder `{"status":"ok"}`, mas endpoints que dependem
+de banco retornam 503; nenhum erro óbvio no boot (o ping de DB falha de forma silenciosa).
+Migrations no preDeploy podem continuar passando (usam `ALEMBIC_DATABASE_URL`, owner) —
+o que mascara o problema.
+
+**Sonda de diagnóstico (sem credencial):**
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" -X POST https://<dominio>/auth/refresh
+# 503 = backend sem DB · 401 = DB ok (recusou por falta de cookie — esperado)
+```
+
+**Rotação segura de senha do `app_orgconc`:**
+
+1. `ALTER ROLE app_orgconc PASSWORD '<nova>';` no SQL editor do Supabase (conexão owner).
+2. Atualize `DATABASE_URL` no Railway (service → **Variables**) com a senha nova.
+3. Aguarde ~30s — o Supavisor (pooler) cacheia a credencial e rejeita a senha nova nesse
+   intervalo (teste imediato falhar NÃO é sinal de erro).
+4. Redeploy/restart do serviço.
+5. Repita a sonda até responder **401**.
+
+Execute os passos 1–5 na MESMA janela: rotação parcial (um lado atualizado sem o outro) foi
+a causa raiz do incidente de ~32h sem banco. Rotação planejada (não-incidente) segue
+`docs/ROTACAO_SEGREDOS.md` §2. Post-mortem completo:
+`docs/postmortems/2026-06-10-prod-sem-db-senha-app-orgconc.md`.
+
 ## Deploy
 
-### Backend (Railway/Render)
+### Backend + frontend (Railway, deploy único)
 
-1. `git push origin main` dispara deploy automático.
-2. Healthcheck `/health` deve responder em <30s.
-3. Variáveis obrigatórias em prod: `ORGCONC_ENV=production`, `ORGCONC_JWT_SECRET` (>=32 chars), `ORGCONC_ADMIN_EMAIL`, `ORGCONC_ADMIN_SENHA_HASH`, `ANTHROPIC_API_KEY`, `ORGCONC_CORS_ORIGINS`, `DATABASE_URL`.
-
-### Frontend (same-origin no Railway)
-
-1. O build React é gerado no Dockerfile multi-stage e servido pela própria API em `/app`
-   (GitHub Pages foi removido). `git push origin main` = deploy único de backend+frontend.
-2. Netlify gera apenas deploy-preview de PRs (dashboard-only, sem backend — não é produção).
+1. `git push origin main` dispara o deploy nativo do Railway: build do Dockerfile
+   multi-stage (o build React sai no mesmo deploy, servido pela própria API em `/app`) →
+   preDeployCommand `alembic upgrade head` → healthcheck `/health` (deve responder em <30s).
+2. Variáveis obrigatórias em prod: `ORGCONC_ENV=production`, `ORGCONC_JWT_SECRET` (>=32 chars), `ORGCONC_ADMIN_EMAIL`, `ORGCONC_ADMIN_SENHA_HASH`, `ANTHROPIC_API_KEY`, `ORGCONC_CORS_ORIGINS`, `DATABASE_URL`.
+3. Netlify gera apenas deploy-preview de PRs (dashboard-only, sem backend — não é produção).
 
 ## Rollback de versão
 
-```bash
-# Lista as últimas tags
-git tag --sort=-creatordate | head -10
+**Caminho primário — Railway (redeploy de build anterior):**
 
-# Identifica a versão anterior estável
-git checkout v0.4.x
-# Crie branch de hotfix se for permanente
+1. Dashboard → service → **Deployments** → escolha o deployment anterior estável →
+   **"Redeploy"**. Ou via CLI: `railway redeploy`.
+2. Confirme com `/health` e a sonda do §6 (espera-se **401**).
+3. ⚠️ Redeploy NÃO desfaz migration já aplicada (`alembic upgrade head` rodou no preDeploy
+   da versão nova) — se o schema mudou, avalie compatibilidade antes.
+
+**Fallback — branch de hotfix a partir de tag (rollback permanente):**
+
+```bash
+git tag --sort=-creatordate | head -10   # lista as últimas tags
+git checkout v0.4.x                      # versão anterior estável
 git checkout -b hotfix/rollback-vX
-# Push
 git push origin hotfix/rollback-vX
-# No painel do provedor, faça deploy desta branch
+# No Railway, aponte o serviço para essa branch e dispare o deploy
 ```
+
+Nunca use force-push na `main` como rollback (reescreve história compartilhada e
+dessincroniza worktrees/PRs abertos).
 
 ## Pós-incidente
 
