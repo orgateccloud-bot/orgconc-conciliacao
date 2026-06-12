@@ -59,6 +59,15 @@ ZIP_MAX_RATIO = int(os.environ.get("ORGCONC_ZIP_MAX_RATIO", "120"))
 # Limite de corpo bruto da request (multipart, JSON). Protege contra payloads
 # gigantes antes do parsing. Lido live pelo middleware de body-limit.
 _MAX_BODY_BYTES = int(os.environ.get("ORGCONC_MAX_BODY_BYTES", str(60 * 1024 * 1024)))
+
+# Fila de jobs assíncronos (P1 #9 — api/services/job_queue.py). O worker roda
+# embutido em cada réplica web; desligue com ORGCONC_JOBS_WORKER=0 (ex.: quando
+# houver serviço worker dedicado rodando o mesmo loop).
+JOBS_WORKER_ENABLED = os.environ.get("ORGCONC_JOBS_WORKER", "1").strip().lower() in ("1", "true", "yes")
+JOBS_POLL_S = int(os.environ.get("ORGCONC_JOBS_POLL_S", "3"))
+JOBS_TIMEOUT_MIN = int(os.environ.get("ORGCONC_JOBS_TIMEOUT_MIN", "15"))
+JOBS_MAX_TENTATIVAS = int(os.environ.get("ORGCONC_JOBS_MAX_TENTATIVAS", "2"))
+JOBS_TTL_HORAS = int(os.environ.get("ORGCONC_JOBS_TTL_H", "24"))
 DATA_DIR = Path(os.environ.get("ORGCONC_DATA_DIR", "./data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -69,7 +78,12 @@ else:
 
 
 def _db_ping_sync(timeout_s: int = 10) -> bool:
-    """Verifica conectividade; retry 3x com backoff exponencial."""
+    """Verifica conectividade; retry 3x com backoff exponencial.
+
+    Loga o erro de CADA tentativa (sem URL/credencial): no incidente de
+    2026-06-10 o "password authentication failed" ficou invisível por ~32h
+    porque este except engolia a exceção — prod rodou sem DB sem ninguém notar.
+    """
     if not _DB_URL or re.search(r"\[.+?\]", _DB_URL):
         return False
     url = _DB_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
@@ -81,9 +95,16 @@ def _db_ping_sync(timeout_s: int = 10) -> bool:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1")
             return True
-        except (psycopg2.OperationalError, psycopg2.DatabaseError):
+        except (psycopg2.OperationalError, psycopg2.DatabaseError) as exc:
+            # 1ª linha apenas: psycopg2 repete o DSN nas linhas seguintes em
+            # alguns erros — nunca logar URL/credencial.
+            motivo = (str(exc).strip().splitlines() or ["?"])[0]
+            log.warning("Ping do DB falhou (tentativa %d/3): %s: %s",
+                        attempt + 1, type(exc).__name__, motivo)
             if attempt < 2:
                 time.sleep(2 ** attempt)
+    log.error("Ping do DB falhou nas 3 tentativas — app seguirá SEM banco "
+              "(DB_DISPONIVEL=False): login de usuários/refresh/dados darão 503")
     return False
 
 
@@ -104,6 +125,7 @@ _DB_DISPONIVEL_CONSUMERS: tuple[str, ...] = (
     "api.routers.conciliacoes_list",
     "api.routers.contratos",
     "api.routers.fiscal",
+    "api.routers.jobs",
     "api.routers.guias",
     "api.routers.health",
     "api.routers.matchers",

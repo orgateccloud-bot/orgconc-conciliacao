@@ -10,6 +10,7 @@ from datetime import date, datetime, timezone
 from typing import Iterable, Optional
 
 from sqlalchemy import insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
@@ -254,9 +255,8 @@ async def salvar_apuracao(
     `org_id` é o tenant (firma) para RLS por organização — opcional enquanto o
     auth não popula org por usuário (ver db/rls/README.md).
     """
-    row_id = uuid.uuid4()
-    row = ApuracaoCBSIBSRow(
-        id=row_id,
+    valores = dict(
+        id=uuid.uuid4(),
         org_id=org_id,
         documento_id=uuid.UUID(apuracao.documento_id),
         versao_base=apuracao.versao_base,
@@ -285,8 +285,23 @@ async def salvar_apuracao(
         payload_hash=apuracao.payload_hash,
         obtido_em=apuracao.obtido_em,
     )
-    db.add(row)
-    await db.flush()
+    # UPSERT idempotente (IC-02 §3.2): reprocessar a mesma operação
+    # (documento_id + versao_base) ATUALIZA a linha existente — não duplica — e
+    # devolve o id dela. Conta com a UNIQUE uq_apuracao_doc_versao (migration 022).
+    atualizaveis = {
+        k: v for k, v in valores.items()
+        if k not in ("id", "documento_id", "versao_base", "org_id")
+    }
+    stmt = (
+        pg_insert(ApuracaoCBSIBSRow)
+        .values(**valores)
+        .on_conflict_do_update(
+            index_elements=["documento_id", "versao_base"],
+            set_=atualizaveis,
+        )
+        .returning(ApuracaoCBSIBSRow.id)
+    )
+    row_id = (await db.execute(stmt)).scalar_one()
     log.info(
         "fiscal.apuracao: documento=%s ambiente=%s vTotTrib=%s",
         apuracao.documento_id, apuracao.ambiente, apuracao.vTotTrib,

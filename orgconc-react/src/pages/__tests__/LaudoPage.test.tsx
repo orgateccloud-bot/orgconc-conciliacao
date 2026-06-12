@@ -7,7 +7,7 @@ vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
-    fiscalLaudo: vi.fn(),
+    gerarLaudoComFila: vi.fn(),
     baixarBlob: vi.fn(),
   };
 });
@@ -60,7 +60,7 @@ describe("LaudoPage", () => {
     render(<LaudoPage />);
     await user.click(screen.getByRole("button", { name: /gerar laudo/i }));
     expect(toast.error).toHaveBeenCalledWith("Informe o CNPJ da entidade auditada (14 dígitos)");
-    expect(api.fiscalLaudo).not.toHaveBeenCalled();
+    expect(api.gerarLaudoComFila).not.toHaveBeenCalled();
   });
 
   it("erro de validacao quando ha CNPJ valido mas nenhum OFX", async () => {
@@ -69,7 +69,7 @@ describe("LaudoPage", () => {
     await user.type(screen.getByLabelText("CNPJ da entidade auditada"), CNPJ_VALIDO);
     await user.click(screen.getByRole("button", { name: /gerar laudo/i }));
     expect(toast.error).toHaveBeenCalledWith("Envie ao menos 1 extrato OFX");
-    expect(api.fiscalLaudo).not.toHaveBeenCalled();
+    expect(api.gerarLaudoComFila).not.toHaveBeenCalled();
   });
 
   it("lista os arquivos anexados e mostra os contadores OFX/Fiscais", async () => {
@@ -97,10 +97,10 @@ describe("LaudoPage", () => {
     await waitFor(() => expect(screen.queryByText("extrato.ofx")).not.toBeInTheDocument());
   });
 
-  it("gera laudo XLSX: chama fiscalLaudo com os dados, baixa o blob e mostra sucesso", async () => {
+  it("gera laudo XLSX: chama gerarLaudoComFila com os dados, baixa o blob e mostra sucesso", async () => {
     const user = userEvent.setup();
     const blob = new Blob(["x"]);
-    vi.mocked(api.fiscalLaudo).mockResolvedValueOnce({ blob, filename: "laudo.xlsx" });
+    vi.mocked(api.gerarLaudoComFila).mockResolvedValueOnce({ blob, filename: "laudo.xlsx", viaFila: true });
 
     render(<LaudoPage />);
     await user.type(screen.getByLabelText("CNPJ da entidade auditada"), CNPJ_VALIDO);
@@ -108,14 +108,15 @@ describe("LaudoPage", () => {
     await user.upload(fileInput(), [ofx("extrato.ofx")]);
     await user.click(screen.getByRole("button", { name: /gerar laudo \(xlsx\)/i }));
 
-    await waitFor(() => expect(api.fiscalLaudo).toHaveBeenCalledTimes(1));
-    expect(api.fiscalLaudo).toHaveBeenCalledWith(
+    await waitFor(() => expect(api.gerarLaudoComFila).toHaveBeenCalledTimes(1));
+    expect(api.gerarLaudoComFila).toHaveBeenCalledWith(
       expect.objectContaining({
         empresaCnpj: "11222333000181",
         conta: "158083",
         formato: "xlsx",
         arquivos: expect.arrayContaining([expect.any(File)]),
       }),
+      expect.any(Function),
     );
     expect(api.baixarBlob).toHaveBeenCalledWith(blob, "laudo.xlsx");
     expect(toast.success).toHaveBeenCalledWith("Laudo gerado: laudo.xlsx");
@@ -124,7 +125,7 @@ describe("LaudoPage", () => {
   it("formato HTML: abre nova aba (window.open) ao inves de baixar", async () => {
     const user = userEvent.setup();
     const blob = new Blob(["<html></html>"]);
-    vi.mocked(api.fiscalLaudo).mockResolvedValueOnce({ blob, filename: "laudo.html" });
+    vi.mocked(api.gerarLaudoComFila).mockResolvedValueOnce({ blob, filename: "laudo.html", viaFila: true });
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:fake");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
@@ -136,8 +137,8 @@ describe("LaudoPage", () => {
     await user.click(screen.getByText("HTML"));
     await user.click(screen.getByRole("button", { name: /gerar laudo \(html\)/i }));
 
-    await waitFor(() => expect(api.fiscalLaudo).toHaveBeenCalledTimes(1));
-    expect(api.fiscalLaudo).toHaveBeenCalledWith(expect.objectContaining({ formato: "html" }));
+    await waitFor(() => expect(api.gerarLaudoComFila).toHaveBeenCalledTimes(1));
+    expect(api.gerarLaudoComFila).toHaveBeenCalledWith(expect.objectContaining({ formato: "html" }), expect.any(Function));
     expect(openSpy).toHaveBeenCalledWith("blob:fake", "_blank");
     expect(api.baixarBlob).not.toHaveBeenCalled();
     expect(toast.success).toHaveBeenCalledWith("Laudo gerado: laudo.html");
@@ -147,7 +148,7 @@ describe("LaudoPage", () => {
 
   it("trata erro de geracao sem quebrar (toast.error com a mensagem)", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.fiscalLaudo).mockRejectedValueOnce(new Error("Falha no servidor"));
+    vi.mocked(api.gerarLaudoComFila).mockRejectedValueOnce(new Error("Falha no servidor"));
 
     render(<LaudoPage />);
     await user.type(screen.getByLabelText("CNPJ da entidade auditada"), CNPJ_VALIDO);

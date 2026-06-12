@@ -8,7 +8,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     listarClientes: vi.fn(),
     fiscalLaudoResumo: vi.fn(),
-    fiscalLaudoBlob: vi.fn(),
+    gerarLaudoComFila: vi.fn(),
   };
 });
 
@@ -250,10 +250,11 @@ describe("AuditoriaForensePage", () => {
     const blob = new Blob(["xlsx"], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
-    vi.mocked(api.fiscalLaudoBlob).mockResolvedValueOnce({
+    vi.mocked(api.gerarLaudoComFila).mockResolvedValueOnce({
       blob,
       filename: "laudo-acme.xlsx",
-    });
+      viaFila: true,
+      });
 
     // jsdom não implementa URL.createObjectURL / a.click(); stub.
     const createObjectURL = vi.fn(() => "blob:fake");
@@ -276,12 +277,13 @@ describe("AuditoriaForensePage", () => {
       screen.getByRole("button", { name: /baixar laudo xlsx/i }),
     );
 
-    await waitFor(() => expect(api.fiscalLaudoBlob).toHaveBeenCalledTimes(1));
-    expect(api.fiscalLaudoBlob).toHaveBeenCalledWith(
-      "11222333000181",
-      "",
-      expect.arrayContaining([expect.any(File)]),
-    );
+    await waitFor(() => expect(api.gerarLaudoComFila).toHaveBeenCalledTimes(1));
+    expect(api.gerarLaudoComFila).toHaveBeenCalledWith({
+      empresaCnpj: "11222333000181",
+      conta: undefined,
+      arquivos: expect.arrayContaining([expect.any(File)]),
+      formato: "xlsx",
+    });
     expect(createObjectURL).toHaveBeenCalledWith(blob);
     expect(clickSpy).toHaveBeenCalledTimes(1);
     await waitFor(() =>
@@ -293,7 +295,7 @@ describe("AuditoriaForensePage", () => {
   });
 
   it("mostra toast de erro se a geracao do laudo falhar", async () => {
-    vi.mocked(api.fiscalLaudoBlob).mockRejectedValueOnce(
+    vi.mocked(api.gerarLaudoComFila).mockRejectedValueOnce(
       new Error("falha no xlsx"),
     );
     render(<AuditoriaForensePage />);

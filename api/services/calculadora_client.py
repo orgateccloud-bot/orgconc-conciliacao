@@ -57,12 +57,14 @@ async def chamar_calculadora(payload: dict, *, caminho: str = "") -> dict:
 
 
 async def obter_versao_db(*, forcar: bool = False) -> Optional[str]:
-    """Consulta GET {CALCULADORA_BASE_URL}/versao/status e devolve a versaoDbLocal
-    do motor (a base de regras RTC ativa) — ou None.
+    """Versão da base de regras RTC ativa no motor — ou None.
 
-    Best-effort e cacheado (TTL curto): devolve None se não houver URL ou se a
-    consulta falhar (rede, 404, JSON inesperado). NUNCA levanta — é um pre-flight
-    de diagnóstico, não pode bloquear a apuração.
+    Caminho oficial (verificado live na instância de produção, 2026-06-10):
+    GET {base}/calculadora/dados-abertos/versao → campo `versaoDb` (ex.: V0033).
+    Fallback p/ o legado GET /versao/status → `versaoDbLocal` (instâncias
+    offline antigas). Best-effort e cacheado (TTL curto): devolve None se não
+    houver URL ou se a consulta falhar — pre-flight de diagnóstico, nunca
+    bloqueia a apuração.
     """
     base = config.CALCULADORA_BASE_URL
     if not base:
@@ -71,16 +73,21 @@ async def obter_versao_db(*, forcar: bool = False) -> Optional[str]:
     if not forcar and _versao_cache["valor"] and _versao_cache["expira_em"] > agora:
         return _versao_cache["valor"]
 
-    url = base.rstrip("/") + "/versao/status"
     headers = {"Accept": "application/json"}
-    try:
-        async with httpx.AsyncClient(timeout=config.CALCULADORA_TIMEOUT_S) as cli:
-            resp = await cli.get(url, headers=headers)
-        resp.raise_for_status()
-        versao = (resp.json() or {}).get("versaoDbLocal")
-    except (httpx.HTTPError, ValueError) as e:
-        log.debug("Pre-flight de versão CBS/IBS indisponível (%s): %s", url, e)
-        return None
+    versao = None
+    for caminho, campo in (("/calculadora/dados-abertos/versao", "versaoDb"),
+                           ("/versao/status", "versaoDbLocal")):
+        url = base.rstrip("/") + caminho
+        try:
+            async with httpx.AsyncClient(timeout=config.CALCULADORA_TIMEOUT_S) as cli:
+                resp = await cli.get(url, headers=headers)
+            resp.raise_for_status()
+            versao = (resp.json() or {}).get(campo)
+        except (httpx.HTTPError, ValueError) as e:
+            log.debug("Pre-flight de versão CBS/IBS indisponível (%s): %s", url, e)
+            continue
+        if versao:
+            break
 
     if versao:
         _versao_cache["valor"] = versao

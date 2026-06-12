@@ -2,6 +2,19 @@ import path from "path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+// Proxy de API compartilhado entre `vite dev` (5176) e `vite preview` (4173).
+// O preview precisa do proxy para os E2E exercitarem o backend REAL (uvicorn
+// :8765) via chamadas relativas do app — sem ele, /conciliar etc. morrem no
+// próprio preview. Cobre TODOS os prefixos do lib/api.ts (incl. /fiscal,
+// /matchers, /guias, /contratos, que faltavam até no dev).
+const API_PROXY: Record<string, string> = Object.fromEntries(
+  [
+    "/v1", "/health", "/conciliar", "/export", "/clientes", "/auth",
+    "/conciliacoes", "/metrics", "/transacoes", "/audit", "/activity",
+    "/ai", "/fiscal", "/matchers", "/guias", "/contratos", "/logo-base64",
+  ].map((p) => [p, "http://127.0.0.1:8765"]),
+);
+
 export default defineConfig({
   plugins: [react()],
   base: "/app/",
@@ -25,19 +38,10 @@ export default defineConfig({
   server: {
     port: 5176,
     host: "127.0.0.1",
-    proxy: {
-      "/health":      "http://127.0.0.1:8765",
-      "/conciliar":   "http://127.0.0.1:8765",
-      "/export":      "http://127.0.0.1:8765",
-      "/clientes":    "http://127.0.0.1:8765",
-      "/auth":        "http://127.0.0.1:8765",
-      "/conciliacoes":"http://127.0.0.1:8765",
-      "/metrics":     "http://127.0.0.1:8765",
-      "/transacoes":  "http://127.0.0.1:8765",
-      "/audit":       "http://127.0.0.1:8765",
-      "/activity":    "http://127.0.0.1:8765",
-      "/ai":          "http://127.0.0.1:8765",
-      "/logo-base64": "http://127.0.0.1:8765",
-    },
+    proxy: API_PROXY,
+  },
+  preview: {
+    port: 4173,
+    proxy: API_PROXY,
   },
 });

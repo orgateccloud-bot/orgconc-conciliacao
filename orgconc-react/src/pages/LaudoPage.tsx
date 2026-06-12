@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { fiscalLaudo, baixarBlob, type FormatoLaudo } from "@/lib/api";
+import { gerarLaudoComFila, baixarBlob, type FaseLaudo, type FormatoLaudo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ export function LaudoPage() {
   const [dragOver, setDragOver] = useState(false);
   const [formato, setFormato] = useState<FormatoLaudo>("xlsx");
   const [busy, setBusy] = useState(false);
+  const [fase, setFase] = useState<FaseLaudo | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback((list: FileList | null) => {
@@ -54,13 +55,19 @@ export function LaudoPage() {
       return;
     }
     setBusy(true);
+    setFase(null);
     try {
-      const { blob, filename } = await fiscalLaudo({
-        empresaCnpj: cnpjLimpo,
-        conta: conta.trim() || undefined,
-        arquivos,
-        formato,
-      });
+      // Via fila de jobs (#122): o backend não fica bloqueado; com a fila
+      // indisponível (sem banco/sem org no token) cai no fluxo síncrono.
+      const { blob, filename } = await gerarLaudoComFila(
+        {
+          empresaCnpj: cnpjLimpo,
+          conta: conta.trim() || undefined,
+          arquivos,
+          formato,
+        },
+        setFase,
+      );
       if (formato === "html") {
         // abre o HTML numa nova aba além de baixar
         const url = URL.createObjectURL(blob);
@@ -74,8 +81,12 @@ export function LaudoPage() {
       toast.error(err instanceof Error ? err.message : "Falha ao gerar laudo");
     } finally {
       setBusy(false);
+      setFase(null);
     }
   }
+
+  const labelBusy =
+    fase === "PENDENTE" ? "Na fila de processamento..." : "Gerando laudo...";
 
   return (
     <div className="space-y-8">
@@ -192,7 +203,7 @@ export function LaudoPage() {
         </div>
 
         <Button onClick={gerar} disabled={busy} className="w-full">
-          {busy ? "Gerando laudo..." : `Gerar Laudo (${formato.toUpperCase()})`}
+          {busy ? labelBusy : `Gerar Laudo (${formato.toUpperCase()})`}
         </Button>
 
         {temFiscal && (

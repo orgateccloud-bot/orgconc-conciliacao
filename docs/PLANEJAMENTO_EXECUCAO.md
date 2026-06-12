@@ -86,6 +86,35 @@ Varredura read-only (10 agentes) cruzando roadmap × código. Achados que mudam 
 > Idempotência CBS/IBS + RLS legadas preparadas e em HOLD (#107, aplicação 🔑). 2.3 descartado;
 > 2.4 / 3.1-/v1 / 1.4 adiados (risco); staging/jobs/SLO/rotação dependem de você.
 
+## Execução 2026-06-09 (2ª rodada — modo automático com permissão total)
+
+| Status | Item | PR / evidência |
+|--------|------|----------------|
+| ✅ Aplicado em prod + verificado no banco | P0 #4 RLS legadas + P1 #7 idempotência CBS/IBS | [#107](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/107) — `alembic=022`, constraint criada, 0 policies |
+| ✅ Mergeado | P2 #10 `/v1` dual-mount (auth/infra fora por design) | [#113](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/113) |
+| ✅ Mergeado | P0 #5 E2E profundo com backend real (24/24, 2 rodadas) | [#114](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/114) |
+| ✅ Mergeado | 2.4 fase 1 — `preparar_calculo_laudo` + determinismo aba 7 (prova LOCAR ao centavo) | [#115](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/115) |
+| ✅ Mergeado | **Bugfix**: anualizado do Sumário sombreado pelo loop de MEIs (regressão do 59401c1e) | [#116](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/116) |
+| ✅ Criado | P2 #11 staging Railway (env+Postgres+web-staging) | `docs/STAGING.md` |
+| 🟡 Proposto (🔑 aprovar) | P2 #12 SLO · P2 #13 rotação | `docs/SLO.md` · `docs/ROTACAO_SEGREDOS.md` |
+
+## Execução 2026-06-10 (3ª rodada — merges liberados por OK explícito)
+
+| Status | Item | PR / evidência |
+|--------|------|----------------|
+| ✅ Mergeado em prod | 2.4 fase 2 — agregados das abas (risco/fluxos/MEIs/tributário/pós-baixa/transf. internas) na fase pura; prova ao centavo 0/262.939 células | [#118](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/118) |
+| ✅ Mergeado em prod | Frontend migrado p/ `/v1` (rotas de negócio; `/auth` na raiz pelo cookie de refresh); vitest 345 + E2E real 24/24 | [#119](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/119) |
+| ✅ Mergeado em prod | 2.4 fase 3 — risk score por transação anexado na fase pura (`_anexar_risco_disps`); abas 5/6 só renderizam; **desmembramento cálculo×render COMPLETO**; prova ao centavo 0/262.939 | [#120](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/120) |
+| ✅ Mergeado em prod | **P1 #9 jobs assíncronos SEM infra nova**: fila em Postgres (migration 023 + RLS `worker_access`) + worker asyncio nas réplicas (SKIP LOCKED); `POST /fiscal/laudo/async` + `GET /jobs/*`; **validado no staging ponta-a-ponta** (migration no preDeploy + smoke: submit → CONCLUIDO <3s → XLSX 20.599 bytes) | [#122](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/122) |
+| ✅ Mergeado em prod | UI do laudo via fila (fases na UI + fallback síncrono em 503/403); E2E real exercitou o fallback | [#124](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/124) |
+| ✅ Mergeado em prod | Observabilidade do incidente: ping de DB com log do erro real + sonda de banco no monitor (30min) | [#123](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/123) |
+| 🔧 Incidente resolvido | Prod ~32h sem DB no runtime (senha `app_orgconc` divergente — rotação parcial); reset via owner + variável + redeploy; senha do `app_orgconc` portanto JÁ rotacionada | post-mortem em `docs/postmortems/` · RUNBOOK §5 |
+| ✅ **Validação live da calculadora** — a API oficial é ABERTA (descoberta 2026-06-10: sem credencial!); pipeline reproduziu o gabarito do Manual RTC na produção oficial (CBS R$ 36,00 + IBS-UF R$ 4,00, base V0033, 9/9 checks); ajustes do contrato real (`dhFatoGerador`, pre-flight `dados-abertos/versao`); p/ volume: componente offline self-hosted (recomendação RFB) | [#127](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/127) |
+| 🟢 PR aberto | Migração do `/auth` p/ `/v1` SEM quebrar sessões: dual-mount completo; só `refresh`/`logout` ficam na raiz (únicos que leem o cookie httpOnly path=/auth) | [#126](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/126) |
+| ✅ Aprovado pelo owner | **SLO VIGENTE** (P2 #12): 5 metas de `docs/SLO.md` aprovadas 2026-06-10 | `docs/SLO.md` |
+| ✅ Executado em prod | **Rotação de segredos** (P2 #13): JWT_SECRET + AUTH_TOKEN rotacionados 2026-06-10 (sem downtime) + app_orgconc (incidente). Pendente só do owner: ANTHROPIC_API_KEY · ADMIN_SENHA_HASH | CHANGELOG §Segurança |
+| ⏭️ Restante (🔑 somente owner) | rotacionar ANTHROPIC_API_KEY (console Anthropic) e ORGCONC_ADMIN_SENHA_HASH · (opcional) hospedar componente offline da calculadora p/ volume | — |
+
 ## Execução 2026-06-09 — itens → PRs
 
 | Status | Itens | PR |
