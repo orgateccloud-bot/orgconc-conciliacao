@@ -8,7 +8,7 @@ Setup e operação de observabilidade. Sentry é a fonte primária; logs estrutu
 
 1. Crie projeto FastAPI em https://sentry.io.
 2. Copie o DSN.
-3. Defina no provedor (Railway/Render):
+3. Defina no provedor (Railway):
    ```
    SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project>
    SENTRY_ENVIRONMENT=production

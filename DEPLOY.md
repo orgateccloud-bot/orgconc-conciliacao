@@ -32,7 +32,7 @@ npm run dev          # Vite em http://127.0.0.1:5176, proxy da API para :8765
 
 ### Pré-requisitos
 - Python 3.11+
-- Conta no [Railway](https://railway.app), [Render](https://render.com) ou servidor próprio
+- Conta no [Railway](https://railway.app) ou servidor próprio
 
 ### Deploy no Railway (recomendado)
 
