@@ -10,7 +10,7 @@
 
 ```
 BACKEND ARCHITECTURE          7.2/10  ███████░░░  (Sólido; fat files no services/)
-FRONTEND ARCHITECTURE         7.5/10  ████████░░  (TS strict REAL desde 06-11; 17/17 páginas testadas)
+FRONTEND ARCHITECTURE         7.5/10  ████████░░  (→ 8.0 c/ #136: exports auth + 6 componentes a 100% + E2E 9 specs)
 TESTING & COVERAGE            8.0/10  ████████░░  (770 backend gate 80 · 352 front ~88% gate 84/86)
 DEVOPS & DEPLOYMENT           6.5/10  ███████░░░  (→ ~7.2 após merge dos PRs #132–#135)
 DOCUMENTATION                 7.5/10  ████████░░  (sincronizada com o código em 06-11/12)
@@ -60,8 +60,8 @@ média                   6.5 →  7.2   (era 3.0 em 05-28)
 
 ```
 Backend (pytest)   ████████░░  770 testes · gate 80% bloqueante · +22 hardening +RLS real no CI
-Frontend (vitest)  █████████░  352 testes · ~88% · gate 84/76/83/86 · tsc strict limpo
-E2E (Playwright)   ████░░░░░░  4 specs happy-path (aprofundar: upload→resultado, forense)
+Frontend (vitest)  █████████░  393 testes (#136) · ~90% lines · gate 84/76/83/86 · tsc strict limpo
+E2E (Playwright)   ███████░░░  9 specs · 28 testes (upload→resultado, forense, fiscal/laudo — #114/#136); 28/28 c/ backend real
 RLS (CI)           ████████░░  Postgres real + role NOBYPASSRLS, fail-closed provado
 ```
 
@@ -78,7 +78,7 @@ RLS (CI)           ████████░░  Postgres real + role NOBYPASS
 | 5 | `pdf.py` sem testes + sem limites estruturais; `fitid` morto | 🟡 P1 | repontuação parsers |
 | 6 | Duplicação `db/clientes.py` × `infra/repositories/clientes.py` | 🟡 P2 | repontuação domain |
 | 7 | Staging: paridade RLS (Supabase branch) + deploy automático | 🟡 P2 | repontuação DevOps |
-| 8 | Exports do frontend via `apiFetchBlob` (links `<a href>` dão 401 limpo) | 🟢 P2 | ESTADO_PROJETO §5.6 |
+| 8 | ~~Exports via `apiFetchBlob`~~ ✅ ([#136](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/136)) — botões autenticados; fecha tb. o vetor XSS do HTML em `_blank` | 🟢 | ESTADO_PROJETO §5.6 |
 
 ## ✅ FECHADO DESDE O SNAPSHOT DE 05-28
 
