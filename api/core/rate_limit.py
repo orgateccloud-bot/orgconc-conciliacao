@@ -12,7 +12,15 @@ from starlette.responses import JSONResponse, Response
 
 
 def _get_rate_key(request: Request) -> str:
-    """Rate limit por sub JWT quando disponivel, senao por IP remoto."""
+    """Rate limit por sub JWT quando o token e VALIDO, senao por IP remoto.
+
+    #26: a chave NAO pode confiar em token expirado. Antes deste fix o decode
+    usava `verify_exp=False`, entao um token vencido (ou ainda nao valido por nbf)
+    seguia consumindo a quota do `sub` legitimo — um atacante de posse de um JWT
+    expirado conseguia esgotar o rate-limit do usuario real (DoS de quota). Agora
+    validamos assinatura + exp + nbf (defaults do PyJWT); qualquer token invalido
+    cai para a chave por IP, isolando o abusador do usuario honesto.
+    """
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         secret = _os.environ.get("ORGCONC_JWT_SECRET", "")
@@ -22,13 +30,12 @@ def _get_rate_key(request: Request) -> str:
                     auth[7:],
                     secret,
                     algorithms=["HS256"],
-                    options={"verify_exp": False},
                 )
                 sub = claims.get("sub", "")
                 if sub:
                     return f"sub:{sub}"
             except (_jwt.InvalidTokenError, AttributeError, KeyError):
-                # Token malformado ou sub ausente — cai pro IP
+                # Token expirado/malformado ou sub ausente — cai pro IP
                 pass
     return get_remote_address(request)
 
