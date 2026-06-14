@@ -14,7 +14,7 @@ from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
 from api.db.models import GuiaTributo
 from api.services.audit import gravar_audit_independente
-from api.services.auth import TokenPayload, autorizar_cliente, current_user
+from api.services.auth import TokenPayload, autorizar_cliente, current_user, escopo_cliente_listagem
 
 router = APIRouter(prefix="/guias", tags=["guias"], dependencies=[Depends(current_user)])
 
@@ -105,12 +105,8 @@ async def listar_guias(
 ):
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
-    # Isolamento por tenant: usuário não-privilegiado só vê o próprio cliente.
-    if user.role not in ("admin", "service", "auditor", "anonymous"):
-        if not cliente_id:
-            cliente_id = user.cliente_id
-        elif user.cliente_id and cliente_id != user.cliente_id:
-            raise HTTPException(403, "Acesso negado a este cliente")
+    # Escopo de tenant centralizado (nega anonymous em prod; user → próprio cliente)
+    cliente_id = escopo_cliente_listagem(user, cliente_id)
     async with SessionLocal() as db:
         stmt = select(GuiaTributo)
         if cliente_id:

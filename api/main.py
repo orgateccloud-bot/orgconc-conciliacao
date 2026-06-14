@@ -5,10 +5,11 @@ Execucao:
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from api.core.bootstrap import criar_app
 from api.core.spa_static import SPAStaticFiles
@@ -146,6 +147,19 @@ else:
 
 
 @app.get("/metrics", include_in_schema=False)
-def prometheus_metrics():
-    """Exposição de métricas no formato Prometheus (text/plain)."""
+def prometheus_metrics(request: Request):
+    """Exposição de métricas no formato Prometheus (text/plain).
+
+    Proteção: se ORGCONC_METRICS_TOKEN estiver definido, exige
+    `Authorization: Bearer <token>` (scraper Prometheus configura via
+    authorization.credentials). Em produção SEM token configurado o endpoint
+    fica fechado (404 — não revela existência); em dev permanece aberto.
+    """
+    esperado = os.environ.get("ORGCONC_METRICS_TOKEN", "").strip()
+    if esperado:
+        auth = request.headers.get("authorization", "")
+        if not hmac.compare_digest(auth, f"Bearer {esperado}"):
+            raise HTTPException(status_code=404, detail="Not Found")
+    elif _IS_PROD:
+        raise HTTPException(status_code=404, detail="Not Found")
     return metrics_endpoint()

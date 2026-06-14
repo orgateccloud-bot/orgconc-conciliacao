@@ -36,22 +36,18 @@ npm run dev          # Vite em http://127.0.0.1:5176, proxy da API para :8765
 
 ### Deploy no Railway (recomendado)
 
-#### Automático (CI/CD — preferido)
+#### Automático (preferido)
 
-O job `deploy-backend` em `.github/workflows/deploy.yml` faz deploy a cada push
-na `main`, **após** os testes de backend passarem (Python 3.12). Em seguida roda
-um smoke test que aguarda até 5 min pelo `/health` retornar 200 antes de marcar
-o deploy como bem-sucedido.
+O deploy é **nativo do Railway via integração GitHub**: push na `main` →
+Railway builda a imagem (Dockerfile multi-stage), roda `preDeployCommand`
+(`alembic upgrade head` com a URL de owner) e só promove o deploy se o
+healthcheck `/health` responder dentro do timeout (`railway.json`). Não há
+workflow de deploy no GitHub Actions nem `RAILWAY_TOKEN` — o
+`.github/workflows/deploy.yml` foi removido por redundante.
 
-Configure no GitHub (Settings → Secrets and variables → Actions):
-
-| Tipo | Nome | Valor |
-|---|---|---|
-| Secret | `RAILWAY_TOKEN` | Token do projeto Railway (`railway login` → account token) |
-| Variable | `RAILWAY_SERVICE` | Nome do serviço backend no Railway |
-| Variable | `PROD_HEALTH_URL` | URL pública do `/health` (ex.: `https://api.orgconc.com/health`) |
-
-Sem esses valores o job é pulado; o deploy manual abaixo continua válido.
+Verificação pós-deploy: a sonda externa `synthetic-monitor.yml` testa
+`/health` e `/app` a cada 30 min; para checagem imediata use
+`curl https://<dominio>/health`.
 
 #### Manual
 
@@ -119,6 +115,30 @@ PORT=8000
 WORKERS=2
 ```
 
+### Ambiente de staging (Railway)
+
+Existe um environment **staging** no mesmo projeto Railway (serviço
+`web-staging` + Postgres próprio do Railway, separado do Supabase de prod).
+Uso principal: **validar migrations Alembic antes de produção**.
+
+```bash
+railway environment staging        # troca o contexto da CLI
+railway up                         # deploy manual da branch atual no staging
+```
+
+Particularidades do staging:
+- O banco foi **bootstrapado** com `create_all` + `alembic stamp head` — as
+  migrations antigas NÃO são re-executáveis do zero ali; valide apenas as
+  migrations NOVAS (upgrade incremental a partir do head).
+- asyncpg exige **1 statement por `op.execute()`** — migration com múltiplos
+  comandos num único execute passa no SQLite/psycopg2 e quebra no staging/prod.
+- Staging não tem RLS de prod nem dados reais — não serve para validar
+  isolamento de tenant (use os testes `tests/test_rls_*.py` no CI para isso).
+
+Fluxo recomendado para migration de risco: deploy no staging → `alembic
+upgrade head` lá → smoke test → só então merge na main (deploy de prod roda a
+migration via `preDeployCommand`).
+
 ---
 
 ## 3. Supabase — Configuração
@@ -155,16 +175,23 @@ Tabelas resultantes: `orgs`, `clientes`, `conciliacoes`, `transacoes`,
 `conformidade_fornecedor`, `carta_versao`.
 
 ### Políticas de Segurança (RLS)
-```sql
--- Habilitar RLS nas tabelas base
-ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE conciliacoes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transacoes ENABLE ROW LEVEL SECURITY;
 
--- Política: usuários autenticados (a app já isola por cliente_id na camada de aplicação)
-CREATE POLICY "usuarios_autenticados" ON clientes
-  FOR ALL USING (auth.role() = 'authenticated');
+**Fonte de verdade: [`db/rls/`](db/rls/)** — não copie SQL deste documento.
+O isolamento multi-tenant é por `org_id` (policy `org_isolation`, GUC
+`app.org_id`, role `app_orgconc` NOBYPASSRLS, FORCE RLS), ativo em produção
+desde 2026-06-07. Para provisionar um ambiente novo:
+
+```bash
+# Na ordem, com a URL de OWNER (não a de runtime):
+psql "$DATABASE_URL_OWNER" -f db/rls/rollout_grants.sql
+psql "$DATABASE_URL_OWNER" -f db/rls/org_isolation.sql
+psql "$DATABASE_URL_OWNER" -f db/rls/contraparte_org_isolation.sql
+psql "$DATABASE_URL_OWNER" -f db/rls/infra_allow_all.sql
 ```
+
+> ⚠️ Policies como `USING (auth.role() = 'authenticated')` ou `USING (true)`
+> em tabelas de negócio **anulam o isolamento entre escritórios** — nunca as
+> use fora das tabelas de infra listadas em `infra_allow_all.sql`.
 
 ---
 

@@ -1,11 +1,9 @@
 """Router /matchers — conciliação automática via cascata de matchers (OrgNeural2)."""
 from __future__ import annotations
 
-import io
 import logging
 import re
 import uuid
-import zipfile
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -16,7 +14,7 @@ from api.core.rate_limit import limiter
 from api.matchers.cascata import Disposicao, classificar, ler_ofx
 from api.matchers.orquestrador import conciliar as orquestrar_cascata, taxa_automatizacao
 from api.services.auth import TokenPayload, autorizar_cliente, current_user
-from api.services.storage import read_limited
+from api.services.storage import extrair_zip_seguro, read_limited
 
 router = APIRouter(tags=["matchers"], prefix="/matchers")
 log = logging.getLogger("orgconc.matchers")
@@ -45,22 +43,13 @@ def _separar_arquivos(arquivos: list[tuple[str, bytes]]) -> tuple[bytes, list[tu
         elif nome_lower.endswith(_XML_EXT):
             xmls.append((filename, conteudo))
         elif nome_lower.endswith(_ZIP_EXT):
-            try:
-                with zipfile.ZipFile(io.BytesIO(conteudo)) as zf:
-                    for member in zf.namelist():
-                        if member.lower().endswith(_XML_EXT):
-                            with zf.open(member) as fh:
-                                xmls.append((member, fh.read()))
-                        elif member.lower().endswith(_OFX_EXT):
-                            with zf.open(member) as fh:
-                                if ofx_bytes is not None:
-                                    raise HTTPException(
-                                        400,
-                                        "ZIP contém mais de 1 OFX; envie apenas 1.",
-                                    )
-                                ofx_bytes = fh.read()
-            except zipfile.BadZipFile:
-                raise HTTPException(400, f"Arquivo {filename} não é um ZIP válido.")
+            for member, data in extrair_zip_seguro(conteudo, _XML_EXT + _OFX_EXT):
+                if member.lower().endswith(_XML_EXT):
+                    xmls.append((member, data))
+                else:  # .ofx
+                    if ofx_bytes is not None:
+                        raise HTTPException(400, "ZIP contém mais de 1 OFX; envie apenas 1.")
+                    ofx_bytes = data
         else:
             log.warning("matchers: ignorando arquivo com extensão não suportada: %s", filename)
 

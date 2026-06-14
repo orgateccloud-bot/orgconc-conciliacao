@@ -8,7 +8,7 @@ from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
 from api.db import conciliacoes as crud_conc
 from api.infra.repositories.conciliacoes import ConciliacaoRepositorySQL
-from api.services.auth import TokenPayload, autorizar_cliente, current_user
+from api.services.auth import TokenPayload, autorizar_cliente, current_user, escopo_cliente_listagem
 from api.usecases.listar_conciliacoes import ListarConciliacoesInput, ListarConciliacoesUseCase
 
 router = APIRouter(prefix="/conciliacoes", tags=["conciliacoes"], dependencies=[Depends(current_user)])
@@ -44,12 +44,8 @@ async def listar(
 ):
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
-    # Usuários não-privilegiados só enxergam o próprio cliente
-    if user.role not in ("admin", "service", "auditor", "anonymous"):
-        if not cliente_id:
-            cliente_id = user.cliente_id
-        elif user.cliente_id and cliente_id != user.cliente_id:
-            raise HTTPException(403, "Acesso negado a este cliente")
+    # Escopo de tenant centralizado (nega anonymous em prod; user → próprio cliente)
+    cliente_id = escopo_cliente_listagem(user, cliente_id)
     cid = None
     if cliente_id:
         try:
@@ -97,5 +93,9 @@ async def buscar(
         c = await crud_conc.buscar_por_report_id(db, report_id)
     if not c:
         raise HTTPException(404, "Conciliacao nao encontrada")
-    autorizar_cliente(user, str(c.cliente_id))
+    # Anti-oráculo: não-autorizado responde 404 (não revela existência do report_id)
+    try:
+        autorizar_cliente(user, str(c.cliente_id) if c.cliente_id else "")
+    except HTTPException:
+        raise HTTPException(404, "Conciliacao nao encontrada")
     return _serializar(c)

@@ -249,6 +249,34 @@ def autorizar_cliente(
     raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
 
 
+def escopo_cliente_listagem(
+    user: TokenPayload,
+    cliente_id_solicitado: str | None = None,
+) -> str | None:
+    """Resolve o filtro de cliente para endpoints de listagem (ponto único).
+
+    Retorna o cliente_id a aplicar na query ou None (sem filtro de cliente —
+    o RLS por org_id continua aplicando no banco). Regras:
+    - admin/auditor/service: sem filtro (podem pedir cliente_id explícito).
+    - anonymous: negado em produção (defesa em profundidade — current_user
+      nunca o emite em prod); em dev/staging passa sem filtro.
+    - user COM cliente_id: sempre o próprio; pedir outro → 403.
+    - user SEM cliente_id (multi-org): sem filtro de cliente — o escopo é a
+      org inteira, garantido pelo RLS (SET LOCAL app.org_id).
+    """
+    if user.role in ("admin", "auditor", "service"):
+        return cliente_id_solicitado
+    if user.role == "anonymous":
+        if _IS_PROD:
+            raise HTTPException(status_code=403, detail="Autenticacao obrigatoria")
+        return cliente_id_solicitado  # dev/staging: conveniencia sem token
+    if user.cliente_id:
+        if cliente_id_solicitado and cliente_id_solicitado != user.cliente_id:
+            raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
+        return user.cliente_id
+    return cliente_id_solicitado
+
+
 def require_role(*roles: str):
     """Dependency factory: exige que o usuario autenticado tenha um dos `roles`.
 

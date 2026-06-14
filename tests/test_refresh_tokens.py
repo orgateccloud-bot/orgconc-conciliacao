@@ -169,9 +169,62 @@ def test_refresh_invalido_ou_revogado_retorna_401():
         patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
         patch("api.routers.auth_routes._config.SessionLocal", sl),
         patch("api.routers.auth_routes.refresh_repo.buscar_ativo_por_hash", new=AsyncMock(return_value=None)),
+        patch("api.routers.auth_routes.refresh_repo.buscar_por_hash", new=AsyncMock(return_value=None)),
     ):
         r = client.post("/auth/refresh", headers={"Cookie": "orgconc_refresh=revogado"})
     assert r.status_code == 401
+
+
+def test_refresh_reuse_detection_revoga_familia():
+    """Token JÁ ROTACIONADO reapresentado fora da janela de graça → revoga
+    todas as sessões do sub (RFC 6819 reuse-detection) e responde 401."""
+    from datetime import datetime, timedelta, timezone
+
+    sl, _db = _mock_session_cm()
+    antigo = MagicMock(
+        id=uuid.uuid4(),
+        sub="vitima@orgconc.com",
+        role="user",
+        revogado_em=datetime.now(timezone.utc) - timedelta(seconds=60),
+        substituido_por=uuid.uuid4(),
+    )
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.refresh_repo.buscar_ativo_por_hash", new=AsyncMock(return_value=None)),
+        patch("api.routers.auth_routes.refresh_repo.buscar_por_hash", new=AsyncMock(return_value=antigo)),
+        patch("api.routers.auth_routes.refresh_repo.revogar_todos_do_sub", new=AsyncMock(return_value=3)) as mock_rev,
+        patch("api.routers.auth_routes.gravar_audit_independente", new=AsyncMock()) as mock_audit,
+    ):
+        r = client.post("/auth/refresh", headers={"Cookie": "orgconc_refresh=roubado"})
+    assert r.status_code == 401
+    mock_rev.assert_awaited_once()
+    mock_audit.assert_awaited_once()
+
+
+def test_refresh_corrida_benigna_na_janela_de_graca_nao_revoga_familia():
+    """Reapresentação DENTRO da janela de 10s (tabs paralelas) → 401 simples,
+    sem revogar a família."""
+    from datetime import datetime, timedelta, timezone
+
+    sl, _db = _mock_session_cm()
+    antigo = MagicMock(
+        id=uuid.uuid4(),
+        sub="user@orgconc.com",
+        role="user",
+        revogado_em=datetime.now(timezone.utc) - timedelta(seconds=2),
+        substituido_por=uuid.uuid4(),
+    )
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.refresh_repo.buscar_ativo_por_hash", new=AsyncMock(return_value=None)),
+        patch("api.routers.auth_routes.refresh_repo.buscar_por_hash", new=AsyncMock(return_value=antigo)),
+        patch("api.routers.auth_routes.refresh_repo.revogar_todos_do_sub", new=AsyncMock()) as mock_rev,
+    ):
+        r = client.post("/auth/refresh", headers={"Cookie": "orgconc_refresh=corrida"})
+    assert r.status_code == 401
+    mock_rev.assert_not_awaited()
 
 
 def test_refresh_sem_cookie_retorna_401():

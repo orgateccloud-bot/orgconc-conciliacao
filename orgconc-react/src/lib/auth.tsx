@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { apiLogout, fetchMe, getToken, login as apiLogin, setToken, type UserMe } from "@/lib/api";
+import { ApiError, apiLogout, fetchMe, getToken, limparDadosTenant, login as apiLogin, setToken, type UserMe } from "@/lib/api";
 
 interface AuthState {
   user: UserMe | null;
@@ -26,12 +26,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const me = await fetchMe();
       setUser(me);
-    } catch {
-      if (!getToken()) setUser(null);
-      else {
-        setUser(null);
-        setToken(null);
-      }
+    } catch (err) {
+      // Só destrói a sessão em rejeição real de auth (401/403). Falha de rede
+      // transitória (TypeError: Failed to fetch) preserva o token — deslogar
+      // por queda de wi-fi é punir o usuário pelo problema errado.
+      const ehAuth = err instanceof ApiError && (err.status === 401 || err.status === 403);
+      setUser(null);
+      if (ehAuth && getToken()) setToken(null);
     } finally {
       setLoading(false);
     }
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const onLogout = () => {
       setUser(null);
       setToken(null);
+      limparDadosTenant();
     };
     window.addEventListener("orgconc:logout", onLogout);
     return () => window.removeEventListener("orgconc:logout", onLogout);
