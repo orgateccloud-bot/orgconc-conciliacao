@@ -10,6 +10,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     listarConciliacoes: vi.fn(),
     carregarHistoricoLocal: vi.fn(),
+    baixarExport: vi.fn(),
   };
 });
 
@@ -75,12 +76,24 @@ describe("RelatoriosPage", () => {
     // Cabeçalhos da tabela.
     expect(screen.getByText("Report ID")).toBeInTheDocument();
     expect(screen.getByText("Exports")).toBeInTheDocument();
-    // Links de export com target _blank.
-    expect(screen.getByRole("link", { name: /HTML/i })).toHaveAttribute(
-      "href",
-      "/export/html/abcdef0123456789",
+    // Exports são BOTÕES de download autenticado (Bearer), não links diretos.
+    expect(screen.getByRole("button", { name: /HTML/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /XLS/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /PDF/i })).toBeInTheDocument();
+  });
+
+  it("botao de export baixa via baixarExport (Bearer), nao navegacao de link", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.listarConciliacoes).mockResolvedValue([CONCILIACAO]);
+    vi.mocked(api.baixarExport).mockResolvedValue(undefined);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("abcdef012345…")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /PDF/i }));
+    expect(api.baixarExport).toHaveBeenCalledWith(
+      "/export/pdf/abcdef0123456789",
+      "conciliacao_abcdef0123456789-relatorio.pdf",
     );
-    expect(screen.getByRole("link", { name: /PDF/i })).toHaveAttribute("target", "_blank");
   });
 
   it("calcula os KPIs a partir das linhas", async () => {

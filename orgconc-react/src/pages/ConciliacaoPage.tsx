@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
+  baixarExport,
   type Anomalia,
   type ConciliacaoResponse,
 } from "@/lib/api";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { HeroCard } from "@/components/HeroCard";
 import ReactMarkdown from "react-markdown";
@@ -74,21 +76,26 @@ export function ConciliacaoPage() {
               ID: {resultado.report_id}
             </span>
             <div className="flex gap-2 flex-wrap">
+              {/* Download autenticado (Bearer via apiFetchBlob) — link direto dava 401 */}
               {[
-                { label: "HTML", path: `/export/html/${resultado.report_id}` },
-                { label: "Excel", path: `/export/xlsx/${resultado.report_id}` },
-                { label: "PDF", path: `/export/pdf/${resultado.report_id}` },
-              ].map(({ label, path }) => (
-                <a
+                { label: "HTML", ext: "html" },
+                { label: "Excel", ext: "xlsx" },
+                { label: "PDF", ext: "pdf" },
+              ].map(({ label, ext }) => (
+                <button
                   key={label}
-                  href={path}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  type="button"
+                  onClick={() =>
+                    baixarExport(
+                      `/export/${ext}/${resultado.report_id}`,
+                      `conciliacao_${resultado.report_id}.${ext}`,
+                    ).catch(() => toast.error(`Falha ao baixar ${label}`))
+                  }
                   className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5 transition-colors"
                 >
                   <Download className="h-3.5 w-3.5" />
                   {label}
-                </a>
+                </button>
               ))}
             </div>
           </div>

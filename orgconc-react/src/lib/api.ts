@@ -576,6 +576,17 @@ export async function fiscalLaudo(opts: {
   return { blob, filename };
 }
 
+/**
+ * Baixa um export autenticado (/export/*) com Bearer e dispara o download.
+ * Substitui os antigos <a href> diretos: navegação de link não envia o
+ * Authorization header (401), e abrir o HTML do backend em _blank no mesmo
+ * origin ampliaria a superfície de XSS — baixar o arquivo resolve os dois.
+ */
+export async function baixarExport(path: string, fallbackFilename: string): Promise<void> {
+  const { blob, filename } = await apiFetchBlob(path);
+  baixarBlob(blob, filename || fallbackFilename);
+}
+
 /** Dispara o download de um Blob no browser. */
 export function baixarBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
