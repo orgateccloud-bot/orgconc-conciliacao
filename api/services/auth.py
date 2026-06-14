@@ -360,20 +360,18 @@ def escopo_cliente_listagem(
 ) -> Optional[str]:
     """Resolve o `cliente_id` efetivo para uma listagem, sem vazamento cross-org (#23).
 
-    Antes, um usuario multi-org podia passar um `cliente_id` arbitrario como
-    filtro de listagem e ler dados de clientes de OUTRA org. Aqui restringimos:
+    Enderecou o furo em que um usuario multi-org passava um `cliente_id`
+    arbitrario como filtro e lia dados de cliente de OUTRA org. Regras:
 
     - Roles privilegiados (admin, auditor, service): podem escopar a qualquer
-      `cliente_id` (ou None = todos), pois o isolamento por org ja e aplicado
-      por outras camadas (RLS / org_id do token). Retorna o `cliente_id` pedido.
-    - User comum COM cliente_id no token: so pode escopar ao PROPRIO cliente_id.
-      Pedir outro cliente_id -> 403. Sem filtro (None) -> assume o proprio.
-    - User comum SEM cliente_id no token (multi-org/legado): NAO pode passar um
-      cliente_id arbitrario (era o furo). Pedir um cliente_id -> 403. Sem filtro
-      -> retorna None (a listagem deve restringir por org_id do token a montante).
-    - anonymous em producao -> 403 (sem dono nao ha escopo legitimo).
-
-    Retorna o cliente_id efetivo (str) ou None (sem filtro por cliente).
+      `cliente_id` (ou None = todos) — o isolamento por org ja e aplicado pela
+      RLS / org_id do token. Retorna o `cliente_id` pedido.
+    - User comum COM cliente_id no token: so escopa ao PROPRIO cliente_id; pedir
+      outro -> 403; sem filtro (None) -> assume o proprio.
+    - User comum SEM cliente_id no token (multi-org): NAO pode passar um
+      cliente_id arbitrario (era o furo) -> 403; sem filtro -> None (a listagem
+      restringe por org_id do token via RLS a montante).
+    - anonymous em producao -> 403.
     """
     if user.role in ("admin", "auditor", "service"):
         return cliente_id

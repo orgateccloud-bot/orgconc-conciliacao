@@ -11,13 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import re
-import threading
 
 from api.services import laudo_forense as laudo
-
-# EMPRESA é global do módulo laudo_forense — serializa a geração para evitar
-# race entre requests síncronos e o worker de jobs (mesmo processo).
-GERACAO_LAUDO_LOCK = threading.Lock()
 
 FORMATOS_LAUDO = {"xlsx", "html", "pdf"}
 
@@ -52,8 +47,9 @@ async def gerar_laudo_documento(
 
     `uploads` são pares (nome, bytes) já lidos e dentro dos limites de upload
     (validados pelo chamador). OFX alimenta as transações; XML/ZIP alimentam as
-    abas/seções fiscais. Mesmo fluxo do endpoint síncrono: parse fora do event
-    loop, dedup por (conta, fitid) e geração sob GERACAO_LAUDO_LOCK.
+    abas/seções fiscais. A empresa do laudo vive em contextvar isolado por
+    thread (laudo_forense.set_empresa) — sem global, sem lock: requests
+    síncronos e o worker de jobs podem gerar em paralelo sem race.
     """
     formato = (formato or "xlsx").lower()
     if formato not in FORMATOS_LAUDO:
@@ -97,18 +93,18 @@ async def gerar_laudo_documento(
         # NF-e/CT-e pela própria engine (alimenta as abas/seções fiscais).
         nfes, ctes, _n = laudo.carregar_docs_xmls(fiscais) if fiscais else ([], [], 0)
         todos, saldos = laudo.montar_dados(dedup)
-        with GERACAO_LAUDO_LOCK:
-            laudo.EMPRESA = laudo.construir_empresa(empresa_cnpj, cache)
-            razao = laudo.EMPRESA.get("razao_social", "laudo")
-            wb, stats = laudo.gerar_laudo_workbook(todos, saldos, cache, nfes, ctes)
-            if formato == "xlsx":
-                buf = BytesIO()
-                wb.save(buf)
-                return buf.getvalue(), razao
-            # html / pdf usam o mesmo stats -> gerar_md -> gerar_html
-            md, _totais = laudo.gerar_md(stats)
-            html = laudo.gerar_html(md, stats.get("periodo_str", ""))
-            return html, razao
+        # _build roda em asyncio.to_thread → cada chamada tem contexto próprio
+        empresa = laudo.set_empresa(laudo.construir_empresa(empresa_cnpj, cache))
+        razao = empresa.get("razao_social", "laudo")
+        wb, stats = laudo.gerar_laudo_workbook(todos, saldos, cache, nfes, ctes)
+        if formato == "xlsx":
+            buf = BytesIO()
+            wb.save(buf)
+            return buf.getvalue(), razao
+        # html / pdf usam o mesmo stats -> gerar_md -> gerar_html
+        md, _totais = laudo.gerar_md(stats)
+        html = laudo.gerar_html(md, stats.get("periodo_str", ""))
+        return html, razao
 
     saida, razao = await asyncio.to_thread(_build)
     fname = re.sub(r"[^\w]+", "_", razao).strip("_")[:40] or "laudo"

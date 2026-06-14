@@ -119,6 +119,13 @@ async def buscar_ativo_por_hash(
     return result.scalar_one_or_none()
 
 
+async def buscar_por_hash(db: AsyncSession, token_hash: str) -> RefreshToken | None:
+    """Retorna o token mesmo revogado/expirado — usado pela reuse-detection."""
+    q = select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+    result = await db.execute(q)
+    return result.scalar_one_or_none()
+
+
 async def revogar(
     db: AsyncSession,
     rt_id: uuid.UUID,

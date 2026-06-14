@@ -1,10 +1,11 @@
 # OrgConc — Mapeamento Completo de Módulos & Relatório de Pontuação
 
-**Data:** 2026-06-09
+**Data:** 2026-06-09 · **números revisados em 2026-06-11** (pós PRs #106–#110 e hardening Fable)
 **Projeto:** OrgConc (Conciliação Bancária + Auditoria Fiscal Forense — FastAPI + React + Supabase/Postgres)
 **Versão:** 0.5.0 — beta avançado **em produção** (Railway + Supabase, RLS real por `org_id`)
 **Branch:** `claude/optimistic-hermann-ffd614`
 **Remapeamento anterior:** 2026-06-02 (7.6/10) · antes: 2026-05-28 (6.4/10)
+**Complementa:** `docs/ESTADO_PROJETO_2026-06-11.md` (status do hardening de segurança)
 
 ---
 
@@ -17,8 +18,8 @@
 | **Endpoints HTTP** | 56 rotas em 16 routers | ✅ REST + auth JWT multi-org |
 | **Matchers (domínio fiscal)** | 3.205 LOC · 16 arquivos | ✅ Diferencial do produto |
 | **Multi-tenancy** | RLS real por `org_id`, FORCE RLS, fail-closed | ✅ **Enforçado em prod** |
-| **Testes Backend** | **518 funções** · 40 arquivos · gate 74% no CI | ✅ Forte |
-| **Testes Frontend** | **249 testes** · 17/17 páginas + componentes · cobertura ~78% (gate no CI) · 4 E2E | ✅ Gate ativo (2026-06-09) |
+| **Testes Backend** | **715 funções** · 46 arquivos · **gate 80%** no CI (#110) | ✅ Forte |
+| **Testes Frontend** | **347 testes** · 17/17 páginas + componentes · cobertura ~88% (gate 84/76/83/86, #109) · 4 E2E | ✅ Gate ativo (2026-06-09) |
 | **Observabilidade** | Prometheus `/metrics` + Sentry + log JSON | ✅ Implementado |
 | **Deploy** | Railway (Docker multi-stage, React same-origin `/app`) | ✅ Seguro e automático |
 | **CI/CD** | test · security · frontend · e2e + synthetic monitor | ✅ Lint ruff bloqueante |
@@ -62,9 +63,9 @@
                                 ↓
 ┌──────────────────────────────────────────────────────────────┐
 │ Application: services/ (20 arq, 5.648 LOC)                    │
-│ ├─ laudo_forense.py (2.089 ⚠) · excel.py (574)               │
+│ ├─ laudo_forense.py (2.103 ⚠) · excel.py (574)               │
 │ ├─ fiscal_persistence · carta_constatacao · calculadora_cbs  │
-│ ├─ auth · conciliacao_llm · ai_insights · serpro_client ⚠    │
+│ ├─ auth · conciliacao_llm · ai_insights · report_utils       │
 │ └─ fiscal_notifications · fiscal_job · sefaz_distribuicao ... │
 └───────┬──────────────────────────────────────────────┬───────┘
         ↓                                                ↓
@@ -122,9 +123,9 @@ OFX + XMLs (NF-e/CT-e) → parsers/ → cascata.py (6 estágios) → orquestrado
 
 **CBS/IBS (camada IC-02):** OrgConc **orquestra** a calculadora oficial (não recalcula).
 `services/calculadora_cbs_ibs.py` + transporte genérico (`CALCULADORA_BASE_URL`).
-Persistência em `apuracao_cbs_ibs` (migrations 013/014/018). ⚠️ Há `serpro_client.py` (182 LOC) e
-refs SERPRO em 5 arquivos — **alvo de remoção** (decisão 2026-06-09: SERPRO excluído → API portal
-Tributos `consumo.tributos.gov.br`).
+Persistência em `apuracao_cbs_ibs` (migrations 013/014/018). ✅ **SERPRO removido** no PR #106
+(2026-06-09): `serpro_client.py` deletado, OAuth2/Consumer-Key fora; alvo é a API do portal
+Tributos (`consumo.tributos.gov.br`).
 
 **Endpoints fiscais** (`routers/fiscal.py`, 799 LOC): `POST /fiscal/processar`, `POST /fiscal/laudo`,
 `POST /fiscal/laudo/resumo`, `POST /fiscal/apurar` (CBS/IBS), `GET /fiscal/{conformidade,gap,
@@ -137,11 +138,11 @@ consistente, Repository Pattern (domain+infra), Value Objects, Chain of Responsi
 estágios), **multi-tenancy por RLS** (contexto `org_id` injetado por request).
 
 ⚠️ **Pontos de atenção:**
-- **Fat file:** `services/laudo_forense.py` (2.089 LOC, +180 desde 06-02) concentra parse + cálculo +
+- **Fat file:** `services/laudo_forense.py` (2.103 LOC, +194 desde 06-02) concentra parse + cálculo +
   render (XLSX/MD/HTML/PDF). Candidato a extrair camada `calculations/`.
 - **`services/` heterogêneo** (5.648 LOC, 20 arq): auth + excel + fiscal + LLM + CBS/IBS sem
   namespacing claro.
-- **Dívida SERPRO:** 5 arquivos com refs a remover (config, infra, fiscal router, calculadora, client).
+- ~~Dívida SERPRO~~ — **removida no PR #106** (client deletado, transporte genérico).
 - Outros fat files: `routers/fiscal.py` (799), `services/excel.py` (574), `db/models.py` (490).
 
 **Pontuação Backend: 8/10** — Maduro, multi-tenant e bem testado; refator do laudo_forense + remoção
@@ -159,7 +160,7 @@ React 19 + Router v7 (basename /app) + Context API + Tailwind 4 (CSS-first) + sh
 ├─ Pages: 17 (16 protegidas + Login), lazy-loaded
 ├─ Components: dashboard 12 · ui (shadcn) 9 · core 8
 ├─ State: AuthProvider (JWT + refresh + org) · ThemeProvider (dark mode)
-├─ API: lib/api.ts (877 LOC) — apiFetch<T> + apiFetchBlob + 50+ endpoints
+├─ API: lib/api.ts (912 LOC) — apiFetch<T> + apiFetchBlob + 50+ endpoints
 └─ Styling: Tailwind 4 (@theme em index.css, sem tailwind.config.js) + dark mode
 ```
 
@@ -177,7 +178,7 @@ React 19 + Router v7 (basename /app) + Context API + Tailwind 4 (CSS-first) + sh
 
 | Arquivo | LOC | Responsabilidade |
 |---------|-----|------------------|
-| **api.ts** | 877 | `apiFetch<T>` + `apiFetchBlob` (download autenticado) + 50+ endpoints; token em sessionStorage, refresh-on-401 |
+| **api.ts** | 912 | `apiFetch<T>` + `apiFetchBlob` (download autenticado) + 50+ endpoints; token em sessionStorage, refresh-on-401 |
 | auth.tsx | 74 | AuthProvider + useAuth (user/org/login/logout) |
 | theme.tsx | 39 | ThemeProvider + useTheme (light/dark, localStorage) |
 | constants · utils · hooks · risco-cores · recharts | ~86 | mapeamentos, cn/formatBytes, useClock, cores de risco, config charts |
@@ -185,8 +186,7 @@ React 19 + Router v7 (basename /app) + Context API + Tailwind 4 (CSS-first) + sh
 ### 2.4 Padrões
 
 ✅ Lazy loading, ApiError + ErrorBoundary, skeletons por página, dark mode, a11y (axe-core, ARIA,
-command palette ⌘K), empty-first honesto, Tailwind 4, **TypeScript strict** (`noUnusedLocals/Parameters: true`
-desde 2026-06-03, `tsc --noEmit` bloqueante no CI).
+command palette ⌘K), empty-first honesto, Tailwind 4, **TypeScript `strict: true`** (ativado 2026-06-11; antes só `noUnusedLocals/Parameters`), `tsc --noEmit` bloqueante no CI.
 ✅ **17/17 páginas com teste** + gate de cobertura (2026-06-09).
 
 **Pontuação Frontend: 7.5/10** — UX/a11y maduras, TS strict, cobertura com gate.
@@ -199,19 +199,19 @@ desde 2026-06-03, `tsc --noEmit` bloqueante no CI).
 
 | Métrica | Valor | Status |
 |---------|-------|--------|
-| **Funções de teste** | **518** | ✅ Forte |
-| **Cobertura** | 74% (`--cov-fail-under=74`, bloqueante no CI) | ✅ Boa |
-| **Arquivos** | 40 `test_*.py` | ✅ |
+| **Funções de teste** | **715** | ✅ Forte |
+| **Cobertura** | 80% (`--cov-fail-under=80`, bloqueante no CI — #110) | ✅ Boa |
+| **Arquivos** | 46 `test_*.py` | ✅ |
 | **DB em testes** | Postgres NullPool (skip se sem DATABASE_URL) | ✅ Isolado |
 
 ### 3.2 Frontend (Vitest + Playwright)
 
 | Métrica | Valor | Status |
 |---------|-------|--------|
-| **Total de testes** | **249** (era ~40) | ✅ |
+| **Total de testes** | **347** (era ~40) | ✅ |
 | **Páginas testadas** | **17/17** | ✅ Cobertas (2026-06-09) |
-| **Cobertura** | stmts 75.8% · lines 78.1% · funcs 72.5% · branches 65.1% (`api.ts` 94%) | ✅ Gate no CI |
-| **Gate** | `coverage.thresholds` (stmts 73/branches 62/funcs 68/lines 75); CI roda `test:coverage` | ✅ Bloqueante |
+| **Cobertura** | stmts 86% · lines 88.6% · funcs 85.6% · branches 79.3% (`api.ts` 94%) | ✅ Gate no CI |
+| **Gate** | `coverage.thresholds` (stmts 84/branches 76/funcs 83/lines 86); CI roda `test:coverage` | ✅ Bloqueante |
 | **Componentes/lib** | ErrorBoundary, a11y, coreComponents, CommandPalette, AIInsightsPanel, AuditEventModal, api, auth | ✅ |
 | **E2E** | 4 specs (login, dashboard, clientes, errors) | ✅ Happy paths |
 
@@ -221,8 +221,8 @@ Conformidade 35%, Risco 45%) e AuditTimeline (31%) — aprofundar.
 ### 3.3 Cobertura Geral
 
 ```
-Backend (Python):  ███████░░  74%       ✅ Strong (gate no CI)
-Frontend (React):  ████████░  ~78%      ✅ Gate no CI (era ~25%)
+Backend (Python):  ████████░  80%       ✅ Strong (gate no CI)
+Frontend (React):  █████████  ~88%      ✅ Gate no CI (era ~25%)
 E2E:               ████░░░░░  ~40%      ⚠️  Happy paths (P0 #5: aprofundar)
 ```
 
@@ -248,7 +248,7 @@ E2E:               ████░░░░░  ~40%      ⚠️  Happy paths (P
 
 | Job | Faz | Status |
 |-----|-----|--------|
-| **test** | pytest + cobertura 74% + weasyprint | ✅ |
+| **test** | pytest + cobertura 80% + weasyprint | ✅ |
 | **security** | pip-audit, bandit, semgrep, Trivy, grep de chaves | ✅ |
 | **frontend** | npm ci, build, tsc --noEmit, vitest, npm audit | ✅ |
 | **e2e** | Playwright com backend :8765 | ✅ |
@@ -307,12 +307,12 @@ Maintainability:   7.0/10  ███████░░
 
 | # | Achado | Severidade | Ação |
 |---|--------|------------|------|
-| A1 | **SERPRO ainda no código** (5 arquivos) vs decisão de removê-lo (alvo: API portal Tributos) | 🟠 Média | Roadmap P1 #6 |
+| A1 | ~~SERPRO ainda no código~~ | 🟢 Resolvido | ✅ Removido no PR #106 (2026-06-09) |
 | A2 | **README desatualizado** (cita `static/`/`/ui/` inexistente; sem fiscal/RLS) | 🟡 Baixa | ✅ Corrigido neste ciclo |
-| A3 | **Comentário `main.py:90-91`** ainda cita GitHub Pages (removido) | 🟡 Baixa | Corrigir comentário |
-| A4 | **Cobertura frontend** 5/17 páginas (proporção piorou com +2 páginas) | 🟠 Média | ✅ Resolvido (17/17 páginas, ~78%, gate no CI — 2026-06-09) |
+| A3 | ~~Comentário `main.py` cita GitHub Pages~~ | 🟢 Resolvido | ✅ Comentário atualizado |
+| A4 | **Cobertura frontend** 5/17 páginas (proporção piorou com +2 páginas) | 🟠 Média | ✅ Resolvido (17/17 páginas, ~88%, gate 84/86 no CI — 2026-06-09) |
 | A5 | **3 policies RLS legadas** `*_org_policy` inertes a limpar | 🟡 Baixa | Roadmap P0 #4 |
-| A6 | **Fat file** `laudo_forense.py` cresceu (2.089 LOC) | 🟡 Baixa | Roadmap P1 (refator) |
+| A6 | **Fat file** `laudo_forense.py` cresceu (2.103 LOC) | 🟡 Baixa | Roadmap P1 (refator) |
 | A7 | ~~Logout não revoga refresh token~~ — **claim incorreto:** `auth_logout` já revoga (`revogar_por_hash`); só o access JWT sobrevive até o TTL | 🟢 Resolvido | Verificado 2026-06-09 (+ testes logout-all; docstring do modelo de revogação) |
 
 ---
@@ -324,7 +324,7 @@ Maintainability:   7.0/10  ███████░░
    `app_orgconc` NOBYPASSRLS + owner separado para migrations.
 2. **Pipeline fiscal forense** sólido e diferenciado (cascata 6 estágios, regime×teto, forensics,
    enriquecimento RFB) — reproduz laudo real ao centavo.
-3. **Backend maduro** — 518 testes, 74% cobertura bloqueante, clean architecture.
+3. **Backend maduro** — 715 testes, 80% cobertura bloqueante, clean architecture.
 4. **DevOps resolvido** — deploy seguro same-origin, Railway automático, Prometheus + Sentry, migrations
    em preDeploy com URL de owner separada.
 5. **Segurança em alta** — bcrypt 5 (sem passlib), reset/troca de senha com revogação de refresh,
@@ -332,8 +332,8 @@ Maintainability:   7.0/10  ███████░░
 
 ### ⚠️ Pontos Fracos
 1. **Sem staging** — migrations validadas só em prod (mitigado por preDeploy + healthcheck + Sentry).
-2. **Fat files** — laudo_forense.py (2.089), services heterogêneo (5.648).
-3. **Dívida SERPRO** — código a remover/generalizar (transporte já é genérico).
+2. **Fat files** — laudo_forense.py (2.103), services heterogêneo (5.648).
+3. ~~Dívida SERPRO~~ — removida (PR #106).
 4. **E2E raso** — happy paths; faltam fluxos de upload→resultado e auditoria forense.
 5. **CBS/IBS sem idempotência** — `salvar_apuracao` insere sempre; falta UNIQUE/UPSERT.
 
@@ -360,15 +360,15 @@ OrgConc/
 │  ├─ matchers/    (3.205) forensics, cnpj_enricher, xml_fiscal, orquestrador, cascata...
 │  ├─ parsers/     (700)  ofx, xml, pdf, csv, anomalies, classifier
 │  ├─ routers/     (3.018) 16 routers, 56 endpoints
-│  ├─ services/    (5.648) laudo_forense (2.089), excel, fiscal_persistence, calculadora_cbs_ibs...
+│  ├─ services/    (5.648) laudo_forense (2.103), excel, fiscal_persistence, calculadora_cbs_ibs...
 │  ├─ usecases/    (131)  clientes, conciliações
 │  ├─ main.py · schemas.py · schemas_cbs_ibs.py
 ├─ orgconc-react/               (React 19 + Vite + Tailwind 4, ~9.164 LOC src)
 │  ├─ src/pages/    (17 páginas + 5 testes de página)
 │  ├─ src/components/ (dashboard 12 · ui 9 · core 8 · __tests__)
-│  ├─ src/lib/      (api.ts 877, auth, theme, hooks, utils, risco-cores)
+│  ├─ src/lib/      (api.ts 912, auth, theme, hooks, utils, risco-cores)
 │  └─ e2e/          (4 specs Playwright)
-├─ tests/                       (518 funções, 40 arquivos)
+├─ tests/                       (715 funções, 46 arquivos)
 ├─ migrations/versions/         (20 migrations Alembic; head: 020_org_id_fiscais)
 ├─ scripts/                     (CLI relatorio_integrado.py = laudo)
 ├─ db/rls/ · supabase/migrations/   (políticas RLS, org_isolation)

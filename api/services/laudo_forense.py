@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextvars
 import os
 import re
 import xml.etree.ElementTree as ET
@@ -81,7 +82,21 @@ from api.matchers.forensics import (
 MESES_PT = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
 ENRICH_LIMITE_PADRAO = 300
 
-EMPRESA: dict = {}  # preenchido por construir_empresa()
+# Empresa auditada do laudo atual. Guardada em contextvars (não em global mutável)
+# para isolar gerações concorrentes — sem race entre clientes e sem lock. Definida
+# por set_empresa() e lida por _emp() em toda a cadeia de geração.
+_EMPRESA_VAR: contextvars.ContextVar[dict] = contextvars.ContextVar("empresa_laudo", default={})
+
+
+def set_empresa(empresa: dict) -> dict:
+    """Define a empresa auditada no contexto atual (request/thread) e a retorna."""
+    _EMPRESA_VAR.set(empresa)
+    return empresa
+
+
+def _emp() -> dict:
+    """Empresa auditada do contexto atual (vazio se não definida)."""
+    return _EMPRESA_VAR.get()
 
 PASTA_DEFAULT = os.environ.get("ORGCONC_OFX_DIR", "")
 OUT_DIR = Path(os.environ.get("ORGCONC_OUT_DIR", "."))
@@ -179,7 +194,7 @@ def style_header(ws, row, n_cols):
 
 
 def cabecalho(ws, ultima_col, secao):
-    c1 = ws.cell(row=1, column=1, value=f"    ORGATEC · Relatorio Integrado de Auditoria · {EMPRESA.get('razao_social', '')}")
+    c1 = ws.cell(row=1, column=1, value=f"    ORGATEC · Relatorio Integrado de Auditoria · {_emp().get('razao_social', '')}")
     c1.font = Font(bold=True, size=14, color="FFFFFF")
     c1.fill = PatternFill("solid", fgColor=NAVY)
     c1.alignment = Alignment(horizontal="center", vertical="center", indent=2)
@@ -190,14 +205,14 @@ def cabecalho(ws, ultima_col, secao):
     inserir_logo_xlsx(ws, "A1", largura_px=60, altura_px=60)
 
     c2 = ws.cell(row=2, column=1,
-        value=f"Empresa: {EMPRESA['razao_social']} | CNPJ: {EMPRESA['cnpj']} | Socio: {EMPRESA['socio_nome']} (CPF {EMPRESA['socio_cpf']})")
+        value=f"Empresa: {_emp()['razao_social']} | CNPJ: {_emp()['cnpj']} | Socio: {_emp()['socio_nome']} (CPF {_emp()['socio_cpf']})")
     c2.font = Font(bold=True, size=10, color="FFFFFF")
     c2.fill = PatternFill("solid", fgColor="1F7FB8")
     c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
     ws.merge_cells(f"A2:{get_column_letter(ultima_col)}2")
 
     c3 = ws.cell(row=3, column=1,
-        value=f"{EMPRESA.get('razao_social', '')} · CNPJ {EMPRESA.get('cnpj', '—')} · Secao: {secao}")
+        value=f"{_emp().get('razao_social', '')} · CNPJ {_emp().get('cnpj', '—')} · Secao: {secao}")
     c3.font = Font(size=9, color="12345E")
     c3.fill = INFO_FILL
     c3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
@@ -207,7 +222,7 @@ def cabecalho(ws, ultima_col, secao):
 
 def cabecalho_padrao(ws, ultima_col, *, titulo, linha2="", secao="", com_logo=True):
     """Cabeçalho XLSX padrão ORGATEC reutilizável por qualquer laudo (não depende
-    de EMPRESA global). 3 linhas: banda navy (título + logo), banda azul (linha2),
+    da empresa do contexto). 3 linhas: banda navy (título + logo), banda azul (linha2),
     banda info (seção). Retorna a primeira linha de conteúdo (5)."""
     c1 = ws.cell(row=1, column=1, value="    ORGATEC · " + titulo)
     c1.font = Font(bold=True, size=14, color="FFFFFF")
@@ -321,7 +336,6 @@ def montar_dados(transacoes):
 
 
 async def coletar_dados(pasta: str, conta_filtro: str, empresa_cnpj: str, enrich_all: bool):
-    global EMPRESA
     print(f"Coletando OFX de {pasta} ...")
     cache = _carregar_cache()
     arquivos = sorted(Path(pasta).glob("*.ofx"))
@@ -360,9 +374,9 @@ async def coletar_dados(pasta: str, conta_filtro: str, empresa_cnpj: str, enrich
         await enriquecer_lote(falt, db=None)
         cache = _carregar_cache()
 
-    EMPRESA = construir_empresa(empresa_cnpj, cache)
+    empresa = set_empresa(construir_empresa(empresa_cnpj, cache))
     print(f"  {len(todos):,} transacoes | {len(saldos)} meses | {len(cnpjs)} CNPJs"
-          f" | empresa: {EMPRESA['razao_social']}")
+          f" | empresa: {empresa['razao_social']}")
     return todos, saldos, cache
 
 
@@ -597,8 +611,8 @@ def _conformidade_lista(nfes, ctes, transacoes, top=30):
     cai para nome quando não há CNPJ. Exibe a razão social (cache) no lugar do memo
     cru. Exclui auto-movimentação (próprio CNPJ / MESMA TIT / própria razão)."""
     cache = _carregar_cache()
-    cb = re.sub(r"\D", "", EMPRESA.get("cnpj_basico", "") or "")
-    razao = _norm_nome(EMPRESA.get("razao_social", ""))
+    cb = re.sub(r"\D", "", _emp().get("cnpj_basico", "") or "")
+    razao = _norm_nome(_emp().get("razao_social", ""))
     # NF-e indexada por CNPJ emitente (match preciso) e por nome (fallback)
     nfe_cnpj = defaultdict(float)
     nfe_nome = defaultdict(float)
@@ -882,8 +896,8 @@ def preparar_calculo_laudo(todos, saldos, cache) -> dict:
     — as abas 5/6 só renderizam. Mantida ao lado do render para a saída
     continuar idêntica ao centavo (golden LOCAR).
 
-    Lê o global EMPRESA (cnpj_basico) — já montado por coletar_dados/chamador
-    antes da geração, e imutável durante ela.
+    Lê a empresa do contextvar (_emp().cnpj_basico) — já setada via
+    set_empresa() por coletar_dados/chamador antes da geração.
     """
     n_total = len(todos)
     meses = list(saldos.keys())              # ordem cronológica (derivada dos dados)
@@ -946,7 +960,7 @@ def preparar_calculo_laudo(todos, saldos, cache) -> dict:
 
     agg = calcular_agregados(todas_disps)
     _anexar_risco_disps(todas_disps, agg)
-    cnpj_basico = EMPRESA.get("cnpj_basico", "")
+    cnpj_basico = _emp().get("cnpj_basico", "")
     vol_transf_interna = _calcular_transf_internas(todas_disps, cnpj_basico)
     cat_count, cat_volume, cat_retencao, cat_por_mes, total_ret_5m = _agregar_tributario(todas_disps)
     pos_baixa, total_pb = _agregar_pos_baixa(todas_disps)
@@ -1120,22 +1134,22 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     ws.merge_cells(f"A{r}:E{r}")
     r += 1
     dados_pj = [
-        ("Razao Social Atual", EMPRESA["razao_social"]),
-        ("Razao Social Anterior", EMPRESA["razao_anterior"]),
-        ("Nome Fantasia", EMPRESA["nome_fantasia"]),
-        ("CNPJ", EMPRESA["cnpj"]),
-        ("Situacao Cadastral", EMPRESA["situacao"]),
-        ("Data de Abertura", EMPRESA["data_abertura"]),
-        ("Porte Declarado", EMPRESA["porte_declarado"]),
-        ("Natureza Juridica", EMPRESA["natureza_juridica"]),
-        ("Capital Social", f"R$ {EMPRESA['capital_social']:,.2f}"),
-        ("CNAE Principal", EMPRESA["cnae_principal"]),
-        ("CNAE Secundario", EMPRESA["cnae_secundario"]),
-        ("Endereco Sede", EMPRESA["endereco_sede"]),
-        ("Escritorio Administrativo", EMPRESA["endereco_admin"]),
-        ("Email", EMPRESA["email"]),
-        ("Telefones", EMPRESA["telefones"]),
-        ("Ultima Alteracao Contratual", EMPRESA["ultima_alteracao"]),
+        ("Razao Social Atual", _emp()["razao_social"]),
+        ("Razao Social Anterior", _emp()["razao_anterior"]),
+        ("Nome Fantasia", _emp()["nome_fantasia"]),
+        ("CNPJ", _emp()["cnpj"]),
+        ("Situacao Cadastral", _emp()["situacao"]),
+        ("Data de Abertura", _emp()["data_abertura"]),
+        ("Porte Declarado", _emp()["porte_declarado"]),
+        ("Natureza Juridica", _emp()["natureza_juridica"]),
+        ("Capital Social", f"R$ {_emp()['capital_social']:,.2f}"),
+        ("CNAE Principal", _emp()["cnae_principal"]),
+        ("CNAE Secundario", _emp()["cnae_secundario"]),
+        ("Endereco Sede", _emp()["endereco_sede"]),
+        ("Escritorio Administrativo", _emp()["endereco_admin"]),
+        ("Email", _emp()["email"]),
+        ("Telefones", _emp()["telefones"]),
+        ("Ultima Alteracao Contratual", _emp()["ultima_alteracao"]),
     ]
     for k, v in dados_pj:
         ws.cell(row=r, column=1, value=k).font = Font(bold=True)
@@ -1152,11 +1166,11 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     ws.merge_cells(f"A{r}:E{r}")
     r += 1
     socio = [
-        ("Socio Unico (100%)", EMPRESA["socio_nome"]),
-        ("CPF", EMPRESA["socio_cpf"]),
-        ("Participacao", EMPRESA["socio_quotas"]),
-        ("Data de Nascimento", EMPRESA["socio_nascimento"]),
-        ("Endereco Residencial", EMPRESA["socio_endereco"]),
+        ("Socio Unico (100%)", _emp()["socio_nome"]),
+        ("CPF", _emp()["socio_cpf"]),
+        ("Participacao", _emp()["socio_quotas"]),
+        ("Data de Nascimento", _emp()["socio_nascimento"]),
+        ("Endereco Residencial", _emp()["socio_endereco"]),
         ("Funcao", "—"),
     ]
     for k, v in socio:
@@ -1176,7 +1190,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     # Divergências DATA-DRIVEN — calculadas dos dados, não hardcoded.
     _anual = anualizado
     _mult = _anual / 4_800_000
-    _cap = EMPRESA.get("capital_social", 0) or 0
+    _cap = _emp().get("capital_social", 0) or 0
     divergencias = []
     if _mult > 1:
         divergencias.append(("[!] Porte EPP vs Movimentacao",
@@ -1187,8 +1201,8 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     if _mult > 1:
         divergencias.append(("[!] Regime tributario",
                              "Volume anualizado pode exceder o sublimite Simples/EPP — verificar enquadramento"))
-    if EMPRESA.get("razao_anterior", "—") not in ("—", "", None):
-        divergencias.append(("[!] Mudanca de Razao Social", f"Anterior: {EMPRESA['razao_anterior']}"))
+    if _emp().get("razao_anterior", "—") not in ("—", "", None):
+        divergencias.append(("[!] Mudanca de Razao Social", f"Anterior: {_emp()['razao_anterior']}"))
     if not divergencias:
         ws.cell(row=r, column=1, value="Nenhuma divergencia identificada nos testes deterministicos.").font = Font(italic=True, color="2F7D4F")
         ws.merge_cells(f"A{r}:E{r}")
@@ -1544,7 +1558,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     # ════════════════════════════════════════════════════════════════════
     ws = wb.create_sheet("8. Partes Relacionadas")
     start = cabecalho(ws, 5, "Partes Relacionadas")
-    razao = EMPRESA.get("razao_social", "a entidade")
+    razao = _emp().get("razao_social", "a entidade")
     ws.cell(row=start, column=1, value=f"MOVIMENTACAO COM PARTES RELACIONADAS — {razao}").font = TITLE_FONT
     ws.merge_cells(f"A{start}:E{start}")
 
@@ -1802,7 +1816,7 @@ def gerar_laudo_workbook(todos, saldos, cache, nfes=None, ctes=None):
     fiscal = None
     if nfes or ctes:
         aba_documentos_fiscais(wb, nfes or [], ctes or [])
-        _cb = re.sub(r"\D", "", EMPRESA.get("cnpj_basico", "") or "")
+        _cb = re.sub(r"\D", "", _emp().get("cnpj_basico", "") or "")
         nfes_receb = [n for n in (nfes or []) if re.sub(r"\D", "", n.get("emit_cnpj", "")) != _cb]
         conf = _conformidade_lista(nfes_receb, ctes or [], [t for _, t, _ in todos])
         aba_conformidade_fiscal(wb, conf)
@@ -1843,13 +1857,13 @@ def gerar_md(stats):
     saldo_fim = stats["saldo_fim"]
 
     lines = [
-        f"# RELATORIO INTEGRADO DE AUDITORIA — {EMPRESA['razao_social']}",
+        f"# RELATORIO INTEGRADO DE AUDITORIA — {_emp()['razao_social']}",
         "",
         "**ORGATEC · Contabilidade · Auditoria · Compliance**",
         "",
         f"**Gerado em:** {datetime.now().strftime('%d/%m/%Y %H:%M')}",
         f"**Periodo:** {stats['periodo_str']} ({stats['n_meses']} meses, {n:,} transacoes)",
-        f"**CNPJ:** {EMPRESA['cnpj']}",
+        f"**CNPJ:** {_emp()['cnpj']}",
         "",
         "---",
         "",
@@ -1879,22 +1893,22 @@ def gerar_md(stats):
         "|---|---|",
     ]
     dados_pj = [
-        ("Razao Social", EMPRESA["razao_social"]),
-        ("Razao Anterior", EMPRESA["razao_anterior"]),
-        ("Nome Fantasia", EMPRESA["nome_fantasia"]),
-        ("CNPJ", EMPRESA["cnpj"]),
-        ("Situacao", EMPRESA["situacao"]),
-        ("Data Abertura", EMPRESA["data_abertura"]),
-        ("Porte Declarado", EMPRESA["porte_declarado"]),
-        ("Natureza Juridica", EMPRESA["natureza_juridica"]),
-        ("Capital Social", f"R$ {EMPRESA['capital_social']:,.2f}"),
-        ("CNAE Principal", EMPRESA["cnae_principal"]),
-        ("CNAE Secundario", EMPRESA["cnae_secundario"]),
-        ("Endereco Sede", EMPRESA["endereco_sede"]),
-        ("Escritorio Admin", EMPRESA["endereco_admin"]),
-        ("Email", EMPRESA["email"]),
-        ("Telefones", EMPRESA["telefones"]),
-        ("Ultima Alteracao", EMPRESA["ultima_alteracao"]),
+        ("Razao Social", _emp()["razao_social"]),
+        ("Razao Anterior", _emp()["razao_anterior"]),
+        ("Nome Fantasia", _emp()["nome_fantasia"]),
+        ("CNPJ", _emp()["cnpj"]),
+        ("Situacao", _emp()["situacao"]),
+        ("Data Abertura", _emp()["data_abertura"]),
+        ("Porte Declarado", _emp()["porte_declarado"]),
+        ("Natureza Juridica", _emp()["natureza_juridica"]),
+        ("Capital Social", f"R$ {_emp()['capital_social']:,.2f}"),
+        ("CNAE Principal", _emp()["cnae_principal"]),
+        ("CNAE Secundario", _emp()["cnae_secundario"]),
+        ("Endereco Sede", _emp()["endereco_sede"]),
+        ("Escritorio Admin", _emp()["endereco_admin"]),
+        ("Email", _emp()["email"]),
+        ("Telefones", _emp()["telefones"]),
+        ("Ultima Alteracao", _emp()["ultima_alteracao"]),
     ]
     for k, v in dados_pj:
         lines.append(f"| **{k}** | {v} |")
@@ -1905,10 +1919,10 @@ def gerar_md(stats):
         "",
         "| Socio | CPF | Quotas | % |",
         "|---|---|---:|---:|",
-        f"| **{EMPRESA['socio_nome']}** | {EMPRESA['socio_cpf']} | {EMPRESA['socio_quotas']} | — |",
+        f"| **{_emp()['socio_nome']}** | {_emp()['socio_cpf']} | {_emp()['socio_quotas']} | — |",
         "",
-        f"- **Nascimento:** {EMPRESA['socio_nascimento']}",
-        f"- **Endereco:** {EMPRESA['socio_endereco']}",
+        f"- **Nascimento:** {_emp()['socio_nascimento']}",
+        f"- **Endereco:** {_emp()['socio_endereco']}",
         "- **Funcao:** Administrador unico por prazo indeterminado",
         "",
         "## 3. Evolucao Mensal",
@@ -2078,8 +2092,8 @@ def gerar_html(md_text, periodo="", titulo=None, objeto=None, razao=None, cnpj=N
     if "<h2" in body:
         body = body[body.index("<h2"):]
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-    razao = razao or (EMPRESA.get("razao_social", "") or "—")
-    cnpj = cnpj or EMPRESA.get("cnpj", "—")
+    razao = razao or (_emp().get("razao_social", "") or "—")
+    cnpj = cnpj or _emp().get("cnpj", "—")
     titulo = titulo or "Laudo de Auditoria<br>Bancária Forense"
     subtitulo = subtitulo or "Sistema OrgAudi · Auditoria Bancária Forense"
     objeto = objeto or (

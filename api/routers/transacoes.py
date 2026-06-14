@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
 from api.db import metrics as crud_metrics
-from api.services.auth import TokenPayload, current_user
+from api.services.auth import TokenPayload, current_user, escopo_cliente_listagem
 
 router = APIRouter(prefix="/transacoes", tags=["transacoes"], dependencies=[Depends(current_user)])
 
@@ -35,12 +35,13 @@ async def listar_recentes(
 ):
     if not DB_DISPONIVEL:
         raise HTTPException(503, "Banco de dados nao configurado")
-    # Usuários não-privilegiados só enxergam transações do próprio tenant
+    # Escopo de tenant centralizado (nega anonymous em prod; user → próprio cliente)
+    escopo = escopo_cliente_listagem(user)
     tenant_id = None
-    if user.role not in ("admin", "service", "auditor", "anonymous") and user.cliente_id:
+    if escopo:
         import uuid as _uuid
         try:
-            tenant_id = _uuid.UUID(user.cliente_id)
+            tenant_id = _uuid.UUID(escopo)
         except ValueError:
             pass
     async with SessionLocal() as db:
