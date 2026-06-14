@@ -68,6 +68,7 @@ from api.services.laudo_async import (
     sanitize_filename as _sanitize_filename,
 )
 from api.services import calculadora_cbs_ibs
+from api.services.calculadora_client import CalculadoraConfigError, CalculadoraIndisponivel
 from api.schemas_cbs_ibs import OperacaoFiscalInput
 
 router = APIRouter(tags=["fiscal"], prefix="/fiscal")
@@ -282,6 +283,13 @@ async def apurar_cbs_ibs(
         apuracao = await calculadora_cbs_ibs.apurar(operacao)
     except NotImplementedError as e:
         raise HTTPException(501, str(e))
+    except CalculadoraConfigError as e:
+        # Base da Calculadora não configurada → erro de configuração do servidor.
+        raise HTTPException(500, str(e))
+    except CalculadoraIndisponivel as e:
+        # Calculadora oficial fora/instável (HTTP 5xx, timeout, JSON inválido):
+        # 502 Bad Gateway — sem isto a exceção de domínio do W2 virava 500 cru.
+        raise HTTPException(502, str(e))
 
     if DB_DISPONIVEL and SessionLocal is not None:
         try:

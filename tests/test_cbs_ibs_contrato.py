@@ -82,6 +82,28 @@ def test_input_exige_xml_ou_itens():
         )
 
 
+def test_apurar_calculadora_indisponivel_vira_502(monkeypatch):
+    """Follow-up #141+#144: exceção de domínio da Calculadora (HTTP 5xx/timeout/
+    JSON inválido) é mapeada para 502 no /apurar — sem isto virava 500 cru."""
+    from unittest.mock import AsyncMock
+    from api.services import calculadora_cbs_ibs as calc
+    from api.services.calculadora_client import CalculadoraIndisponivel
+    monkeypatch.setattr(calc, "apurar", AsyncMock(side_effect=CalculadoraIndisponivel("upstream 503")))
+    r = client.post("/fiscal/apurar", json=REQ)
+    assert r.status_code == 502, r.text
+
+
+def test_apurar_calculadora_config_error_vira_500(monkeypatch):
+    """CALCULADORA_BASE_URL ausente em modo hospedada → 500 (erro de config do
+    servidor), não 501/traceback."""
+    from unittest.mock import AsyncMock
+    from api.services import calculadora_cbs_ibs as calc
+    from api.services.calculadora_client import CalculadoraConfigError
+    monkeypatch.setattr(calc, "apurar", AsyncMock(side_effect=CalculadoraConfigError("sem base url")))
+    r = client.post("/fiscal/apurar", json=REQ)
+    assert r.status_code == 500, r.text
+
+
 @pytest.mark.asyncio
 async def test_modo_nao_stub_exige_calculadora_url(monkeypatch):
     # Modo hospedada/offline despacha p/ a Calculadora oficial (RTC, sem auth).
