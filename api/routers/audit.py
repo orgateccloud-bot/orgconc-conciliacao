@@ -10,7 +10,7 @@ from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
 from api.db import audit_events as crud_audit
 from api.db.models import AuditEvent
-from api.services.audit import calcular_hash, verificar_cadeia
+from api.services.audit import hash_evento, verificar_cadeia
 from api.services.auth import require_role
 from api.services.logging_estruturado import mask_pii
 
@@ -51,9 +51,9 @@ def _serializar(ev: AuditEvent, *, com_payload: bool = False) -> dict:
     }
     if com_payload:
         out["payload"] = _mascarar_payload(ev.payload)
-        # Verifica integridade do hash do evento isolado
-        recalculado = calcular_hash(ev.payload)
-        out["payload_hash_valid"] = recalculado == ev.payload_hash
+        # Integridade do evento isolado: o hash cobre os metadados + payload +
+        # prev_hash (api/services/audit.calcular_hash_evento), nao so o payload.
+        out["payload_hash_valid"] = hash_evento(ev) == ev.payload_hash
     return out
 
 
@@ -77,9 +77,11 @@ async def listar_timeline(
             resource_type=resource_type,
         )
         total = await crud_audit.contar_eventos(db)
-    # Verifica integridade da janela em ordem cronologica
+    # Verifica integridade da JANELA (paginada) em ordem cronologica. Como nao
+    # comeca necessariamente no genesis, ancora cada org pelo 1o evento da janela
+    # (exigir_genesis=False) — valida os elos internos a janela, nao a cadeia toda.
     em_ordem = list(reversed(eventos))
-    cadeia_ok, motivo = verificar_cadeia(em_ordem)
+    cadeia_ok, motivo = verificar_cadeia(em_ordem, exigir_genesis=False)
     return {
         "total": total,
         "limit": limit,
