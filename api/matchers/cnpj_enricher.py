@@ -43,7 +43,67 @@ def _enrich_concurrency() -> int:
     except Exception:
         return 3
 
+
+def _enrich_breaker_threshold() -> int:
+    """Nº de falhas de REDE consecutivas que abrem o circuit breaker.
+
+    Lido de CNPJ_ENRICH_BREAKER_THRESHOLD (env), default 5. <=0 desliga
+    o breaker (nunca abre — útil só para testes/diagnóstico).
+    """
+    try:
+        import os
+        return int(os.environ.get("CNPJ_ENRICH_BREAKER_THRESHOLD", "5"))
+    except Exception:
+        return 5
+
 log = logging.getLogger("orgconc.cnpj")
+
+
+# Sentinela: distingue "falha de rede" (timeout/erro HTTP) de "não encontrado"
+# (404 → CnpjInfo) ou "sem cliente HTTP" (None). Só falha de rede conta para o
+# circuit breaker.
+_FALHA_REDE = object()
+
+
+class CnpjCircuitBreaker:
+    """Circuit breaker simples para blindar o lote de enriquecimento.
+
+    Conta falhas de REDE consecutivas ao BrasilAPI. Após `threshold` falhas,
+    o circuito ABRE e o resto do lote pula o BrasilAPI inteiro, caindo direto
+    no fallback de cache/RFB local. A conciliação nunca falha por causa do
+    enriquecimento — só perde o dado fresco da rede.
+
+    Não é thread-safe, mas é seguro sob asyncio cooperativo (sem await entre
+    leitura e escrita dos contadores).
+    """
+
+    def __init__(self, threshold: int = 5):
+        self.threshold = threshold
+        self._falhas_consecutivas = 0
+        self._aberto = False
+
+    @property
+    def aberto(self) -> bool:
+        return self._aberto
+
+    def permite(self) -> bool:
+        """True se ainda vale tentar a rede; False se o circuito está aberto."""
+        return not self._aberto
+
+    def registrar_sucesso(self) -> None:
+        self._falhas_consecutivas = 0
+
+    def registrar_falha(self) -> None:
+        if self._aberto:
+            return
+        self._falhas_consecutivas += 1
+        if self.threshold > 0 and self._falhas_consecutivas >= self.threshold:
+            self._aberto = True
+            log.warning(
+                "circuit breaker do enriquecimento CNPJ ABERTO após %d falhas de rede "
+                "consecutivas — resto do lote usará apenas cache/RFB local",
+                self._falhas_consecutivas,
+            )
 
 
 @dataclass
@@ -213,16 +273,27 @@ async def _consulta_rfb_local(db, cnpj: str) -> Optional[CnpjInfo]:
 # ────────────────────────────────────────────────────────────────────────
 
 
-async def _consulta_brasilapi(client: httpx.AsyncClient, cnpj: str) -> Optional[CnpjInfo]:
+async def _consulta_brasilapi(client: httpx.AsyncClient, cnpj: str):
+    """Consulta o BrasilAPI.
+
+    Retorna:
+      - CnpjInfo                 → sucesso (inclui 404 = "não encontrado", que é
+                                   resposta válida da rede, NÃO falha)
+      - _FALHA_REDE (sentinela)  → timeout / erro HTTP / status inesperado / JSON
+                                   inválido — conta para o circuit breaker
+    """
     try:
         r = await client.get(BRASILAPI_URL.format(cnpj=cnpj))
     except (httpx.HTTPError, httpx.TimeoutException):
-        return None
+        return _FALHA_REDE
     if r.status_code == 404:
         return CnpjInfo(cnpj=cnpj, fonte="brasilapi", flag="CNPJ nao encontrado")
     if r.status_code != 200:
-        return None
-    data = r.json()
+        return _FALHA_REDE
+    try:
+        data = r.json()
+    except (ValueError, json.JSONDecodeError):
+        return _FALHA_REDE
 
     sit_desc = (data.get("descricao_situacao_cadastral") or "").upper()
     porte = (data.get("porte") or "").upper()
@@ -410,8 +481,15 @@ async def enriquecer_um(
     client: Optional[httpx.AsyncClient] = None,
     db=None,
     semaforo: Optional[asyncio.Semaphore] = None,
+    breaker: Optional[CnpjCircuitBreaker] = None,
 ) -> CnpjInfo:
-    """Enriquece UM CNPJ usando cascata: cache → RFB local → BrasilAPI."""
+    """Enriquece UM CNPJ usando cascata: cache → BrasilAPI → RFB local.
+
+    `breaker` (opcional): circuit breaker compartilhado pelo lote. Quando aberto,
+    o BrasilAPI é pulado e a função cai direto no fallback de RFB local — a
+    conciliação NUNCA falha por causa do enriquecimento, no pior caso o CNPJ
+    fica sem dado fresco da rede.
+    """
     cnpj = normaliza_cnpj(cnpj)
     if len(cnpj) != 14:
         return CnpjInfo(cnpj=cnpj, fonte="erro", flag="CNPJ invalido")
@@ -422,22 +500,36 @@ async def enriquecer_um(
         info.fonte = "cache"
         return info
 
-    # 2. BrasilAPI (preferida — dados mais frescos)
-    if client is not None:
+    # 2. BrasilAPI (preferida — dados mais frescos), só se o circuito estiver fechado
+    if client is not None and (breaker is None or breaker.permite()):
         for tentativa in range(3):
+            # Reavalia o breaker a cada tentativa: outro job do lote pode tê-lo
+            # aberto no meio do backoff — aí paramos de insistir.
+            if breaker is not None and not breaker.permite():
+                break
             if semaforo is not None:
                 async with semaforo:
                     await asyncio.sleep(0.55)  # ~1.8 req/s — abaixo do limite BrasilAPI
-                    info = await _consulta_brasilapi(client, cnpj)
+                    resultado = await _consulta_brasilapi(client, cnpj)
             else:
-                info = await _consulta_brasilapi(client, cnpj)
-            if info:
-                cache[cnpj] = asdict(info)
-                return info
-            # Backoff exponencial entre tentativas
-            await asyncio.sleep(2 ** tentativa)
+                resultado = await _consulta_brasilapi(client, cnpj)
+            if resultado is _FALHA_REDE:
+                if breaker is not None:
+                    breaker.registrar_falha()
+                # Backoff exponencial — só se ainda HÁ próxima tentativa (não na
+                # última iteração) e o circuito segue fechado. Evita queimar
+                # ~4s de sleep no request path antes de cair no fallback RFB.
+                ultima = tentativa == 2
+                if not ultima and (breaker is None or breaker.permite()):
+                    await asyncio.sleep(2 ** tentativa)
+                continue
+            # Resposta válida da rede (inclui 404) — circuito saudável
+            if breaker is not None:
+                breaker.registrar_sucesso()
+            cache[cnpj] = asdict(resultado)
+            return resultado
 
-    # 3. Fallback: base RFB local (quando BrasilAPI falhou/sem rede)
+    # 3. Fallback: base RFB local (quando BrasilAPI falhou/circuito aberto/sem rede)
     if db is not None:
         info = await _consulta_rfb_local(db, cnpj)
         if info:
@@ -461,11 +553,12 @@ async def enriquecer_lote(
     concurrency = max_concurrency or _enrich_concurrency()
     cache = _carregar_cache()
     semaforo = asyncio.Semaphore(concurrency)
+    breaker = CnpjCircuitBreaker(threshold=_enrich_breaker_threshold())
     resultados: dict[str, CnpjInfo] = {}
 
     async with httpx.AsyncClient(timeout=_enrich_timeout(), headers={"User-Agent": "OrgConc/0.5"}) as client:
         async def _job(c: str):
-            info = await enriquecer_um(c, cache, client, db, semaforo)
+            info = await enriquecer_um(c, cache, client, db, semaforo, breaker)
             resultados[normaliza_cnpj(c)] = info
             if progress_cb:
                 progress_cb(len(resultados), len(cnpjs))
@@ -473,4 +566,11 @@ async def enriquecer_lote(
         await asyncio.gather(*[_job(c) for c in cnpjs])
 
     _salvar_cache(cache)
+
+    nao_enriquecidos = sum(1 for i in resultados.values() if i.fonte in ("erro", ""))
+    if nao_enriquecidos or breaker.aberto:
+        log.info(
+            "enriquecimento CNPJ em lote: %d/%d sem enriquecer | circuit_breaker_aberto=%s",
+            nao_enriquecidos, len(resultados), breaker.aberto,
+        )
     return resultados

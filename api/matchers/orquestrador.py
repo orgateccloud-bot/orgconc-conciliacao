@@ -25,7 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.matchers import contrapartes, contrato as m_contrato, documento, guia as m_guia, nfe as m_nfe
 from api.matchers.cascata import Disposicao, Resultado
-from api.matchers.cnpj_enricher import _carregar_cache, _salvar_cache, enriquecer_um
+from api.matchers.cnpj_enricher import (
+    CnpjCircuitBreaker,
+    _carregar_cache,
+    _enrich_breaker_threshold,
+    _enrich_timeout,
+    _salvar_cache,
+    enriquecer_um,
+)
 
 log = logging.getLogger("orgconc.matchers.orquestrador")
 
@@ -208,11 +215,16 @@ async def _enriquecer_disposicoes(disposicoes: list[Disposicao], db: AsyncSessio
 
     import asyncio
     semaforo = asyncio.Semaphore(2)  # ~2 req/s sustentado no BrasilAPI
+    # Circuit breaker compartilhado pelo lote: se o BrasilAPI cair/estourar
+    # timeout repetidamente, o resto do lote pula a rede e usa só cache/RFB
+    # local. O enriquecimento roda inline no request path da conciliação —
+    # NÃO pode travar/derrubar o request (timeout do Railway/proxy).
+    breaker = CnpjCircuitBreaker(threshold=_enrich_breaker_threshold())
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0),
+    async with httpx.AsyncClient(timeout=_enrich_timeout(),
                                   headers={"User-Agent": "OrgConc/0.5"}) as client:
         async def _job(c: str):
-            info = await enriquecer_um(c, cache, client, db, semaforo)
+            info = await enriquecer_um(c, cache, client, db, semaforo, breaker)
             return c, info
 
         try:
@@ -229,6 +241,18 @@ async def _enriquecer_disposicoes(disposicoes: list[Disposicao], db: AsyncSessio
             info_map[c] = info
 
     _salvar_cache(cache)
+
+    # Log estruturado: quantos CNPJs do lote ficaram sem enriquecer.
+    nao_enriquecidos = sum(
+        1 for c in unicos
+        if not getattr(info_map.get(c), "razao_social", "")
+    )
+    if nao_enriquecidos or breaker.aberto:
+        log.info(
+            "enriquecimento inline da conciliacao: %d/%d CNPJs sem enriquecer | "
+            "circuit_breaker_aberto=%s",
+            nao_enriquecidos, len(unicos), breaker.aberto,
+        )
 
     # Aplica nos disposicoes
     for i, cnpj in cnpjs_por_disp.items():
