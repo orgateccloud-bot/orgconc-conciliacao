@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import re
 import uuid
 import zipfile
 from typing import List, Optional
@@ -72,6 +73,23 @@ from api.schemas_cbs_ibs import OperacaoFiscalInput
 
 router = APIRouter(tags=["fiscal"], prefix="/fiscal")
 log = logging.getLogger("orgconc.fiscal")
+
+# #37: teto de jobs de laudo simultaneos por org (PENDENTE/EXECUTANDO).
+# Evita enfileiramento em massa (DoS na fila) — laudo e tarefa cara (WeasyPrint).
+MAX_JOBS_LAUDO_POR_ORG = 5
+
+
+def _normalizar_empresa_cnpj(empresa_cnpj: str) -> str:
+    """#29: valida o CNPJ da entidade auditada antes de virar metadado do laudo.
+
+    Tira a mascara (pontos/barra/hifen) e exige exatamente 14 digitos. Bloqueia
+    injecao de HTML/conteudo no laudo (so [0-9]{14} sobrevive). Entrada invalida
+    -> HTTP 400. Retorna os 14 digitos normalizados.
+    """
+    digitos = re.sub(r"\D", "", empresa_cnpj or "")
+    if len(digitos) != 14:
+        raise HTTPException(400, "empresa_cnpj deve conter 14 dígitos (CNPJ).")
+    return digitos
 
 
 def _separar_arquivos_fiscal(arquivos: list[tuple[str, bytes]]) -> tuple[Optional[bytes], list[tuple[str, bytes]]]:
@@ -340,6 +358,7 @@ async def gerar_laudo(
     Usa o cache de CNPJ existente (sem rede em-request). Núcleo compartilhado
     com o caminho assíncrono: api/services/laudo_async.gerar_laudo_documento.
     """
+    empresa_cnpj = _normalizar_empresa_cnpj(empresa_cnpj)
     uploads = await _coletar_uploads_laudo(arquivos)
     try:
         saida, fname, mime = await gerar_laudo_documento(
@@ -391,6 +410,7 @@ async def gerar_laudo_async(
         raise HTTPException(503, "Fila de jobs requer banco de dados configurado.")
     if not user.org_id:
         raise HTTPException(403, "Job assíncrono requer organização no token.")
+    empresa_cnpj = _normalizar_empresa_cnpj(empresa_cnpj)
     formato = (formato or "xlsx").lower()
     if formato not in FORMATOS_LAUDO:
         raise HTTPException(400, f"formato invalido: use {sorted(FORMATOS_LAUDO)}")
@@ -398,16 +418,36 @@ async def gerar_laudo_async(
     if not any((n or "").lower().endswith(".ofx") for n, _ in uploads):
         raise HTTPException(400, "Nenhum arquivo OFX válido fornecido.")
 
+    from sqlalchemy import func, select
     from api.db.models import Job
-    from api.services.job_queue import TIPO_LAUDO, empacotar_uploads
+    from api.services.job_queue import (
+        STATUS_EXECUTANDO,
+        STATUS_PENDENTE,
+        TIPO_LAUDO,
+        empacotar_uploads,
+    )
 
+    org_uuid = uuid.UUID(user.org_id)
     job = Job(
-        org_id=uuid.UUID(user.org_id),
+        org_id=org_uuid,
         tipo=TIPO_LAUDO,
         params={"empresa_cnpj": empresa_cnpj, "conta": conta, "formato": formato},
         arquivos=empacotar_uploads(uploads),
     )
     async with SessionLocal() as db:
+        # #37: hard-limit de jobs em aberto por org (anti-DoS na fila).
+        # RLS (org_isolation) ja escopa a tabela jobs a org do token.
+        em_aberto = (await db.execute(
+            select(func.count(Job.id)).where(
+                Job.status.in_((STATUS_PENDENTE, STATUS_EXECUTANDO))
+            )
+        )).scalar() or 0
+        if em_aberto >= MAX_JOBS_LAUDO_POR_ORG:
+            raise HTTPException(
+                429,
+                f"Limite de {MAX_JOBS_LAUDO_POR_ORG} jobs em aberto por organização "
+                "atingido. Aguarde a conclusão dos jobs pendentes.",
+            )
         db.add(job)
         await db.commit()
         job_id = str(job.id)
@@ -439,6 +479,7 @@ async def laudo_resumo(
     em background (enrich_all) — a próxima análise vem com pós-baixa fiel. O campo
     `enriquecimento_pendente` informa quantos faltam para a UI sugerir re-análise.
     """
+    empresa_cnpj = _normalizar_empresa_cnpj(empresa_cnpj)
     dedup = await _ler_dedup_ofx(arquivos, conta)
 
     def _analisar():

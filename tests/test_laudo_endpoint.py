@@ -96,3 +96,36 @@ def test_laudo_html():
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("text/html")
     assert "<!DOCTYPE html>" in r.text and "capa" in r.text
+
+
+# ── #29: validação de empresa_cnpj (anti-injeção em metadados do laudo) ──────
+
+def test_laudo_cnpj_curto_400():
+    """CNPJ com menos de 14 dígitos -> 400 antes de processar."""
+    files = [("arquivos", ("e.ofx", _OFX, "application/octet-stream"))]
+    r = client.post("/fiscal/laudo?formato=xlsx", files=files, data={"empresa_cnpj": "123"})
+    assert r.status_code == 400
+    assert "14" in r.json()["detail"]
+
+
+def test_laudo_cnpj_com_html_400():
+    """Tentativa de injeção HTML no metadado -> 400 (só 14 dígitos sobrevivem)."""
+    files = [("arquivos", ("e.ofx", _OFX, "application/octet-stream"))]
+    r = client.post(
+        "/fiscal/laudo?formato=xlsx",
+        files=files,
+        data={"empresa_cnpj": "<script>alert(1)</script>"},
+    )
+    assert r.status_code == 400
+
+
+def test_laudo_cnpj_mascarado_aceito():
+    """CNPJ com máscara (pontos/barra/hífen) é normalizado para 14 dígitos."""
+    files = [("arquivos", ("e.ofx", _OFX, "application/octet-stream"))]
+    r = client.post(
+        "/fiscal/laudo?formato=xlsx",
+        files=files,
+        data={"empresa_cnpj": "12.345.678/0001-90"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.content[:2] == b"PK"
