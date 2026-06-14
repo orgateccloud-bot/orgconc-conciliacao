@@ -264,6 +264,57 @@ async def test_consultar_encontrado_retorna_contraparte():
 
 
 # ────────────────────────────────────────────────────────────────────────
+# consultar_por_documento — filtro de tenant (org_id) — W4 #15
+# ────────────────────────────────────────────────────────────────────────
+
+
+def _filtra_org_na_where(db) -> bool:
+    """True se a cláusula WHERE da última query restringe por clientes.org_id."""
+    stmt = db.execute.await_args.args[0]
+    where_sql = str(stmt.whereclause.compile(compile_kwargs={"literal_binds": False}))
+    return "clientes.org_id" in where_sql
+
+
+@pytest.mark.asyncio
+async def test_consultar_filtra_por_org_id_explicito():
+    """Com org_id explícito, a query inclui o filtro Cliente.org_id na WHERE."""
+    org = uuid.uuid4()
+    cli = _cliente(nome="Contraparte do Tenant")
+    db = _mock_db(cli)
+    out = await consultar_por_documento(db, CLIENTE_ID, CNPJ_DIGITOS, org_id=org)
+    assert out is not None and out.nome_real == "Contraparte do Tenant"
+    assert _filtra_org_na_where(db)
+
+
+@pytest.mark.asyncio
+async def test_consultar_sem_org_consulta_global():
+    """Sem org no parâmetro nem no contexto, a WHERE NÃO filtra por org_id
+    (comportamento legado preservado — RLS continua sendo a defesa no banco)."""
+    cli = _cliente(nome="Global")
+    db = _mock_db(cli)
+    out = await consultar_por_documento(db, CLIENTE_ID, CNPJ_DIGITOS)
+    assert out is not None
+    assert not _filtra_org_na_where(db)
+
+
+@pytest.mark.asyncio
+async def test_consultar_usa_org_do_contexto_rls():
+    """Sem org_id explícito, usa o org do contexto de RLS (get_org_context)."""
+    from api.db.rls_context import reset_org_context, set_org_context
+
+    org = uuid.uuid4()
+    token = set_org_context(str(org))
+    try:
+        cli = _cliente(nome="Do Contexto")
+        db = _mock_db(cli)
+        out = await consultar_por_documento(db, CLIENTE_ID, CNPJ_DIGITOS)
+        assert out is not None
+        assert _filtra_org_na_where(db)
+    finally:
+        reset_org_context(token)
+
+
+# ────────────────────────────────────────────────────────────────────────
 # Sanidade dos dataclasses
 # ────────────────────────────────────────────────────────────────────────
 
