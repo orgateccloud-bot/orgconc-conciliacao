@@ -23,6 +23,6 @@ async def insights_dashboard(
         raise HTTPException(503, "Banco de dados nao configurado")
     async with SessionLocal() as db:
         result = await get_insights(
-            db, actor_sub=user.sub, periodo_dias=periodo, refresh=refresh
+            db, actor_sub=user.sub, org_id=user.org_id, periodo_dias=periodo, refresh=refresh
         )
     return result

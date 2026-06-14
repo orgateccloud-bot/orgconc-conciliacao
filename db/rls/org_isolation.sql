@@ -43,7 +43,13 @@ DECLARE
     'guia_tributo', 'contrato', 'carta_versao', 'transacao_disposicao',
     -- Fila de jobs assíncronos (migration 023) — tem AINDA a policy adicional
     -- worker_access (criada na migration/abaixo), p/ o loop do worker.
-    'jobs'
+    'jobs',
+    -- Trilha de auditoria (migration 024 add org_id). A cadeia de hash é por org.
+    -- ⚠️ Eventos de SISTEMA (org_id NULL — login pré-contexto, alertas internos)
+    -- ficam fora desta policy (NULL = NULL ≡ falso no Postgres): sob app_orgconc
+    -- só seriam graváveis com uma policy adicional para org_id IS NULL. Hoje a
+    -- conexão é `postgres` (BYPASSRLS), então isto é inerte; reavaliar no cutover.
+    'audit_events'
   ];
 BEGIN
   FOREACH t IN ARRAY tabelas LOOP

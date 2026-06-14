@@ -9,7 +9,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-from sqlalchemy import String, Boolean, Integer, Date, LargeBinary, Numeric, ForeignKey, Text, Index, UniqueConstraint, text
+from sqlalchemy import String, Boolean, Integer, Date, LargeBinary, Numeric, ForeignKey, Text, Index, UniqueConstraint, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP as _TS, JSONB
 
 TIMESTAMPTZ = _TS(timezone=True)
@@ -37,12 +37,16 @@ class Cliente(Base):
     __tablename__ = "clientes"
     __table_args__ = (
         Index("idx_clientes_org", "org_id"),
+        # CNPJ unico POR ORG (#8): o mesmo CNPJ pode existir em orgs distintas
+        # (firma A e firma B atendem o mesmo cliente). Linhas legadas com
+        # org_id NULL ficam fora da unicidade — NULLs sao distintos no Postgres.
+        UniqueConstraint("org_id", "cnpj", name="uq_clientes_org_cnpj"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     org_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     nome: Mapped[str] = mapped_column(Text, nullable=False)
-    cnpj: Mapped[str | None] = mapped_column(String(18), unique=True)
+    cnpj: Mapped[str | None] = mapped_column(String(18))
     email: Mapped[str | None] = mapped_column(Text)
     telefone: Mapped[str | None] = mapped_column(Text)
     plano: Mapped[str] = mapped_column(String(20), default="basico")
@@ -59,12 +63,17 @@ class Conciliacao(Base):
         Index("idx_conciliacoes_cliente", "cliente_id"),
         Index("idx_conciliacoes_criado_em", "criado_em"),
         Index("idx_conciliacoes_org", "org_id"),
+        # report_id unico POR ORG (#31): substitui a unicidade global. O id e um
+        # hex aleatorio de 12 chars (colisao cross-org improvavel), mas a chave
+        # multi-tenant correta e (org_id, report_id). Legado org_id NULL: NULLs
+        # distintos no Postgres ficam fora da unicidade.
+        UniqueConstraint("org_id", "report_id", name="uq_conciliacoes_org_report"),
     )
 
     id:                   Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     org_id:               Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     cliente_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id", ondelete="SET NULL"))
-    report_id:            Mapped[str]          = mapped_column(Text, unique=True, nullable=False)
+    report_id:            Mapped[str]          = mapped_column(Text, nullable=False)
     modo:                 Mapped[str]          = mapped_column(String(20), nullable=False)
     total_transacoes:     Mapped[int]          = mapped_column(Integer, default=0)
     total_anomalias:      Mapped[int]          = mapped_column(Integer, default=0)
@@ -115,10 +124,15 @@ class AuditEvent(Base):
         Index("ix_audit_events_ts", text("ts DESC")),
         Index("ix_audit_events_actor_ts", "actor_email", text("ts DESC")),
         Index("ix_audit_events_resource", "resource_type", "resource_id"),
+        # Cadeia de hash e POR ORG (#3): o ultimo-hash e buscado filtrando por
+        # org_id sob FOR UPDATE; o indice (org_id, ts DESC) serve essa busca.
+        Index("ix_audit_events_org_ts", "org_id", text("ts DESC")),
     )
 
     id:            Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     ts:            Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
+    # org_id nullable p/ backfill e p/ a cadeia do sistema (eventos sem actor).
+    org_id:        Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     actor_email:   Mapped[str | None] = mapped_column(Text)
     actor_sub:     Mapped[str | None] = mapped_column(Text)
     action:        Mapped[str]       = mapped_column(Text, nullable=False)
@@ -133,11 +147,14 @@ class AuditEvent(Base):
 class AiInsightsCache(Base):
     __tablename__ = "ai_insights_cache"
     __table_args__ = (
-        Index("ix_ai_insights_cache_actor_periodo", "actor_sub", "periodo_dias",
-              text("expira_em DESC")),
+        # Chave de cache passa a incluir org_id (#30): o cache e por (org, actor,
+        # periodo), nao so por actor. Indice cobre a busca do cache valido.
+        Index("ix_ai_insights_cache_org_actor_periodo", "org_id", "actor_sub",
+              "periodo_dias", text("expira_em DESC")),
     )
 
     id:           Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    org_id:       Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=True)
     actor_sub:    Mapped[str]       = mapped_column(Text, nullable=False)
     periodo_dias: Mapped[int]       = mapped_column(Integer, nullable=False)
     gerado_em:    Mapped[datetime]  = mapped_column(TIMESTAMPTZ, default=_now, nullable=False)
@@ -250,6 +267,20 @@ class TransacaoDisposicao(Base):
     __table_args__ = (
         Index("ix_transacao_disposicao_conciliacao", "conciliacao_id"),
         Index("ix_transacao_disposicao_org", "org_id"),
+        # CHECK de dominio (#12): disposicao e o vocabulario do orquestrador
+        # (api/matchers/orquestrador.py + status pass-through dos matchers
+        # documento/contrato). Texto livre permitia gravar lixo. Manter em
+        # sincronia com DISPOSICOES_VALIDAS abaixo se novos estagios surgirem.
+        CheckConstraint(
+            "disposicao IN ("
+            "'TRANSFERENCIA_INTERNA','RESOLVIDO_CADASTRO','RESOLVIDO_BASE',"
+            "'RESOLVIDO_NFE','RESOLVIDO_GUIA','RESOLVIDO_CONTRATO',"
+            "'TARIFA_BANCARIA','PENDENTE_MATCHER','PENDENTE_REVISAO',"
+            "'PENDENTE_FUZZY','NAO_ENCONTRADO','DOC_INVALIDO',"
+            "'CONTRATO_NAO_ENCONTRADO','CONTRATO_AMBIGUO'"
+            ")",
+            name="ck_transacao_disposicao_disposicao",
+        ),
     )
 
     id:             Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -322,6 +353,12 @@ class CruzamentoFiscal(Base):
     __table_args__ = (
         Index("ix_cruzfiscal_cliente_status", "cliente_id", "status"),
         Index("ix_cruzamento_fiscal_org", "org_id"),
+        # CHECK de dominio (#12): status do cruzamento doc x pagamento — escrito
+        # em api/matchers/cruzamento_fiscal.py. Texto livre virou enum fechado.
+        CheckConstraint(
+            "status IN ('CASADO','VALOR_DIVERGENTE','SEM_PAGAMENTO','SEM_NF')",
+            name="ck_cruzamento_fiscal_status",
+        ),
     )
 
     id:               Mapped[uuid.UUID]   = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -505,6 +542,12 @@ class Job(Base):
     __table_args__ = (
         Index("ix_jobs_status_criado", "status", "criado_em"),
         Index("ix_jobs_org", "org_id"),
+        # CHECK de dominio (#12): ciclo de vida do job — constantes em
+        # api/services/job_queue.py (PENDENTE/EXECUTANDO/CONCLUIDO/ERRO).
+        CheckConstraint(
+            "status IN ('PENDENTE','EXECUTANDO','CONCLUIDO','ERRO')",
+            name="ck_jobs_status",
+        ),
     )
 
     id:             Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)

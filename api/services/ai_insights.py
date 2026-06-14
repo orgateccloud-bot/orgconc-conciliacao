@@ -33,12 +33,17 @@ async def get_insights(
     db: AsyncSession,
     *,
     actor_sub: str,
+    org_id: Optional[str] = None,
     periodo_dias: int = 30,
     refresh: bool = False,
 ) -> dict[str, Any]:
-    """Retorna {insights, from_cache, gerado_em, expira_em}."""
+    """Retorna {insights, from_cache, gerado_em, expira_em}.
+
+    A chave de cache inclui `org_id` (#30): firmas distintas nao compartilham
+    insights mesmo que o actor_sub colida. `org_id` None = escopo do sistema.
+    """
     if not refresh:
-        cached = await _buscar_cache_valido(db, actor_sub, periodo_dias)
+        cached = await _buscar_cache_valido(db, actor_sub, org_id, periodo_dias)
         if cached:
             return {
                 "insights": cached.payload.get("insights", []),
@@ -50,6 +55,7 @@ async def get_insights(
     insights = await _gerar(db, periodo_dias=periodo_dias)
     agora = datetime.now(timezone.utc)
     entry = AiInsightsCache(
+        org_id=org_id,
         actor_sub=actor_sub,
         periodo_dias=periodo_dias,
         gerado_em=agora,
@@ -67,7 +73,7 @@ async def get_insights(
 
 
 async def _buscar_cache_valido(
-    db: AsyncSession, actor_sub: str, periodo_dias: int
+    db: AsyncSession, actor_sub: str, org_id: Optional[str], periodo_dias: int
 ) -> Optional[AiInsightsCache]:
     agora = datetime.now(timezone.utc)
     q = (
@@ -80,6 +86,10 @@ async def _buscar_cache_valido(
         .order_by(AiInsightsCache.gerado_em.desc())
         .limit(1)
     )
+    if org_id is None:
+        q = q.where(AiInsightsCache.org_id.is_(None))
+    else:
+        q = q.where(AiInsightsCache.org_id == org_id)
     return (await db.execute(q)).scalar_one_or_none()
 
 
