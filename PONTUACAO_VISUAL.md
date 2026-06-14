@@ -1,263 +1,102 @@
 # OrgConc — Dashboard de Pontuação & Prioridades
 
-**Atualizado:** 2026-05-28
+**Atualizado:** 2026-06-12 · régua recalibrada (8 = sólido c/ defeitos menores · 7 = bom c/ dívidas reais · 9+ = exemplar, raro)
+**Método:** repontuação por avaliadores independentes com rubrica única, evidência file:line, falsos-positivos descartados (2026-06-11/12)
+**Snapshot anterior:** [docs/historico/PONTUACAO_VISUAL_2026-05-28.md](docs/historico/PONTUACAO_VISUAL_2026-05-28.md) (baseline 6.4) · complementa [docs/ESTADO_PROJETO_2026-06-11.md](docs/ESTADO_PROJETO_2026-06-11.md)
 
 ---
 
 ## 📊 SCORECARD GERAL
 
 ```
-BACKEND ARCHITECTURE          7.5/10  ████████░░░░░░░░░░░  (Excelente)
-FRONTEND ARCHITECTURE         5.5/10  ██████░░░░░░░░░░░░░░  (Regular)
-TESTING & COVERAGE            6.0/10  ██████░░░░░░░░░░░░░░  (Inadequado)
-DEVOPS & DEPLOYMENT           5.5/10  ██████░░░░░░░░░░░░░░  (Gaps críticos)
-DOCUMENTATION                 5.0/10  █████░░░░░░░░░░░░░░░  (Gaps significativos)
-SECURITY                      7.0/10  ███████░░░░░░░░░░░░░  (Bom)
-PERFORMANCE                   7.0/10  ███████░░░░░░░░░░░░░  (Bom)
-MAINTAINABILITY               7.0/10  ███████░░░░░░░░░░░░░  (Bom)
+BACKEND ARCHITECTURE          7.2/10  ███████░░░  (Sólido; fat files no services/)
+FRONTEND ARCHITECTURE         7.5/10  ████████░░  (→ 8.0 c/ #136: exports auth + 6 componentes a 100% + E2E 9 specs)
+TESTING & COVERAGE            8.0/10  ████████░░  (770 backend gate 80 · 352 front ~88% gate 84/86)
+DEVOPS & DEPLOYMENT           6.5/10  ███████░░░  (→ ~7.2 após merge dos PRs #132–#135)
+DOCUMENTATION                 7.5/10  ████████░░  (sincronizada com o código em 06-11/12)
+SECURITY                      8.5/10  █████████░  (RLS ativo + 2 rodadas de hardening + reuse-detection)
+OBSERVABILITY                 8.0/10  ████████░░  (Sentry+PII · Prometheus c/ token · sonda 30min)
+MAINTAINABILITY               7.0/10  ███████░░░  (laudo_forense 2.1k LOC; domínio semi-órfão)
 ════════════════════════════════════════════════════════════
-🎯 OVERALL SCORE              6.4/10  ██████░░░░░░░░░░░░░░░  (MVP-Ready)
+🎯 OVERALL SCORE              7.5/10  ████████░░  (Production-ready multi-tenant)
+```
+
+> ⚠️ **Régua recalibrada** — não compare valor absoluto com snapshots antigos:
+> 6.4 (05-28) → 7.6 (06-02) → 7.8 (06-09, régua antiga) → **7.5 (06-12, régua dura)**.
+> Na régua antiga o estado atual estaria ≈ 8.0+. A tendência real é de melhora contínua.
+
+---
+
+## 🔍 BACKEND POR MÓDULO (repontuado 2026-06-11)
+
+```
+core/                  [████████░░] 7.5  Hardening forte; middlewares de segurança agora testados
+db/                    [████████░░] 7.5  RLS fail-closed ativo; CRUDs sem filtro org_id próprio (P1)
+matchers/              [████████░░] 7.5  Cascata+forense maduras; consulta global de tenant (P1)
+parsers/               [████████░░] 7.5  anomalies/xml ótimos; PDF 0% testes, classifier raso
+routers/               [███████░░░] 7.0  Autorização centralizada; fiscal.py segue fat (802 LOC)
+services/              [███████░░░] 6.5  laudo_forense 2.1k LOC funde coleta+cálculo+render
+schemas/ + main.py     [████████░░] 7.5  CNPJ c/ DV, anti-timing; cobertura de schemas ~7%
+domain/infra/usecases  [███████░░░] 6.5  Menos órfã que dito; duplicação db/ × infra/ p/ clientes
+```
+
+## 🚀 DEVOPS POR EIXO (repontuado 2026-06-11 · projeção pós-merge #132–#135)
+
+```
+                        hoje   pós-merge
+CI/CD Tests             6.5 →  7.5   #134: semgrep/Trivy BLOQUEANTES + trivy-action por SHA
+CI/CD Deploy            6.0 →  6.0   Railway nativo + preDeploy; falta smoke on-deploy/rollback doc → #135 cobre rollback
+Observability           8.0 →  8.0   Eixo mais forte; 22 testes diretos dos middlewares (06-11)
+Deployment Docs         7.0 →  7.5   DEPLOY/STAGING/RUNBOOK reais; fluxo fantasma removido (06-12)
+Railway Config          7.0 →  8.0   #133: container non-root (uid 10001, código read-only)
+Staging Env             5.5 →  5.5   Existe e valida migrations; sem paridade RLS/Supabase branch
+Disaster Recovery       5.5 →  7.0   #132: restore REAPLICA RLS; render.yaml/Procfile removidos
+                                     #135: sonda do incidente 06-10 + rotação app_orgconc no RUNBOOK
+─────────────────────────────────────
+média                   6.5 →  7.2   (era 3.0 em 05-28)
+```
+
+## 🧪 TESTES (2026-06-12)
+
+```
+Backend (pytest)   ████████░░  770 testes · gate 80% bloqueante · +22 hardening +RLS real no CI
+Frontend (vitest)  █████████░  393 testes (#136) · ~90% lines · gate 84/76/83/86 · tsc strict limpo
+E2E (Playwright)   ███████░░░  9 specs · 28 testes (upload→resultado, forense, fiscal/laudo — #114/#136); 28/28 c/ backend real
+RLS (CI)           ████████░░  Postgres real + role NOBYPASSRLS, fail-closed provado
 ```
 
 ---
 
-## 🔍 DETALHES POR MÓDULO
+## 🚨 PRIORIDADES ABERTAS
 
-### Backend (Python)
+| # | Item | Sev. | Origem |
+|---|------|------|--------|
+| 1 | Hash chain de auditoria: metadados fora do hash + sem lock de concorrência | 🟠 P1 | ESTADO_PROJETO §5.1 |
+| 2 | `org_id` explícito nas agregações de `db/metrics.py` (defesa em profundidade; hoje só RLS) | 🟠 P1 | ESTADO_PROJETO §5.2 |
+| 3 | Filtro de tenant nos matchers (`documento.py`, `contrapartes.py`) | 🟠 P1 | ESTADO_PROJETO §5.3 |
+| 4 | Rate-limiter e custo-LLM in-memory (degradam multi-instância) | 🟡 P1 | memória multi-instância |
+| 5 | `pdf.py` sem testes + sem limites estruturais; `fitid` morto | 🟡 P1 | repontuação parsers |
+| 6 | Duplicação `db/clientes.py` × `infra/repositories/clientes.py` | 🟡 P2 | repontuação domain |
+| 7 | Staging: paridade RLS (Supabase branch) + deploy automático | 🟡 P2 | repontuação DevOps |
+| 8 | ~~Exports via `apiFetchBlob`~~ ✅ ([#136](https://github.com/orgateccloud-bot/orgconc-conciliacao/pull/136)) — botões autenticados; fecha tb. o vetor XSS do HTML em `_blank` | 🟢 | ESTADO_PROJETO §5.6 |
 
-```
-core/          [████████░] 8/10  Infraestrutura sólida
-db/            [████████░] 8/10  ORM bem estruturado
-matchers/      [████████░] 8/10  Lógica fiscal robusta
-parsers/       [████████░] 8/10  Parsing bem testado
-routers/       [███████░░] 7/10  Acoplamento moderado
-services/      [██████░░░] 6/10  Coesão baixa, refatorar
-schemas/       [████████░] 8/10  Validação clara
-main.py        [████████░] 8/10  Inicialização OK
-```
+## ✅ FECHADO DESDE O SNAPSHOT DE 05-28
 
-### Frontend (React)
-
-```
-Pages          [███░░░░░░] 3/10  SEM TESTES ❌
-Components     [████░░░░░] 4/10  Minimamente testados
-Dashboard      [████░░░░░] 4/10  Sem testes unitários
-Core/Layout    [███████░░] 7/10  Testado (ErrorBoundary)
-Hooks/Lib      [███████░░] 7/10  API bem testada
-E2E            [██████░░░] 6/10  Fluxos críticos cobertos
-```
-
-### Testes (Cobertura Real)
-
-```
-Backend Unit       [████████░] 75-85%  ✅ Excelente
-Frontend Unit      [██░░░░░░░]  2-5%   ❌ Crítico
-Frontend E2E       [██████░░░] 40-50%  ⚠️  Parcial
-Backend Coverage   [████████░]   85%   ✅ Ótima
-Frontend Coverage  [██░░░░░░░]   2%    ❌ Inadequada
-Overall Coverage   [██████░░░]  50%    🟡 Desigual
-```
-
-### DevOps
-
-```
-CI/CD Tests        [███████░░] 7/10   ✅ Funcional
-CI/CD Deploy       [███░░░░░░] 3/10   ❌ Incompleto
-Observability      [███████░░] 7/10   ✅ Sentry + Logging
-Deployment Docs    [░░░░░░░░░] 0/10   ❌ Não existe
-Railway Config     [████░░░░░] 4/10   ⚠️  Pronto mas não automatizado
-Staging Env        [░░░░░░░░░] 0/10   ❌ Não existe
-Disaster Recovery  [░░░░░░░░░] 0/10   ❌ Nenhum runbook
-```
+GitHub Pages → Railway same-origin · deploy automatizado c/ preDeploy Alembic · 17/17 páginas
+testadas (era 0/14) · staging criado · DEPLOY/RUNBOOK/BACKUP escritos · `_legacy/` removido ·
+Prometheus + `/metrics` protegido · TS strict + pre-commit · RLS real em prod · 2 rodadas de
+hardening (zip-bomb, logout, tenancy, reuse-detection, chunked, proxy-headers) · SAST real,
+container non-root, DR com RLS (PRs #132–#135, aguardando merge).
 
 ---
 
-## 🚨 PROBLEMAS CRÍTICOS (P0)
-
-| # | Problema | Severidade | Impacto | Prazo |
-|---|----------|-----------|---------|-------|
-| 1 | **Frontend deploy expõe código backend** | 🔴 CRÍTICA | Vazamento de segurança | HOJE |
-| 2 | **Deploy em produção não automatizado** | 🔴 CRÍTICA | Impossível deploar | 1 sem |
-| 3 | **Zero testes em 14 páginas** | 🔴 CRÍTICA | Regressões invisíveis | 2-3 sem |
-| 4 | **Sem staging environment** | 🔴 CRÍTICA | Risco de quebrar produção | 1 sem |
-| 5 | **Services module: coesão muito baixa** | 🟠 ALTA | Difícil manutenção | 2 sem |
-
----
-
-## 📋 TOP 10 AÇÕES
-
-### Semana 1 — CRÍTICO (Unblock Deployment)
+## 📈 EVOLUÇÃO
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ ✓ TASK 1: Fix GitHub Pages frontend deploy        │
-│   └─ Modificar deploy.yml para upload apenas dist/│
-│      Tempo: 15 min | Criticidade: 🔴 MÁXIMA       │
-├─────────────────────────────────────────────────────┤
-│ ✓ TASK 2: Staging environment setup               │
-│   └─ Railway staging app + copiar secrets         │
-│      Tempo: 1 dia | Criticidade: 🔴 MÁXIMA        │
-├─────────────────────────────────────────────────────┤
-│ ✓ TASK 3: Deploy automation (Railway)             │
-│   └─ GitHub Actions job: test → deploy → healthcheck
-│      Tempo: 1 dia | Criticidade: 🔴 MÁXIMA        │
-├─────────────────────────────────────────────────────┤
-│ ✓ TASK 4: Deployment guide (doc)                  │
-│   └─ Railway secrets, env vars, health check      │
-│      Tempo: 2h | Criticidade: 🟠 ALTA             │
-└─────────────────────────────────────────────────────┘
+2026-05-28   6.4/10  ██████░░░░  baseline (14 páginas sem teste, sem deploy, sem DR)
+2026-06-02   7.6/10  ████████░░  deploy resolvido, cobertura subindo
+2026-06-09   7.8/10  ████████░░  RLS real em prod, gates 80/86, staging
+2026-06-12   7.5/10  ████████░░  régua recalibrada (≈8.0 na régua anterior) + hardening completo
 ```
 
-### Semana 2-3 — FRONTEND TESTS
-
-```
-┌─────────────────────────────────────────────────────┐
-│ ✓ TASK 5: Page tests (5 critical pages)            │
-│   └─ DashboardPage, ConciliacaoPage, ClientesPage │
-│      ├─ Testam renders, API calls, error states   │
-│      └─ Tempo: 3 dias | Criticidade: 🔴 ALTA      │
-├─────────────────────────────────────────────────────┤
-│ ✓ TASK 6: Component tests (core widgets)          │
-│   └─ Sidebar, Topbar, KpiCard, ActivityFeed, etc  │
-│      └─ Tempo: 2 dias | Criticidade: 🟠 ALTA      │
-├─────────────────────────────────────────────────────┤
-│ ✓ TASK 7: Runbooks (3 docs)                        │
-│   └─ Troubleshooting, Disaster Recovery, Rollback │
-│      └─ Tempo: 2 dias | Criticidade: 🟠 ALTA      │
-└─────────────────────────────────────────────────────┘
-```
-
-### Semana 4+ — REFACTORING
-
-```
-┌─────────────────────────────────────────────────────┐
-│ ✓ TASK 8: Clean up legacy code                     │
-│   └─ Remover /components/_legacy/ (4 componentes) │
-│      └─ Tempo: 1 dia | Criticidade: 🟡 MÉDIA      │
-├─────────────────────────────────────────────────────┤
-│ ✓ TASK 9: Services refactoring                     │
-│   └─ Quebrar em: auth/, export/, fiscal/, llm/    │
-│      └─ Tempo: 2 dias | Criticidade: 🟡 MÉDIA     │
-├─────────────────────────────────────────────────────┤
-│ ✓ TASK 10: Prometheus metrics                      │
-│   └─ /metrics endpoint + alerting setup           │
-│      └─ Tempo: 2 dias | Criticidade: 🟡 MÉDIA     │
-└─────────────────────────────────────────────────────┘
-```
-
----
-
-## 📈 TIMELINE DE MELHORIA
-
-```
-AGORA                  SEMANA 1          SEMANA 2-4       MÊS 2
-├─────────┬────────────┼──────────────────┼────────────────┼──────────────
-│ Baseline│ Deploy Fix │ Frontend Tests   │ Refactoring    │ Production
-│ 6.4/10  │ 6.8/10     │ 7.5/10          │ 8.2/10        │ 8.5+/10
-│         │            │                  │                │
-│ 📊Stats │ 📊Stats    │ 📊Stats         │ 📊Stats       │ 📊Stats
-│ Backend:7.5    │ Backend:7.5 │ Backend:7.5     │ Backend:8.0    │ Backend:8.0
-│ Frontend:5.5   │ Frontend:5.5│ Frontend:7.0    │ Frontend:7.5   │ Frontend:8.0
-│ DevOps:5.5     │ DevOps:7.0  │ DevOps:7.5      │ DevOps:8.0     │ DevOps:8.5
-│ Tests:6.0      │ Tests:6.2   │ Tests:8.0       │ Tests:8.5      │ Tests:9.0
-│ Docs:5.0       │ Docs:6.0    │ Docs:7.0        │ Docs:8.0       │ Docs:8.5
-└────────────────┴──────────────────┴────────────────┴──────────────
-```
-
----
-
-## 🎯 METAS POR ÁREA
-
-### Testing
-```
-Frontend Unit Coverage:  2%  ──→ 50%  (Semana 2-4)
-                        ▓▓░░░░░░░░  →  ████████████████
-Backend Unit Coverage: 75%  ──→ 90%  (Semana 3)
-                        ████████░░  →  █████████░
-E2E Happy Path:        40%  ──→ 70%  (Semana 2)
-                        ███░░░░░░░  →  ███████░░░
-```
-
-### Deployment
-```
-Deploy Frequency:      Manual  ──→  Every Commit (Semana 1)
-Lead Time (PR→Prod):   1h      ──→  15 min (Semana 2)
-Rollback Time:         30 min  ──→  5 min auto (Semana 2)
-Uptime:                99%     ──→  99.5% (Semana 4)
-```
-
-### Code Quality
-```
-Backend Coesão:        ██░░  ──→  ████░  (Services refactor)
-Frontend Test Cov:     ██░░  ──→  ██████ (Page + component tests)
-Dead Code:             ░░░░░  ──→  ░░░░░  (Removed _legacy)
-Tech Debt:             Medium ──→  Low   (After refactoring)
-```
-
----
-
-## 🏆 SUCCESS CRITERIA
-
-✅ **Week 1 Complete:**
-- [ ] Frontend deploy fix deployed
-- [ ] Staging environment live
-- [ ] Deploy automation working
-- [ ] Deployment guide written
-
-✅ **Week 2-4 Complete:**
-- [ ] Frontend test coverage ≥ 30%
-- [ ] All 14 pages covered by E2E
-- [ ] Troubleshooting runbook live
-- [ ] Services refactored
-
-✅ **Month 2 Complete:**
-- [ ] Frontend test coverage ≥ 50%
-- [ ] Prometheus metrics live
-- [ ] Design system documented
-- [ ] Zero P0 issues open
-
----
-
-## 📊 VELOCITY ESTIMATES
-
-| Task | Story Points | Days | Team |
-|------|--------------|------|------|
-| P0.1 - Deploy fix | 1 | 0.25 | 1 DevOps |
-| P0.2 - Page tests | 5 | 3 | 1 Frontend |
-| P0.3 - Staging | 3 | 1 | 1 DevOps |
-| P0.4 - Deploy auto | 3 | 1 | 1 DevOps |
-| P1.1 - Component tests | 5 | 2 | 1 Frontend |
-| P1.2 - Services refactor | 5 | 2 | 1 Backend |
-| P1.3 - Runbooks | 3 | 2 | 1 DevOps |
-| P1.4 - Prometheus | 3 | 2 | 1 Backend |
-| **TOTAL** | **31 SP** | **13.25 days** | **Parallelizable: 2-3 devs** |
-
-**Timeline:** 3 semanas (2 full-time devs) ou 4 semanas (1.5 devs)
-
----
-
-## 💡 QUICK WINS
-
-Implementáveis em < 1 hora cada:
-
-- [ ] Add missing JSDoc to components
-- [ ] Configure Lighthouse in CI
-- [ ] Add TypeScript strict mode check
-- [ ] Create pre-commit hook for linting
-- [ ] Add .editorconfig for consistency
-
----
-
-## 🚀 PRÓXIMOS PASSOS
-
-1. **Hoje:** Revisar este documento com time
-2. **Amanhã:** Criar issues no GitHub para cada P0
-3. **Semana 1:** Executar P0 items
-4. **Semana 2:** Executar P1 items
-5. **Semana 3:** Validar produção
-
----
-
-**Responsável:** DevOps/Backend Lead  
-**Revisão:** 2026-06-25 (pós-P1)  
-**Próximo passos:** Agendar kick-off meeting (30 min)
+**Próxima revisão:** após merge dos PRs #131–#135 e fechamento do P1 #1–#3.

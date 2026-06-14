@@ -69,7 +69,7 @@ São **56 endpoints** em **16 routers**. Lista completa em `/docs` (OpenAPI).
 
 ```bash
 pip install -r requirements-dev.txt
-pytest tests/ -v          # 518 testes; gate de cobertura 74% no CI
+pytest tests/ -v          # 737 testes; gate de cobertura 80% no CI
 
 cd orgconc-react && npm test    # Vitest (unit) · npx playwright test (e2e)
 ```

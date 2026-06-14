@@ -77,12 +77,16 @@ export function SidebarNavContent({
   function go(id: string) {
     const routableIds = [
       "dashboard","conciliacao","upload","matchers","guias","contratos",
-      "clientes","usuarios","anomalias","relatorios","configuracoes",
+      "clientes","usuarios","relatorios","configuracoes",
       "conformidade-fiscal","gaps-fiscais","risco-tributario","cartas-fiscais",
       "laudo",
       "auditoria-forense",
     ];
-    if (routableIds.includes(id)) navigate(`/${id}`);
+    // "anomalias" não tem página própria — as anomalias vivem nas análises.
+    // Sem o alias, o catch-all mandava silenciosamente para o dashboard.
+    const aliases: Record<string, string> = { anomalias: "conciliacao" };
+    const destino = aliases[id] ?? id;
+    if (routableIds.includes(destino)) navigate(`/${destino}`);
     onNavigate?.();
   }
 

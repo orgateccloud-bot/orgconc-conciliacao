@@ -10,11 +10,9 @@ Sprint 1 do Plano de Integração Fiscal. Expõe 4 endpoints:
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import re
 import uuid
-import zipfile
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -29,6 +27,7 @@ from api.core.config import (
 )
 from api.core.rate_limit import limiter
 from api.matchers.auditoria_forense import (
+    _meses_observados,
     analisar_auditoria,
     cnpjs_das_transacoes,
     construir_cadastro,
@@ -46,7 +45,7 @@ from api.matchers.xml_fiscal import (
     parse_lote_xmls,
 )
 from api.services.auth import TokenPayload, autorizar_cliente, current_user
-from api.services.audit import registrar_audit
+from api.services.audit import gravar_audit_independente, registrar_audit
 from api.services.carta_constatacao import (
     gerar_carta_automatica,
     renderizar_pdf_async,
@@ -60,7 +59,7 @@ from api.services.fiscal_persistence import (
     salvar_cruzamentos,
     salvar_documentos_fiscais,
 )
-from api.services.storage import read_limited
+from api.services.storage import extrair_zip_seguro, read_limited
 from api.services import laudo_forense as laudo
 from api.services.laudo_async import (
     FORMATOS_LAUDO,
@@ -69,6 +68,7 @@ from api.services.laudo_async import (
     sanitize_filename as _sanitize_filename,
 )
 from api.services import calculadora_cbs_ibs
+from api.services.calculadora_client import CalculadoraConfigError, CalculadoraIndisponivel
 from api.schemas_cbs_ibs import OperacaoFiscalInput
 
 router = APIRouter(tags=["fiscal"], prefix="/fiscal")
@@ -106,20 +106,13 @@ def _separar_arquivos_fiscal(arquivos: list[tuple[str, bytes]]) -> tuple[Optiona
         elif nome_lower.endswith(".xml"):
             xmls.append((filename, conteudo))
         elif nome_lower.endswith(".zip"):
-            try:
-                with zipfile.ZipFile(io.BytesIO(conteudo)) as zf:
-                    for member in zf.namelist():
-                        lower = member.lower()
-                        if lower.endswith(".xml"):
-                            with zf.open(member) as fh:
-                                xmls.append((member, fh.read()))
-                        elif lower.endswith(".ofx"):
-                            if ofx_bytes is not None:
-                                raise HTTPException(400, "ZIP contém mais de 1 OFX.")
-                            with zf.open(member) as fh:
-                                ofx_bytes = fh.read()
-            except zipfile.BadZipFile:
-                raise HTTPException(400, f"Arquivo {filename} não é ZIP válido.")
+            for member, data in extrair_zip_seguro(conteudo, (".xml", ".ofx")):
+                if member.lower().endswith(".xml"):
+                    xmls.append((member, data))
+                else:  # .ofx
+                    if ofx_bytes is not None:
+                        raise HTTPException(400, "ZIP contém mais de 1 OFX.")
+                    ofx_bytes = data
         else:
             log.warning("fiscal: ignorando arquivo com extensão não suportada: %s", filename)
 
@@ -204,7 +197,12 @@ async def processar_fiscal(
             scores_conformidade = await asyncio.to_thread(
                 calcular_conformidade_fornecedor, documentos, transacoes
             )
-            riscos = {r.cnpj_fornecedor: r for r in estimar_risco_tributario_anual(scores_conformidade)}
+            # Anualização sobre o período REAL dos extratos (não os 5 meses default)
+            meses_reais = _meses_observados(transacoes)
+            riscos = {
+                r.cnpj_fornecedor: r
+                for r in estimar_risco_tributario_anual(scores_conformidade, meses_observados=meses_reais)
+            }
             for sc in scores_conformidade:
                 risco_tributario_anual = riscos.get(sc.cnpj_fornecedor)
                 classe = classificar_risco(sc)
@@ -285,6 +283,13 @@ async def apurar_cbs_ibs(
         apuracao = await calculadora_cbs_ibs.apurar(operacao)
     except NotImplementedError as e:
         raise HTTPException(501, str(e))
+    except CalculadoraConfigError as e:
+        # Base da Calculadora não configurada → erro de configuração do servidor.
+        raise HTTPException(500, str(e))
+    except CalculadoraIndisponivel as e:
+        # Calculadora oficial fora/instável (HTTP 5xx, timeout, JSON inválido):
+        # 502 Bad Gateway — sem isto a exceção de domínio do W2 virava 500 cru.
+        raise HTTPException(502, str(e))
 
     if DB_DISPONIVEL and SessionLocal is not None:
         try:
@@ -367,6 +372,14 @@ async def gerar_laudo(
         raise HTTPException(e.status, str(e))
     except RuntimeError as e:
         raise HTTPException(500, str(e))
+    # Trilha de auditoria: laudo forense é o artefato mais sensível do produto
+    await gravar_audit_independente(
+        action="fiscal.laudo.gerar",
+        resource_type="laudo",
+        resource_id=empresa_cnpj,
+        payload={"formato": formato, "n_uploads": len(uploads)},
+        actor=user,
+    )
     disposition = "inline" if mime.startswith("text/html") else "attachment"
     return Response(
         content=saida,
@@ -452,6 +465,14 @@ async def gerar_laudo_async(
         await db.commit()
         job_id = str(job.id)
     log.info("laudo async enfileirado: job=%s formato=%s", job_id, formato)
+    # Mesma trilha de auditoria do caminho síncrono (o job referencia o pedido)
+    await gravar_audit_independente(
+        action="fiscal.laudo.gerar",
+        resource_type="laudo",
+        resource_id=empresa_cnpj,
+        payload={"formato": formato, "job_id": job_id, "async": True},
+        actor=user,
+    )
     return JSONResponse(status_code=202, content={
         "job_id": job_id,
         "status": "PENDENTE",

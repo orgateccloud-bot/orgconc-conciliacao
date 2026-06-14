@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 
+from api.core.rate_limit import limiter
 from api.services.auth import TokenPayload, current_user
 from api.services.excel import _gerar_xlsx
 from api.services.render import render_html, render_pdf_html
@@ -21,7 +22,8 @@ def _block_url_fetcher(url: str, **_kwargs) -> dict:
 
 
 @router.get("/export/html/{rid}")
-def export_html(rid: str, user: TokenPayload = Depends(current_user)):
+@limiter.limit("30/minute")
+def export_html(request: Request, rid: str, user: TokenPayload = Depends(current_user)):
     ds = carregar_dataset(rid, verify_sub=user.sub)
     html = render_html(ds["relatorio"])
     return Response(
@@ -32,7 +34,8 @@ def export_html(rid: str, user: TokenPayload = Depends(current_user)):
 
 
 @router.get("/export/xlsx/{rid}")
-async def export_xlsx(rid: str, user: TokenPayload = Depends(current_user)):
+@limiter.limit("30/minute")
+async def export_xlsx(request: Request, rid: str, user: TokenPayload = Depends(current_user)):
     ds = carregar_dataset(rid, verify_sub=user.sub)
     # _gerar_xlsx é síncrono e pesado — roda em thread pool pra não bloquear o event loop
     blob = await asyncio.to_thread(_gerar_xlsx, ds["extratos"], ds["anomalias"])
@@ -44,7 +47,8 @@ async def export_xlsx(rid: str, user: TokenPayload = Depends(current_user)):
 
 
 @router.get("/export/pdf/{rid}")
-async def export_pdf(rid: str, html: bool = False, user: TokenPayload = Depends(current_user)):
+@limiter.limit("30/minute")
+async def export_pdf(request: Request, rid: str, html: bool = False, user: TokenPayload = Depends(current_user)):
     ds = carregar_dataset(rid, verify_sub=user.sub)
     html_content = render_pdf_html(ds["relatorio"], ds["anomalias"], ds["extratos"], rid)
     if html:

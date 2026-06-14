@@ -42,6 +42,11 @@ A API expõe métricas no formato Prometheus em `GET /metrics` (text/plain). O
 endpoint depende de `prometheus-client` (já em `requirements-prod.txt`); se a
 lib estiver ausente, o endpoint responde `503` e a aplicação segue normal.
 
+> ⚠️ **Em produção o endpoint é FECHADO por padrão** (responde 404). Para
+> habilitar scraping, defina `ORGCONC_METRICS_TOKEN=<token-forte>` no Railway —
+> o endpoint passa a exigir `Authorization: Bearer <token>`. Em dev (sem
+> `ORGCONC_ENV=production`) permanece aberto.
+
 Séries expostas (prefixo `orgconc_`):
 
 | Métrica | Tipo | Labels | Uso |
@@ -49,10 +54,13 @@ Séries expostas (prefixo `orgconc_`):
 | `orgconc_http_requests_total` | Counter | `method`, `path`, `status` | Throughput e taxa de erro por rota |
 | `orgconc_http_request_duration_seconds` | Histogram | `method`, `path` | Latência p50/p95/p99 |
 | `orgconc_http_requests_in_progress` | Gauge | (sem labels) | Concorrência em tempo real (global) |
+| `orgconc_llm_tokens_total` | Counter | `model`, `direction` (input/output) | Consumo de tokens Claude por família de modelo |
+| `orgconc_llm_cost_usd_total` | Counter | `model` | Custo LLM acumulado (USD) por família |
 
 O label `path` usa o *template* da rota (ex.: `/clientes/{cliente_id}`), não o
-valor concreto, para evitar explosão de cardinalidade por IDs. O próprio
-`/metrics` não é contabilizado.
+valor concreto, para evitar explosão de cardinalidade por IDs (o `model` também
+é normalizado para família, não model-id completo). O próprio `/metrics` não é
+contabilizado.
 
 Scrape config (Prometheus):
 ```yaml
@@ -62,6 +70,9 @@ scrape_configs:
     static_configs:
       - targets: ["api.orgconc.com:443"]
     scheme: https
+    authorization:           # obrigatório em produção
+      type: Bearer
+      credentials: "${ORGCONC_METRICS_TOKEN}"
 ```
 
 Queries úteis (PromQL):
@@ -70,6 +81,8 @@ Queries úteis (PromQL):
 sum(rate(orgconc_http_requests_total{status=~"5.."}[5m])) by (path)
 # Latência p95 global
 histogram_quantile(0.95, sum(rate(orgconc_http_request_duration_seconds_bucket[5m])) by (le))
+# Custo LLM por hora, por modelo
+sum(increase(orgconc_llm_cost_usd_total[1h])) by (model)
 ```
 
 ### 4. Monitoramento de custo LLM (Trilha 3)

@@ -189,9 +189,9 @@ function selectFiles(files: File[]) {
   Object.defineProperty(input, "files", {
     configurable: true,
     value: {
+      ...files,
       length: files.length,
       item: (i: number) => files[i],
-      ...files,
     } as unknown as FileList,
   });
   input.dispatchEvent(new Event("change", { bubbles: true }));
