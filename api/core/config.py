@@ -242,6 +242,13 @@ def _validate_production_env() -> None:
         missing.append("ORGCONC_ADMIN_SENHA_HASH")
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         missing.append("ANTHROPIC_API_KEY")
+    # #13: o rate-limiter (slowapi) usa storage in-memory por processo. Com
+    # multiplos workers/replicas (deploy roda --workers 2) cada processo conta o
+    # seu proprio limite, multiplicando o teto efetivo e vazando o controle. Em
+    # producao exigimos REDIS_URL para que o storage seja COMPARTILHADO; sem ele
+    # falhamos no startup (fail-fast), evitando subir com rate-limit ineficaz.
+    if not os.environ.get("REDIS_URL", "").strip():
+        missing.append("REDIS_URL (rate-limit compartilhado entre workers/replicas)")
     if missing:
         raise RuntimeError(
             "Variaveis obrigatorias em producao ausentes ou fracas:\n"
