@@ -148,6 +148,12 @@ def test_audit_timeline_limit_invalido():
     assert r.status_code == 422
 
 
+def test_audit_timeline_offset_acima_do_teto_422():
+    """#36: offset enorme -> 422 (teto anti table-scan), antes do check de DB."""
+    r = client.get("/audit/timeline?offset=999999", headers=_ADMIN_HDR)
+    assert r.status_code == 422
+
+
 def test_audit_timeline_sem_role_privilegiado_403():
     """Usuario nao-privilegiado nao acessa a trilha forense."""
     token = emitir_token(sub="user@x.com", email="user@x.com", role="user", cliente_id="c1")

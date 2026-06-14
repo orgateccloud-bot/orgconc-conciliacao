@@ -62,7 +62,7 @@ def _serializar(ev: AuditEvent, *, com_payload: bool = False) -> dict:
 async def listar_timeline(
     request: Request,
     limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),  # #36: teto anti table-scan
     actor_email: Optional[str] = None,
     resource_type: Optional[str] = None,
 ):

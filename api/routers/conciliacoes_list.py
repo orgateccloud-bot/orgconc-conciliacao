@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.core.config import DB_DISPONIVEL, SessionLocal
 from api.core.rate_limit import limiter
@@ -38,8 +38,8 @@ def _serializar(c) -> dict:
 async def listar(
     request: Request,
     cliente_id: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10000),  # #36: teto anti table-scan
     user: TokenPayload = Depends(current_user),
 ):
     if not DB_DISPONIVEL:
@@ -63,8 +63,8 @@ async def listar(
 async def listar_por_cliente(
     request: Request,
     cliente_id: str,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10000),  # #36: teto anti table-scan
     user: TokenPayload = Depends(current_user),
 ):
     if not DB_DISPONIVEL:

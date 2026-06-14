@@ -6,12 +6,15 @@ sintético de tests/fixtures.
 """
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
+from api.services.auth import emitir_token
 from api.services.job_queue import (
     HANDLERS,
     TIPO_LAUDO,
@@ -120,3 +123,62 @@ def test_jobs_endpoints_sem_db_respondem_503():
 
 def test_formatos_laudo_expostos():
     assert FORMATOS_LAUDO == {"xlsx", "html", "pdf"}
+
+
+# ── #29 / #37: validação de CNPJ e hard-limit de jobs por org ────────────────
+
+
+def _token_org() -> str:
+    """Token com org_id (necessário p/ enfileirar laudo async)."""
+    return emitir_token(
+        sub=f"w7-{uuid.uuid4()}@x.com",
+        email="w7@x.com",
+        org_id=str(uuid.uuid4()),
+        role="admin",
+    )
+
+
+def test_laudo_async_cnpj_invalido_400():
+    """#29: empresa_cnpj sem 14 dígitos -> 400 (antes de enfileirar)."""
+    with (
+        patch("api.routers.fiscal.DB_DISPONIVEL", True),
+        patch("api.routers.fiscal.SessionLocal", MagicMock()),
+    ):
+        r = client.post(
+            "/fiscal/laudo/async",
+            data={"empresa_cnpj": "123"},
+            files=[("arquivos", ("extrato.ofx", OFX, "application/octet-stream"))],
+            headers={"Authorization": f"Bearer {_token_org()}"},
+        )
+    assert r.status_code == 400
+    assert "14" in r.json()["detail"]
+
+
+def test_laudo_async_excede_teto_jobs_429():
+    """#37: org com >= MAX jobs em aberto -> 429 (não enfileira)."""
+    from api.routers.fiscal import MAX_JOBS_LAUDO_POR_ORG
+
+    # Sessão mockada: a contagem de jobs em aberto devolve o teto.
+    db = AsyncMock()
+    db.add = MagicMock()
+    res = MagicMock()
+    res.scalar = MagicMock(return_value=MAX_JOBS_LAUDO_POR_ORG)
+    db.execute = AsyncMock(return_value=res)
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=db)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    session_local = MagicMock(return_value=cm)
+
+    with (
+        patch("api.routers.fiscal.DB_DISPONIVEL", True),
+        patch("api.routers.fiscal.SessionLocal", session_local),
+    ):
+        r = client.post(
+            "/fiscal/laudo/async",
+            data={"empresa_cnpj": "11222333000181"},
+            files=[("arquivos", ("extrato.ofx", OFX, "application/octet-stream"))],
+            headers={"Authorization": f"Bearer {_token_org()}"},
+        )
+    assert r.status_code == 429
+    assert "jobs em aberto" in r.json()["detail"].lower()
+    db.add.assert_not_called()  # não enfileirou

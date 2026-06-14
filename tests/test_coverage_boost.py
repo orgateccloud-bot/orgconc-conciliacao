@@ -368,6 +368,27 @@ def test_conciliacoes_buscar_sem_db_retorna_503():
     assert r.status_code == 503
 
 
+# ── #36: teto de offset/limit (anti table-scan / DoS) ────────────────────────
+
+def test_conciliacoes_offset_acima_do_teto_retorna_422():
+    c = _client()
+    r = c.get("/conciliacoes?offset=999999")
+    assert r.status_code == 422
+
+
+def test_conciliacoes_limit_acima_do_teto_retorna_422():
+    c = _client()
+    r = c.get("/conciliacoes?limit=5000")
+    assert r.status_code == 422
+
+
+def test_conciliacoes_por_cliente_offset_acima_do_teto_retorna_422():
+    c = _client()
+    valid_uuid = "00000000-0000-0000-0000-000000000001"
+    r = c.get(f"/conciliacoes/por-cliente/{valid_uuid}?offset=999999")
+    assert r.status_code == 422
+
+
 # ── clientes.py — validacoes de UUID ──────────────────────────────────────
 
 def test_cliente_buscar_uuid_invalido_retorna_400():
