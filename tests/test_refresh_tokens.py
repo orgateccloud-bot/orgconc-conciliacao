@@ -10,7 +10,31 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from api.db import refresh_tokens as repo
-from api.services.auth import gerar_refresh_token, hash_refresh_token
+from api.services import auth as auth_svc
+from api.services.auth import (
+    TokenPayload,
+    decodificar_token,
+    emitir_token,
+    escopo_cliente_listagem,
+    gerar_refresh_token,
+    hash_refresh_token,
+    jti_revogado,
+    revogar_jti,
+)
+from fastapi import HTTPException
+
+
+class _FakeRedis:
+    """Redis em memória (subset usado pela denylist): setex + exists."""
+
+    def __init__(self):
+        self.store = {}
+
+    def setex(self, key, ttl, val):
+        self.store[key] = (val, ttl)
+
+    def exists(self, key):
+        return 1 if key in self.store else 0
 
 client = TestClient(app)
 
@@ -41,9 +65,21 @@ def test_hash_refresh_token_deterministico_64hex():
 
 # ── CRUD (api/db/refresh_tokens.py) com sessão mockada ──────────────────────
 
-def _fake_db():
+def _fake_db(*, ativos_ids=None):
+    """AsyncSession mockada.
+
+    `db.execute(...)` retorna um Result SÍNCRONO (como o SQLAlchemy real):
+    `scalars()` e `scalars().all()` não são corrotinas. `ativos_ids` é a lista
+    de ids que o SELECT de sessões ativas (#25) deve devolver (default: vazia).
+    """
     db = AsyncMock()
     db.add = MagicMock()           # add é síncrono
+    res = MagicMock()              # Result é síncrono
+    scalars = MagicMock()
+    scalars.all = MagicMock(return_value=list(ativos_ids or []))
+    res.scalars = MagicMock(return_value=scalars)
+    res.rowcount = len(ativos_ids or [])
+    db.execute = AsyncMock(return_value=res)
     return db
 
 
@@ -276,3 +312,259 @@ def test_logout_all_revoga_todos_do_sub():
     j = r.json()
     assert j["revogados"] == 3
     mock_rev_all.assert_awaited_once()
+
+
+# ── #22 rotação atômica (FOR UPDATE) ─────────────────────────────────────────
+
+def test_buscar_ativo_for_update_aplica_lock():
+    """for_update=True adiciona FOR UPDATE ao SELECT (lock de linha)."""
+    db = _fake_db()
+    captured = {}
+
+    async def _exec(q):
+        captured["sql"] = str(q.compile(compile_kwargs={"literal_binds": False}))
+        res = MagicMock()
+        res.scalar_one_or_none = MagicMock(return_value="ROW")
+        return res
+
+    db.execute = AsyncMock(side_effect=_exec)
+    asyncio.run(repo.buscar_ativo_por_hash(db, "h", for_update=True))
+    assert "FOR UPDATE" in captured["sql"].upper()
+
+
+def test_buscar_ativo_sem_for_update_nao_aplica_lock():
+    db = _fake_db()
+    captured = {}
+
+    async def _exec(q):
+        captured["sql"] = str(q.compile(compile_kwargs={"literal_binds": False}))
+        res = MagicMock()
+        res.scalar_one_or_none = MagicMock(return_value="ROW")
+        return res
+
+    db.execute = AsyncMock(side_effect=_exec)
+    asyncio.run(repo.buscar_ativo_por_hash(db, "h", for_update=False))
+    assert "FOR UPDATE" not in captured["sql"].upper()
+
+
+def test_refresh_concorrente_segundo_request_falha_401():
+    """Rotação concorrente: o 2º request (token já consumido) recebe None do
+    buscar_ativo (FOR UPDATE serializou) → reuse-detection → 401, sem emitir
+    um 2º access válido."""
+    sl, _db = _mock_session_cm()
+    # Simula a corrida: a 1ª chamada acha o token; a 2ª (após o 1º revogar) não.
+    busca = AsyncMock(side_effect=[None])  # 2º request: token já consumido
+    # A base tem reuse-detection: ao não achar ativo, busca o token (revogado)
+    # por hash. Aqui mockamos como ausente → 401 simples, sem revogar família.
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.refresh_repo.buscar_ativo_por_hash", new=busca),
+        patch("api.routers.auth_routes.refresh_repo.buscar_por_hash", new=AsyncMock(return_value=None)),
+        patch("api.routers.auth_routes.refresh_repo.criar", new=AsyncMock()) as mock_criar,
+    ):
+        r = client.post("/auth/refresh", headers={"Cookie": "orgconc_refresh=consumido"})
+    assert r.status_code == 401
+    mock_criar.assert_not_awaited()  # 2º request NÃO emite novo token
+
+
+def test_refresh_usa_for_update():
+    """O endpoint de refresh chama buscar_ativo com for_update=True."""
+    sl, _db = _mock_session_cm()
+    fake_row = MagicMock(sub="admin@orgconc.com", role="admin", cliente_id=None, id=uuid.uuid4())
+    busca = AsyncMock(return_value=fake_row)
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.refresh_repo.buscar_ativo_por_hash", new=busca),
+        patch("api.routers.auth_routes.refresh_repo.criar", new=AsyncMock(return_value=MagicMock(id=uuid.uuid4()))),
+        patch("api.routers.auth_routes.refresh_repo.revogar", new=AsyncMock()),
+    ):
+        r = client.post("/auth/refresh", headers={"Cookie": "orgconc_refresh=valido"})
+    assert r.status_code == 200, r.text
+    # for_update foi passado como True
+    _, kwargs = busca.call_args
+    assert kwargs.get("for_update") is True
+
+
+# ── #25 limite de sessões ativas por sub ─────────────────────────────────────
+
+def test_limite_sessoes_revoga_os_mais_antigos():
+    """Ao exceder o teto, revoga os N mais antigos (ordem por emitido_em.asc)."""
+    # SELECT já retorna em ordem crescente de emitido_em (mais antigo primeiro).
+    ids = [uuid.uuid4() for _ in range(5)]
+    db = _fake_db()
+    selres = MagicMock()
+    selres.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=list(ids))))
+    updres = MagicMock()
+    updres.rowcount = 3
+    db.execute = AsyncMock(side_effect=[selres, updres])
+
+    n = asyncio.run(repo._revogar_excedentes_do_sub(db, "s", manter=2))
+    assert n == 3  # 5 ativos, manter 2 → revoga 3
+    assert db.execute.await_count == 2  # SELECT + UPDATE
+    # o UPDATE alveja exatamente os 3 mais antigos (ids[:3]).
+    update_stmt = db.execute.await_args_list[1].args[0]
+    sql = str(update_stmt.compile(compile_kwargs={"literal_binds": True}))
+    # o UUID é serializado sem hífens na SQL compilada.
+    sql_hex = sql.replace("-", "")
+    assert sql.upper().startswith("UPDATE")
+    for antigo in ids[:3]:
+        assert antigo.hex in sql_hex
+    # os 2 mais recentes NÃO entram no UPDATE.
+    for recente in ids[3:]:
+        assert recente.hex not in sql_hex
+
+
+def test_limite_sessoes_nao_revoga_dentro_do_teto():
+    ids = [uuid.uuid4(), uuid.uuid4()]
+    db = _fake_db()
+    selres = MagicMock()
+    selres.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=list(ids))))
+    db.execute = AsyncMock(return_value=selres)
+    n = asyncio.run(repo._revogar_excedentes_do_sub(db, "s", manter=10))
+    assert n == 0
+    # só o SELECT; nenhum UPDATE.
+    assert db.execute.await_count == 1
+
+
+def test_criar_aplica_limite_sessoes():
+    """criar() invoca o controle de limite (flush + select de ativos)."""
+    db = _fake_db(ativos_ids=[])  # sem excedentes
+    asyncio.run(repo.criar(db, sub="s", token_hash="h",
+                           expira_em=datetime.now(timezone.utc)))
+    db.flush.assert_awaited()       # flush p/ materializar o INSERT
+    db.execute.assert_awaited()     # SELECT de sessões ativas (#25)
+    db.commit.assert_awaited()
+
+
+# ── #24 admin-por-env desativado não reganha superadmin no refresh ───────────
+
+def test_refresh_admin_env_ativo_reganha_superadmin():
+    sl, _db = _mock_session_cm()
+    fake_row = MagicMock(sub="admin@orgconc.com", role="admin", cliente_id=None, id=uuid.uuid4())
+    from api.services.auth import hash_senha, decodificar_token
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.refresh_repo.buscar_ativo_por_hash", new=AsyncMock(return_value=fake_row)),
+        patch("api.routers.auth_routes.refresh_repo.criar", new=AsyncMock(return_value=MagicMock(id=uuid.uuid4()))),
+        patch("api.routers.auth_routes.refresh_repo.revogar", new=AsyncMock()),
+        patch("api.routers.auth_routes.usuarios_repo.buscar_por_id", new=AsyncMock(return_value=None)),
+        patch.dict(os.environ, {"ORGCONC_ADMIN_EMAIL": "admin@orgconc.com",
+                                "ORGCONC_ADMIN_SENHA_HASH": hash_senha("x")}),
+    ):
+        r = client.post("/auth/refresh", headers={"Cookie": "orgconc_refresh=valido"})
+    assert r.status_code == 200, r.text
+    claims = decodificar_token(r.json()["access_token"])
+    assert claims.superadmin is True
+
+
+def test_refresh_admin_env_desativado_nao_reganha_superadmin():
+    """#24 — se o admin-por-env foi desativado (env removido), o refresh NÃO
+    reconcede superadmin, mesmo com sub == antigo ORGCONC_ADMIN_EMAIL."""
+    sl, _db = _mock_session_cm()
+    fake_row = MagicMock(sub="admin@orgconc.com", role="admin", cliente_id=None, id=uuid.uuid4())
+    from api.services.auth import decodificar_token
+    env_sem_admin = {k: v for k, v in os.environ.items()
+                     if k not in ("ORGCONC_ADMIN_EMAIL", "ORGCONC_ADMIN_SENHA_HASH")}
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", True),
+        patch("api.routers.auth_routes._config.SessionLocal", sl),
+        patch("api.routers.auth_routes.refresh_repo.buscar_ativo_por_hash", new=AsyncMock(return_value=fake_row)),
+        patch("api.routers.auth_routes.refresh_repo.criar", new=AsyncMock(return_value=MagicMock(id=uuid.uuid4()))),
+        patch("api.routers.auth_routes.refresh_repo.revogar", new=AsyncMock()),
+        patch("api.routers.auth_routes.usuarios_repo.buscar_por_id", new=AsyncMock(return_value=None)),
+        patch.dict(os.environ, env_sem_admin, clear=True),
+    ):
+        r = client.post("/auth/refresh", headers={"Cookie": "orgconc_refresh=valido"})
+    assert r.status_code == 200, r.text
+    claims = decodificar_token(r.json()["access_token"])
+    assert claims.superadmin is False
+
+
+# ── #9 denylist de access token por jti ──────────────────────────────────────
+
+@pytest.fixture
+def _fake_denylist():
+    """Substitui o cliente Redis da denylist por um fake em memória."""
+    fake = _FakeRedis()
+    with patch("api.services.auth._get_denylist_redis", return_value=fake):
+        yield fake
+
+
+def test_token_revogado_falha_em_decodificar(_fake_denylist):
+    tok = emitir_token(sub="u1", role="user")
+    claims = decodificar_token(tok)            # válido antes de revogar
+    assert claims.sub == "u1"
+    assert revogar_jti(claims.jti, claims.exp) is True
+    assert jti_revogado(claims.jti) is True
+    with pytest.raises(HTTPException) as exc:
+        decodificar_token(tok)
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Token revogado"
+
+
+def test_token_nao_revogado_decodifica(_fake_denylist):
+    tok = emitir_token(sub="u2", role="user")
+    claims = decodificar_token(tok)
+    assert claims.sub == "u2"
+    assert jti_revogado(claims.jti) is False
+
+
+def test_denylist_sem_redis_degrada_sem_quebrar():
+    """Sem Redis (REDIS_URL ausente): revogar_jti retorna False e jti_revogado
+    retorna False — decodificar continua funcionando (degrada, não quebra)."""
+    with patch("api.services.auth._get_denylist_redis", return_value=None):
+        tok = emitir_token(sub="u3", role="user")
+        claims = decodificar_token(tok)
+        assert revogar_jti(claims.jti, claims.exp) is False
+        assert jti_revogado(claims.jti) is False
+        # mesmo "revogado", sem store o token continua válido (fail-open)
+        assert decodificar_token(tok).sub == "u3"
+
+
+def test_revogar_jti_token_expirado_nao_grava(_fake_denylist):
+    """exp no passado → TTL <= 0 → não grava (já barrado pela validação de exp)."""
+    passado = int(datetime.now(timezone.utc).timestamp()) - 10
+    assert revogar_jti("jti-velho", passado) is False
+    assert _fake_denylist.exists("revoked:jti-velho") == 0
+
+
+def test_logout_revoga_jti_do_access(_fake_denylist):
+    """#9 — logout coloca o jti do access atual na denylist."""
+    tok = emitir_token(sub="u4", role="user")
+    claims = decodificar_token(tok)
+    with (
+        patch("api.routers.auth_routes._config.DB_DISPONIVEL", False),
+    ):
+        r = client.post("/auth/logout", headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 200
+    assert jti_revogado(claims.jti) is True
+
+
+# ── #23 escopo de cliente em listagem (multi-org) ────────────────────────────
+
+def test_escopo_admin_pode_qualquer_cliente():
+    admin = TokenPayload(sub="a", role="admin", org_id="org-1")
+    assert escopo_cliente_listagem(admin, "cli-de-outra-org") == "cli-de-outra-org"
+    assert escopo_cliente_listagem(admin, None) is None
+
+
+def test_escopo_user_com_cliente_id_so_o_proprio():
+    user = TokenPayload(sub="u", role="user", org_id="org-1", cliente_id="cli-1")
+    assert escopo_cliente_listagem(user, "cli-1") == "cli-1"
+    assert escopo_cliente_listagem(user, None) == "cli-1"  # default = o próprio
+    with pytest.raises(HTTPException) as exc:
+        escopo_cliente_listagem(user, "cli-2")  # cliente de outra org
+    assert exc.value.status_code == 403
+
+
+def test_escopo_user_multiorg_sem_cliente_nao_passa_arbitrario():
+    """#23 — user multi-org (sem cliente_id no token) NÃO pode escopar a um
+    cliente_id arbitrário (era o furo de vazamento cross-org)."""
+    user = TokenPayload(sub="u", role="user", org_id="org-1", cliente_id=None)
+    assert escopo_cliente_listagem(user, None) is None
+    with pytest.raises(HTTPException) as exc:
+        escopo_cliente_listagem(user, "cli-arbitrario")
+    assert exc.value.status_code == 403

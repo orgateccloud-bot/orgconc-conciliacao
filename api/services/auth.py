@@ -9,17 +9,22 @@ Modelo de revogacao de sessao:
 - Refresh token (opaco, persistido): revogado server-side no logout
   (revogar_por_hash), logout-all e troca/reset de senha (revogar_todos_do_sub).
   Apresentar um refresh revogado -> 401 (buscar_ativo_por_hash filtra revogado_em).
-- Access token (JWT, TTL curto ~120min): NAO ha denylist por jti hoje. O `jti`
-  e emitido para auditoria e como gancho para uma futura denylist (P1). A janela
-  de sobrevivencia do access apos logout e limitada ao TTL; renovacao indefinida
-  ja e barrada pela revogacao do refresh. Padrao "short-lived access + refresh
-  revogavel" — denylist por request so se o requisito exigir revogacao instantanea
-  do access (custo: lookup por request).
+- Access token (JWT, TTL curto ~120min): denylist por `jti` em Redis (#9). Ao
+  fazer logout/logout-all e troca/reset de senha, o `jti` do access atual entra
+  na denylist `revoked:{jti}` com TTL = tempo restante ate `exp` — assim a
+  revogacao e instantanea (nao precisa esperar o TTL do token). `decodificar_token`
+  consulta a denylist a cada request. Sem REDIS_URL (dev), a denylist degrada
+  silenciosamente (log unico de aviso): nao quebra o fluxo, apenas perde a
+  revogacao instantanea do access (o refresh revogavel + TTL curto continuam
+  valendo). Fail-open de proposito: indisponibilidade do Redis nao pode derrubar
+  toda a autenticacao.
 
 Variaveis de ambiente:
 - ORGCONC_JWT_SECRET    : chave de assinatura (>=32 chars). Se ausente, gera
                           uma random no startup (tokens nao sobrevivem restart)
 - ORGCONC_JWT_TTL_MIN   : expiracao em minutos (default 120)
+- REDIS_URL             : (opcional) store da denylist de access tokens por jti.
+                          Ausente -> denylist desativada (degrada com aviso).
 """
 from __future__ import annotations
 
@@ -82,6 +87,96 @@ _JWT_ALG = "HS256"
 # Refresh tokens (opacos, sha256) — TTL em dias.
 REFRESH_TTL_DAYS = int(os.environ.get("ORGCONC_REFRESH_TTL_DAYS", "30"))
 
+# ── Denylist de access tokens por jti (#9) ────────────────────────────────────
+# Revogacao instantanea do access token: ao deslogar/trocar senha, o `jti` do
+# token atual entra na denylist `revoked:{jti}` em Redis com TTL = exp restante.
+# decodificar_token consulta a denylist. Sem REDIS_URL, degrada (sem denylist):
+# o access sobrevive ate o exp natural, mas o refresh revogavel continua barrando
+# renovacao. Fail-open: erro de Redis nunca derruba a autenticacao.
+_REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+_DENYLIST_PREFIX = "revoked:"
+_redis_client = None              # cache do cliente (lazy)
+_denylist_aviso_emitido = False   # garante um unico log de aviso
+
+
+def _get_denylist_redis():
+    """Cliente Redis (sync) para a denylist, ou None se indisponivel.
+
+    Lazy + cacheado. Sem REDIS_URL retorna None (degrada). Se o pacote `redis`
+    nao estiver instalado ou a URL for invalida, avisa uma vez e retorna None.
+    """
+    global _redis_client, _denylist_aviso_emitido
+    if not _REDIS_URL:
+        return None
+    if _redis_client is not None:
+        return _redis_client
+    try:
+        import redis as _redis  # import local: dependencia opcional (prod)
+
+        _redis_client = _redis.Redis.from_url(
+            _REDIS_URL, socket_timeout=1, socket_connect_timeout=1
+        )
+        return _redis_client
+    except Exception:  # pragma: no cover - pacote ausente / URL invalida
+        if not _denylist_aviso_emitido:
+            log.warning(
+                "REDIS_URL definido mas o cliente Redis nao pode ser criado — "
+                "denylist de access token DESATIVADA (revogacao instantanea perdida)."
+            )
+            _denylist_aviso_emitido = True
+        return None
+
+
+def _aviso_denylist_indisponivel() -> None:
+    global _denylist_aviso_emitido
+    if not _denylist_aviso_emitido:
+        log.warning(
+            "Denylist de access token indisponivel (REDIS_URL ausente ou Redis "
+            "inacessivel) — logout nao revoga o access instantaneamente; conta-se "
+            "com o TTL curto do JWT + revogacao do refresh."
+        )
+        _denylist_aviso_emitido = True
+
+
+def revogar_jti(jti: str, exp: int | None) -> bool:
+    """Adiciona um `jti` a denylist com TTL = segundos ate `exp`.
+
+    Idempotente. Retorna True se gravou no Redis, False se degradou (sem store
+    ou ja expirado). Erro de Redis nao propaga (fail-open) — logout nunca quebra.
+    """
+    if not jti:
+        return False
+    cli = _get_denylist_redis()
+    if cli is None:
+        _aviso_denylist_indisponivel()
+        return False
+    # TTL = tempo restante ate exp; sem exp usa o TTL maximo do access (defesa).
+    if exp is not None:
+        ttl = int(exp - datetime.now(timezone.utc).timestamp())
+    else:
+        ttl = _JWT_TTL_MIN * 60
+    if ttl <= 0:
+        return False  # ja expirou: a propria validacao de exp ja barra
+    try:
+        cli.setex(f"{_DENYLIST_PREFIX}{jti}", ttl, "1")
+        return True
+    except Exception:  # pragma: no cover - Redis caiu: fail-open
+        _aviso_denylist_indisponivel()
+        return False
+
+
+def jti_revogado(jti: str) -> bool:
+    """True se o `jti` esta na denylist. Fail-open: erro de Redis -> False."""
+    if not jti:
+        return False
+    cli = _get_denylist_redis()
+    if cli is None:
+        return False
+    try:
+        return cli.exists(f"{_DENYLIST_PREFIX}{jti}") > 0
+    except Exception:  # pragma: no cover - Redis caiu: fail-open (nao barra tudo)
+        return False
+
 
 def gerar_refresh_token() -> str:
     """Token opaco URL-safe (~64 chars). NUNCA é um JWT."""
@@ -127,6 +222,7 @@ class TokenPayload(BaseModel):
     org_id: Optional[str] = None  # tenant (firma) — RLS por organização
     superadmin: bool = False  # acesso cross-org (leitura) — só o admin por env
     role: str = "user"
+    jti: Optional[str] = None  # JWT ID — chave da denylist de revogação (#9)
     exp: Optional[int] = None
     iat: Optional[int] = None
 
@@ -163,14 +259,23 @@ def emitir_token(
 
 
 def decodificar_token(token: str) -> TokenPayload:
-    """Decodifica e valida assinatura + exp. Levanta HTTPException 401."""
+    """Decodifica e valida assinatura + exp + denylist. Levanta HTTPException 401.
+
+    Alem da assinatura/exp, consulta a denylist por `jti` (#9): um token cujo
+    `jti` foi revogado (logout/troca de senha) e rejeitado mesmo antes do exp.
+    Sem Redis a denylist degrada (jti_revogado -> False): cai no comportamento
+    anterior (revogacao so via refresh + TTL curto).
+    """
     try:
         claims = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALG])
-        return TokenPayload(**claims)
+        payload = TokenPayload(**claims)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
     except jwt.InvalidTokenError as e:
         raise HTTPException(status_code=401, detail=f"Token invalido: {type(e).__name__}")
+    if payload.jti and jti_revogado(payload.jti):
+        raise HTTPException(status_code=401, detail="Token revogado")
+    return payload
 
 
 # ── Dependency FastAPI ──────────────────────────────────────────────────────
@@ -251,30 +356,37 @@ def autorizar_cliente(
 
 def escopo_cliente_listagem(
     user: TokenPayload,
-    cliente_id_solicitado: str | None = None,
-) -> str | None:
-    """Resolve o filtro de cliente para endpoints de listagem (ponto único).
+    cliente_id: Optional[str] = None,
+) -> Optional[str]:
+    """Resolve o `cliente_id` efetivo para uma listagem, sem vazamento cross-org (#23).
 
-    Retorna o cliente_id a aplicar na query ou None (sem filtro de cliente —
-    o RLS por org_id continua aplicando no banco). Regras:
-    - admin/auditor/service: sem filtro (podem pedir cliente_id explícito).
-    - anonymous: negado em produção (defesa em profundidade — current_user
-      nunca o emite em prod); em dev/staging passa sem filtro.
-    - user COM cliente_id: sempre o próprio; pedir outro → 403.
-    - user SEM cliente_id (multi-org): sem filtro de cliente — o escopo é a
-      org inteira, garantido pelo RLS (SET LOCAL app.org_id).
+    Enderecou o furo em que um usuario multi-org passava um `cliente_id`
+    arbitrario como filtro e lia dados de cliente de OUTRA org. Regras:
+
+    - Roles privilegiados (admin, auditor, service): podem escopar a qualquer
+      `cliente_id` (ou None = todos) — o isolamento por org ja e aplicado pela
+      RLS / org_id do token. Retorna o `cliente_id` pedido.
+    - User comum COM cliente_id no token: so escopa ao PROPRIO cliente_id; pedir
+      outro -> 403; sem filtro (None) -> assume o proprio.
+    - User comum SEM cliente_id no token (multi-org): NAO pode passar um
+      cliente_id arbitrario (era o furo) -> 403; sem filtro -> None (a listagem
+      restringe por org_id do token via RLS a montante).
+    - anonymous em producao -> 403.
     """
     if user.role in ("admin", "auditor", "service"):
-        return cliente_id_solicitado
+        return cliente_id
     if user.role == "anonymous":
         if _IS_PROD:
-            raise HTTPException(status_code=403, detail="Autenticacao obrigatoria")
-        return cliente_id_solicitado  # dev/staging: conveniencia sem token
+            raise HTTPException(status_code=403, detail="Acesso negado")
+        return cliente_id  # dev/staging: conveniencia
     if user.cliente_id:
-        if cliente_id_solicitado and cliente_id_solicitado != user.cliente_id:
-            raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
-        return user.cliente_id
-    return cliente_id_solicitado
+        if cliente_id is None or cliente_id == user.cliente_id:
+            return user.cliente_id
+        raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
+    # User sem cliente_id no token: nao pode escolher um cliente arbitrario.
+    if cliente_id is not None:
+        raise HTTPException(status_code=403, detail="Acesso negado a este cliente")
+    return None
 
 
 def require_role(*roles: str):

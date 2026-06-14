@@ -25,11 +25,13 @@ from api.services.auth import (
     REFRESH_TTL_DAYS,
     TokenPayload,
     current_user,
+    decodificar_token,
     emitir_token,
     gerar_refresh_token,
     hash_refresh_token,
     hash_senha,
     require_role,
+    revogar_jti,
     verificar_senha,
 )
 
@@ -68,6 +70,29 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         path="/auth",
         max_age=_REFRESH_COOKIE_TTL,
     )
+
+
+def _access_token_da_request(request: Request) -> str | None:
+    """Extrai o access token (JWT) da request: header Bearer ou cookie."""
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip() or None
+    return request.cookies.get(_COOKIE_NAME)
+
+
+def _revogar_access_atual(request: Request) -> None:
+    """Adiciona o `jti` do access token atual a denylist (#9). Best-effort:
+    token ausente/invalido/expirado e ignorado (logout segue idempotente)."""
+    tok = _access_token_da_request(request)
+    if not tok:
+        return
+    try:
+        payload = decodificar_token(tok)
+    except HTTPException:
+        # Token ja invalido/expirado/revogado: nada a revogar.
+        return
+    if payload.jti:
+        revogar_jti(payload.jti, payload.exp)
 
 
 def _client_ip(request: Request) -> str | None:
@@ -209,7 +234,10 @@ async def auth_refresh(request: Request, response: Response):
 
     rt_hash = hash_refresh_token(rt_plain)
     async with _config.SessionLocal() as db:
-        row = await refresh_repo.buscar_ativo_por_hash(db, rt_hash)
+        # #22 — rotacao atomica: lock de linha (FOR UPDATE) + criar/revogar num
+        # unico commit. Requests simultaneos com o mesmo refresh serializam no
+        # lock; o 2o ja ve o token consumido (None) e cai na reuse-detection.
+        row = await refresh_repo.buscar_ativo_por_hash(db, rt_hash, for_update=True)
         if not row:
             # Reuse-detection: token rotacionado sendo reapresentado?
             antigo = await refresh_repo.buscar_por_hash(db, rt_hash)
@@ -244,9 +272,15 @@ async def auth_refresh(request: Request, response: Response):
         elif _e_uuid(sub):
             raise HTTPException(401, "Usuario inativo ou inexistente")
         else:
-            # Sessão legada/env-admin (sub=email). O env-admin reganha superadmin.
+            # Sessão legada/env-admin (sub=email). O env-admin só reganha
+            # superadmin se o admin-por-env AINDA está ATIVO (#24): exige
+            # ORGCONC_ADMIN_EMAIL E ORGCONC_ADMIN_SENHA_HASH presentes. Se o
+            # admin-env foi desativado (env removido), a sessão continua válida
+            # mas SEM superadmin — não reescala um admin que não existe mais.
             admin_email = os.environ.get("ORGCONC_ADMIN_EMAIL", "").strip().lower()
-            superadmin = bool(admin_email and sub.strip().lower() == admin_email)
+            admin_hash = os.environ.get("ORGCONC_ADMIN_SENHA_HASH", "").strip()
+            env_admin_ativo = bool(admin_email and admin_hash)
+            superadmin = env_admin_ativo and sub.strip().lower() == admin_email
         old_id = row.id
         novo_plain = gerar_refresh_token()
         novo_row = await refresh_repo.criar(
@@ -258,8 +292,10 @@ async def auth_refresh(request: Request, response: Response):
             expira_em=datetime.now(timezone.utc) + timedelta(days=REFRESH_TTL_DAYS),
             ip=_client_ip(request),
             user_agent=_client_ua(request),
+            commit=False,
         )
-        await refresh_repo.revogar(db, old_id, substituido_por=novo_row.id)
+        await refresh_repo.revogar(db, old_id, substituido_por=novo_row.id, commit=False)
+        await db.commit()
 
     novo_access = emitir_token(sub=sub, email=email, role=role, cliente_id=cliente_id,
                                org_id=org_id, superadmin=superadmin)
@@ -270,23 +306,36 @@ async def auth_refresh(request: Request, response: Response):
 
 @router.post("/logout")
 async def auth_logout(request: Request, response: Response):
-    """Revoga o refresh atual (se houver) e limpa cookies. Idempotente."""
+    """Revoga o refresh atual (se houver) e limpa cookies. Idempotente.
+
+    #9 — tambem coloca o `jti` do access token atual na denylist, encerrando a
+    janela em que o access (TTL ~120min) ainda valeria apos o logout.
+    """
     rt_plain = request.cookies.get(_REFRESH_COOKIE_NAME)
     if rt_plain and _config.DB_DISPONIVEL and _config.SessionLocal is not None:
         async with _config.SessionLocal() as db:
             await refresh_repo.revogar_por_hash(db, hash_refresh_token(rt_plain))
+    _revogar_access_atual(request)
     response.delete_cookie(key=_COOKIE_NAME, path="/", samesite="strict")
     response.delete_cookie(key=_REFRESH_COOKIE_NAME, path="/auth", samesite="strict")
     return {"detail": "Sessao encerrada"}
 
 
 @router.post("/logout-all")
-async def auth_logout_all(response: Response, user: TokenPayload = Depends(current_user)):
-    """Logout global — revoga TODOS os refresh tokens ativos do usuario."""
+async def auth_logout_all(
+    request: Request, response: Response, user: TokenPayload = Depends(current_user)
+):
+    """Logout global — revoga TODOS os refresh tokens ativos do usuario.
+
+    #9 — revoga tambem o `jti` do access atual via denylist. (Os demais access
+    tokens emitidos para o mesmo sub expiram pelo TTL curto; a renovacao ja esta
+    barrada pela revogacao de todos os refresh.)
+    """
     revogados = 0
     if _config.DB_DISPONIVEL and _config.SessionLocal is not None:
         async with _config.SessionLocal() as db:
             revogados = await refresh_repo.revogar_todos_do_sub(db, user.sub)
+    _revogar_access_atual(request)
     response.delete_cookie(key=_COOKIE_NAME, path="/", samesite="strict")
     response.delete_cookie(key=_REFRESH_COOKIE_NAME, path="/auth", samesite="strict")
     return {"detail": "Sessoes encerradas", "revogados": revogados}
@@ -409,6 +458,9 @@ async def auth_trocar_senha(
             raise HTTPException(401, "Senha atual incorreta")
         await usuarios_repo.atualizar_senha(db, u.id, hash_senha(payload.senha_nova))
         await refresh_repo.revogar_todos_do_sub(db, str(u.id))
+    # #9 — revoga o access atual via denylist (os demais expiram pelo TTL curto;
+    # a renovacao ja esta barrada pela revogacao de todos os refresh acima).
+    _revogar_access_atual(request)
     await gravar_audit_independente(
         action="usuario.senha.trocar", resource_type="usuario", resource_id=user.sub,
         payload={"self": True}, actor=user,
