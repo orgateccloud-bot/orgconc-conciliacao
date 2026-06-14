@@ -7,6 +7,9 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 _templates_dir = Path(__file__).resolve().parent.parent / "templates"
+# Falso-positivo: regra e' especifica de Flask (render_template); aqui e' FastAPI
+# com autoescape ativo para .html — unicos templates do diretorio.
+# nosemgrep: python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2
 jinja_env = Environment(
     loader=FileSystemLoader(str(_templates_dir)),
     autoescape=select_autoescape(["html"]),
