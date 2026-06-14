@@ -326,15 +326,16 @@ Classe de risco: `BAIXO` | `MEDIO` | `ALTO` | `CRITICO`
 
 ## Row Level Security (RLS)
 
-RLS ativado em todas as tabelas. Políticas atuais permitem acesso total via connection pooler (`postgres` role) para uso interno via API FastAPI.
+**RLS real por `org_id` está ATIVO e enforçado em produção** (desde 2026-06-07):
+o backend conecta como `app_orgconc` (NOBYPASSRLS) e as tabelas de negócio têm
+FORCE RLS + policy `org_isolation` (GUC `app.org_id` via `SET LOCAL`).
 
-```sql
--- Políticas de acesso total para uso interno (connection pooler)
--- Ajustar para auth.uid() em cenário de acesso direto via anon key
-CREATE POLICY "allow_all_clientes"      ON public.clientes      FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "allow_all_conciliacoes"  ON public.conciliacoes  FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "allow_all_transacoes"    ON public.transacoes    FOR ALL USING (true) WITH CHECK (true);
-```
+> ⚠️ **NÃO copie policies deste documento.** A fonte de verdade das policies é
+> versionada em [`db/rls/`](db/rls/) — `org_isolation.sql` (tabelas de negócio),
+> `contraparte_org_isolation.sql`, `infra_allow_all.sql` (tabelas sem tenant) e
+> `rollout_grants.sql` (role/grants). Policies permissivas (`USING (true)`)
+> em tabelas de negócio anulam o isolamento multi-tenant — provisione ambientes
+> novos executando os scripts de `db/rls/`, nunca SQL ad-hoc copiado de docs.
 
 ---
 

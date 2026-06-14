@@ -1,0 +1,22 @@
+# Pre-commit hooks — espelham os gates bloqueantes do CI (ruff + higiene básica).
+# Setup (uma vez): pip install pre-commit && pre-commit install
+# Rodar manualmente em tudo: pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+        exclude: ^\.github/workflows/  # actions usam tags custom validadas no CI
+      - id: check-json
+      - id: detect-private-key
+      - id: end-of-file-fixer
+        files: \.(py|ts|tsx)$
+      - id: trailing-whitespace
+        files: \.(py|ts|tsx)$

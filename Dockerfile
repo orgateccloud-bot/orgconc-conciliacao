@@ -58,5 +58,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
 
-# Comando de inicializacao
-CMD uvicorn api.main:app --host 0.0.0.0 --port ${PORT} --workers ${WORKERS}
+# Comando de inicializacao.
+# exec → uvicorn vira PID 1 e recebe SIGTERM (graceful shutdown no deploy).
+# --proxy-headers → rate-limit e logs enxergam o IP real atrás do LB Railway
+# (a rede privada garante que só o edge do Railway alcança o container).
+CMD exec uvicorn api.main:app --host 0.0.0.0 --port ${PORT} --workers ${WORKERS} --proxy-headers --forwarded-allow-ips '*'

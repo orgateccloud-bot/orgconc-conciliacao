@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import math
 from datetime import datetime, timezone
 
 from api.core import config
@@ -25,6 +27,8 @@ from api.schemas_cbs_ibs import (
     ItemApurado,
     OperacaoFiscalInput,
 )
+
+log = logging.getLogger(__name__)
 
 # Alíquotas de PILOTO (TESTE/TRANSIÇÃO) — espelham o exemplo IC-02. NÃO são as
 # alíquotas finais da reforma; servem só ao stub local. % conforme API oficial
@@ -119,11 +123,67 @@ def _apurar_stub(inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
 _ENDPOINT_REGIME_GERAL = "calculadora/regime-geral"
 
 
-def _num(x) -> float:
-    """A Calculadora devolve valores como string ('1000.00'); converte p/ float (0 se vazio)."""
+def _num(x, *, campo: str = "") -> float:
+    """A Calculadora devolve valores como string ('1000.00'); converte p/ float.
+
+    Blindagem (#5): a Calculadora oficial pode devolver valores inesperados num
+    campo numérico ('', 'N/A', None aninhado, bool, lista...). Em vez de deixar
+    `float()` levantar ValueError/TypeError e derrubar a apuração com 500, trata
+    como ausente (0.0) e registra log estruturado do valor problemático — o
+    achado fica auditável sem quebrar o fluxo IC-02. `campo` identifica a origem
+    no log (ex.: 'gIBSUF.vIBSUF').
+    """
     if x is None or x == "":
         return 0.0
-    return float(x)
+    # bool é subclasse de int: float(True)==1.0 silenciaria um valor inválido.
+    if isinstance(x, bool):
+        log.warning("Calculadora CBS/IBS: valor booleano inesperado em campo numérico "
+                    "%r=%r — tratando como 0.0.", campo or "<?>", x)
+        return 0.0
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        log.warning("Calculadora CBS/IBS: valor não-numérico em campo %r=%r (tipo %s) "
+                    "— tratando como 0.0.", campo or "<?>", x, type(x).__name__)
+        return 0.0
+    # 'inf'/'nan'/'Infinity' passam por float() mas estouram a serialização JSON
+    # do router (Starlette usa allow_nan=False → 500). Trata como ausente.
+    if not math.isfinite(v):
+        log.warning("Calculadora CBS/IBS: valor não-finito em campo %r=%r "
+                    "— tratando como 0.0.", campo or "<?>", x)
+        return 0.0
+    return v
+
+
+def _str(x) -> str:
+    """Coage campos textuais da Calculadora (cst, cClassTrib) para str.
+
+    A Calculadora pode devolver CST/cClassTrib como int (0) ou None; passar isso
+    direto a ItemApurado (campo str) levanta ValidationError → 500. Normaliza:
+    None → '', restante → str(x)."""
+    return "" if x is None else str(x)
+
+
+def _obj(container, chave: str) -> dict:
+    """Sub-objeto `chave` de um dict, SEMPRE como dict.
+
+    Blindagem (#5/#6): `d.get(chave, {})` ainda devolve None quando a chave existe
+    com valor null (`{"gIBSUF": null}`) — e o `.get()` seguinte estoura
+    AttributeError, derrubando a apuração com 500. Aqui qualquer não-dict
+    (None, str, lista...) vira {}, então o encadeamento de leitura é seguro."""
+    if not isinstance(container, dict):
+        return {}
+    valor = container.get(chave)
+    return valor if isinstance(valor, dict) else {}
+
+
+def _memoria(grupo: dict) -> str:
+    """memoriaCalculo de um grupo, SEMPRE como str (o schema IC-02 §5 exige str).
+
+    A Calculadora pode omitir o campo ou devolvê-lo como null/número; coage p/ str
+    para não quebrar a validação Pydantic da saída."""
+    m = grupo.get("memoriaCalculo", "")
+    return m if isinstance(m, str) else ("" if m is None else str(m))
 
 
 def _ic02_para_rtc(inp: OperacaoFiscalInput) -> dict:
@@ -164,21 +224,27 @@ def _rtc_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
     1º item (representativo). Carimba versao_base/ambiente/motor_versao (gate §4).
     """
     objetos = resp.get("objetos") or []
-    tot = ((resp.get("total") or {}).get("tribCalc") or {}).get("IBSCBSTot") or {}
+    tot = _obj(_obj(resp, "total"), "tribCalc").get("IBSCBSTot") or {}
+    if not isinstance(tot, dict):
+        tot = {}
     por_num = {it.numero: it for it in (inp.itens or [])}
 
     itens_ap: list[ItemApurado] = []
     soma_uf = soma_mun = soma_cbs = soma_bc = 0.0
     rep = None  # gIBSCBS do 1º item — alíquotas representativas p/ o header
     for obj in objetos:
-        ibscbs = (obj.get("tribCalc") or {}).get("IBSCBS") or {}
-        g = ibscbs.get("gIBSCBS") or {}
+        if not isinstance(obj, dict):
+            log.warning("Calculadora CBS/IBS: item em 'objetos' não é objeto (tipo %s) "
+                        "— ignorando.", type(obj).__name__)
+            continue
+        ibscbs = _obj(_obj(obj, "tribCalc"), "IBSCBS")
+        g = _obj(ibscbs, "gIBSCBS")
         if rep is None:
             rep = g
-        v_uf = _num(g.get("gIBSUF", {}).get("vIBSUF"))
-        v_mun = _num(g.get("gIBSMun", {}).get("vIBSMun"))
-        v_cbs = _num(g.get("gCBS", {}).get("vCBS"))
-        bc = _num(g.get("vBC"))
+        v_uf = _num(_obj(g, "gIBSUF").get("vIBSUF"), campo="item.gIBSUF.vIBSUF")
+        v_mun = _num(_obj(g, "gIBSMun").get("vIBSMun"), campo="item.gIBSMun.vIBSMun")
+        v_cbs = _num(_obj(g, "gCBS").get("vCBS"), campo="item.gCBS.vCBS")
+        bc = _num(g.get("vBC"), campo="item.vBC")
         soma_uf += v_uf
         soma_mun += v_mun
         soma_cbs += v_cbs
@@ -188,8 +254,8 @@ def _rtc_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
             ItemApurado(
                 numero=obj.get("nObj") or 0,
                 ncm=(src.ncm if src else None),
-                cst=ibscbs.get("CST", ""),
-                cClassTrib=ibscbs.get("cClassTrib", ""),
+                cst=_str(ibscbs.get("CST")),
+                cClassTrib=_str(ibscbs.get("cClassTrib")),
                 base_calculo=_round2(bc),
                 vIBSUF=_round2(v_uf),
                 vIBSMun=_round2(v_mun),
@@ -198,12 +264,12 @@ def _rtc_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
             )
         )
 
-    gibs = tot.get("gIBS") or {}
-    v_uf_tot = _num(gibs.get("gIBSUF", {}).get("vIBSUF")) or soma_uf
-    v_mun_tot = _num(gibs.get("gIBSMun", {}).get("vIBSMun")) or soma_mun
-    v_cbs_tot = _num((tot.get("gCBS") or {}).get("vCBS")) or soma_cbs
-    base_total = _num(tot.get("vBCIBSCBS")) or soma_bc
-    rep = rep or {}
+    gibs = _obj(tot, "gIBS")
+    v_uf_tot = _num(_obj(gibs, "gIBSUF").get("vIBSUF"), campo="total.gIBS.gIBSUF.vIBSUF") or soma_uf
+    v_mun_tot = _num(_obj(gibs, "gIBSMun").get("vIBSMun"), campo="total.gIBS.gIBSMun.vIBSMun") or soma_mun
+    v_cbs_tot = _num(_obj(tot, "gCBS").get("vCBS"), campo="total.gCBS.vCBS") or soma_cbs
+    base_total = _num(tot.get("vBCIBSCBS"), campo="total.vBCIBSCBS") or soma_bc
+    rep = rep if isinstance(rep, dict) else {}
     return ApuracaoCBSIBS(
         documento_id=inp.documento_id,
         versao_base=config.CBS_IBS_VERSAO_BASE,
@@ -214,19 +280,19 @@ def _rtc_para_ic02(resp: dict, inp: OperacaoFiscalInput) -> ApuracaoCBSIBS:
         data_fato_gerador=inp.data_fato_gerador,
         base_calculo_total=_round2(base_total),
         gIBSUF=GIBSUF(
-            pIBSUF=_num(rep.get("gIBSUF", {}).get("pIBSUF")),
+            pIBSUF=_num(_obj(rep, "gIBSUF").get("pIBSUF"), campo="rep.gIBSUF.pIBSUF"),
             vIBSUF=_round2(v_uf_tot),
-            memoriaCalculo=rep.get("gIBSUF", {}).get("memoriaCalculo", ""),
+            memoriaCalculo=_memoria(_obj(rep, "gIBSUF")),
         ),
         gIBSMun=GIBSMun(
-            pIBSMun=_num(rep.get("gIBSMun", {}).get("pIBSMun")),
+            pIBSMun=_num(_obj(rep, "gIBSMun").get("pIBSMun"), campo="rep.gIBSMun.pIBSMun"),
             vIBSMun=_round2(v_mun_tot),
-            memoriaCalculo=rep.get("gIBSMun", {}).get("memoriaCalculo", ""),
+            memoriaCalculo=_memoria(_obj(rep, "gIBSMun")),
         ),
         gCBS=GCBS(
-            pCBS=_num(rep.get("gCBS", {}).get("pCBS")),
+            pCBS=_num(_obj(rep, "gCBS").get("pCBS"), campo="rep.gCBS.pCBS"),
             vCBS=_round2(v_cbs_tot),
-            memoriaCalculo=rep.get("gCBS", {}).get("memoriaCalculo", ""),
+            memoriaCalculo=_memoria(_obj(rep, "gCBS")),
         ),
         gIS=None,
         vTotTrib=_round2(v_uf_tot + v_mun_tot + v_cbs_tot),

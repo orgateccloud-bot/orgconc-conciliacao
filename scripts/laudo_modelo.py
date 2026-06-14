@@ -64,7 +64,7 @@ PLACEHOLDERS = [
 
 
 async def main() -> None:
-    L.EMPRESA = EMPRESA_MODELO
+    L.set_empresa(EMPRESA_MODELO)
     todos, saldos = L.montar_dados(PLACEHOLDERS)
     wb, stats = L.gerar_laudo_workbook(todos, saldos, {})
 

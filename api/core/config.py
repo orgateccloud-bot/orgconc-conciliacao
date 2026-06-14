@@ -49,6 +49,13 @@ MAX_UPLOAD_MB = int(os.environ.get("ORGCONC_MAX_UPLOAD_MB", "10"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 MAX_UPLOAD_TOTAL_MB = int(os.environ.get("ORGCONC_MAX_UPLOAD_TOTAL_MB", "50"))
 MAX_UPLOAD_TOTAL_BYTES = MAX_UPLOAD_TOTAL_MB * 1024 * 1024
+# Proteção anti zip-bomb na expansão de ZIPs (fiscal/matchers): o limite de
+# upload acima cobre só o tamanho COMPRIMIDO; estes cobrem a inflação. Lidos por
+# api.services.storage.extrair_zip_seguro.
+ZIP_MAX_MEMBERS = int(os.environ.get("ORGCONC_ZIP_MAX_MEMBERS", "1000"))
+ZIP_MAX_DECOMPRESSED_MB = int(os.environ.get("ORGCONC_ZIP_MAX_DECOMPRESSED_MB", "200"))
+ZIP_MAX_DECOMPRESSED_BYTES = ZIP_MAX_DECOMPRESSED_MB * 1024 * 1024
+ZIP_MAX_RATIO = int(os.environ.get("ORGCONC_ZIP_MAX_RATIO", "120"))
 # Limite de corpo bruto da request (multipart, JSON). Protege contra payloads
 # gigantes antes do parsing. Lido live pelo middleware de body-limit.
 _MAX_BODY_BYTES = int(os.environ.get("ORGCONC_MAX_BODY_BYTES", str(60 * 1024 * 1024)))

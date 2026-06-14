@@ -57,7 +57,7 @@ class RiscoTributario:
     metodologia: str
 
 
-def _anualizar(valor: float, meses_observados: int = 5) -> float:
+def _anualizar(valor: float, meses_observados: float = 5) -> float:
     """Projeta valor mensal × 12 a partir de N meses observados."""
     if meses_observados <= 0:
         return valor
@@ -66,7 +66,7 @@ def _anualizar(valor: float, meses_observados: int = 5) -> float:
 
 def estimar_risco_fornecedor(
     score: ConformidadeScore,
-    meses_observados: int = 5,
+    meses_observados: float = 5,
 ) -> RiscoTributario:
     """Calcula risco anual para 1 fornecedor com base no score de conformidade."""
     gap_pagamento = score.volume_pago - score.volume_nf
@@ -104,7 +104,7 @@ def estimar_risco_fornecedor(
 
 def estimar_risco_tributario_anual(
     scores: Iterable[ConformidadeScore],
-    meses_observados: int = 5,
+    meses_observados: float = 5,
 ) -> list[RiscoTributario]:
     """Calcula risco anual para todos os fornecedores."""
     return [estimar_risco_fornecedor(s, meses_observados) for s in scores]
@@ -113,7 +113,7 @@ def estimar_risco_tributario_anual(
 def estimar_retencoes_nao_recolhidas(
     volume_pago_pj: float,
     volume_pago_pf: float,
-    meses_observados: int = 5,
+    meses_observados: float = 5,
 ) -> dict:
     """Estima retenções não recolhidas (PIS+COFINS+CSLL+IRRF+INSS).
 
@@ -141,7 +141,7 @@ def estimar_retencoes_nao_recolhidas(
 
 def consolidar_risco(
     scores: Iterable[ConformidadeScore],
-    meses_observados: int = 5,
+    meses_observados: float = 5,
 ) -> dict:
     """Consolida risco total por classe e por flag, e gera ranking top-N."""
     riscos = estimar_risco_tributario_anual(scores, meses_observados)

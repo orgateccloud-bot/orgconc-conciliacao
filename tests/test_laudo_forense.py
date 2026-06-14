@@ -40,7 +40,7 @@ def test_gerar_laudo_workbook_11_abas():
         _tx("2026-02-10", -500.0, nome="OUTRO FORN"), _tx("2026-03-15", -12000.0),
     ]
     todos, saldos = laudo.montar_dados(txs)
-    laudo.EMPRESA = laudo.construir_empresa("11222333000181", {})
+    laudo.set_empresa(laudo.construir_empresa("11222333000181", {}))
     wb, stats = laudo.gerar_laudo_workbook(todos, saldos, {})
     assert wb.sheetnames == ABAS
     assert stats["n_total"] == 4
@@ -93,7 +93,7 @@ def test_preparar_calculo_alimenta_workbook_identico():
     """gerar_laudo_workbook consome a fase pura — stats espelham o cálculo."""
     txs = [_tx("2026-01-05", -100.0), _tx("2026-02-01", 300.0)]
     todos, saldos = laudo.montar_dados(txs)
-    laudo.EMPRESA = laudo.construir_empresa("11222333000181", {})
+    laudo.set_empresa(laudo.construir_empresa("11222333000181", {}))
     calc = laudo.preparar_calculo_laudo(todos, saldos, {})
     _, stats = laudo.gerar_laudo_workbook(todos, saldos, {})
     for chave in ("n_total", "n_meses", "periodo_str", "cred_total",
@@ -121,7 +121,7 @@ def test_fase2_agregados_das_abas_na_fase_pura():
         "99888777000166": {"razao_social": "BAIXADA LTDA", "situacao": "BAIXADA",
                            "data_situacao": "2025-12-01", "porte": "ME"},
     }
-    laudo.EMPRESA = laudo.construir_empresa("55444333000122", {})
+    laudo.set_empresa(laudo.construir_empresa("55444333000122", {}))
     calc = laudo.preparar_calculo_laudo(todos, saldos, cache)
 
     # Risco e tributário cobrem todas as transações.
@@ -167,7 +167,7 @@ def test_fase3_risk_score_anexado_nas_disposicoes():
     todos, saldos = laudo.montar_dados(txs)
     cache = {"99888777000166": {"razao_social": "BAIXADA LTDA", "situacao": "BAIXADA",
                                 "data_situacao": "2025-12-01", "porte": "ME"}}
-    laudo.EMPRESA = laudo.construir_empresa("55444333000122", {})
+    laudo.set_empresa(laudo.construir_empresa("55444333000122", {}))
     calc = laudo.preparar_calculo_laudo(todos, saldos, cache)
 
     for d in calc["todas_disps"]:
@@ -201,7 +201,7 @@ def test_stats_anualizado_nao_e_sombreado_pelo_loop_de_meis():
         "razao_social": "MEI TESTE", "porte": "MICRO EMPRESA",
         "cnae_principal": "4930201", "situacao": "ATIVA",
     }}
-    laudo.EMPRESA = laudo.construir_empresa("99888777000166", {})
+    laudo.set_empresa(laudo.construir_empresa("99888777000166", {}))
     _, stats = laudo.gerar_laudo_workbook(todos, saldos, cache)
 
     # O anualizado do stats DEVE ser o da empresa (fase de cálculo/motor)…

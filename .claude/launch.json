@@ -4,14 +4,37 @@
     {
       "name": "conciliacao-api",
       "runtimeExecutable": "C:/Users/Veloso/AppData/Local/Programs/Python/Python312/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "api.main:app", "--reload", "--host", "127.0.0.1", "--port", "8765"],
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "api.main:app",
+        "--reload",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8765"
+      ],
       "port": 8765
     },
     {
       "name": "orgconc-react",
       "runtimeExecutable": "C:/OrgConc/orgconc-react/node_modules/.bin/vite.cmd",
-      "runtimeArgs": ["--host", "127.0.0.1", "--port", "5176"],
+      "runtimeArgs": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5176"
+      ],
       "port": 5176
+    },
+    {
+      "name": "orgconc-demo",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd /d D:\\01_Projetos_Ativos\\OrgConc\\.claude\\worktrees\\jobs-assincronos && C:\\Users\\Veloso\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m uvicorn api.main:app --host 127.0.0.1 --port 8765"
+      ],
+      "port": 8765
     }
   ]
 }

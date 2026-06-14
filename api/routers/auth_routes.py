@@ -196,8 +196,10 @@ async def auth_login(request: Request, response: Response, payload: LoginPayload
 async def auth_refresh(request: Request, response: Response):
     """Rotaciona o refresh token e emite um novo access token.
 
-    Anti-replay: o refresh antigo é revogado e aponta para o novo. Apresentar
-    um refresh já revogado/expirado retorna 401 (possível comprometimento).
+    Anti-replay com reuse-detection (RFC 6819): o refresh antigo é revogado e
+    aponta para o novo. Apresentar um refresh JÁ ROTACIONADO fora da janela de
+    graça (corrida benigna de tabs paralelas) indica cookie comprometido —
+    todas as sessões do usuário são revogadas antes do 401.
     """
     if not _config.DB_DISPONIVEL or _config.SessionLocal is None:
         raise HTTPException(503, "Refresh indisponivel — banco nao configurado")
@@ -209,6 +211,22 @@ async def auth_refresh(request: Request, response: Response):
     async with _config.SessionLocal() as db:
         row = await refresh_repo.buscar_ativo_por_hash(db, rt_hash)
         if not row:
+            # Reuse-detection: token rotacionado sendo reapresentado?
+            antigo = await refresh_repo.buscar_por_hash(db, rt_hash)
+            if (
+                antigo is not None
+                and antigo.revogado_em is not None
+                and antigo.substituido_por is not None
+                and (datetime.now(timezone.utc) - antigo.revogado_em).total_seconds() > 10
+            ):
+                n = await refresh_repo.revogar_todos_do_sub(db, antigo.sub)
+                await gravar_audit_independente(
+                    action="auth.refresh_reuse_detected",
+                    resource_type="auth",
+                    resource_id=str(antigo.id),
+                    payload={"sessoes_revogadas": n},
+                    actor=TokenPayload(sub=antigo.sub, role=antigo.role or "user"),
+                )
             raise HTTPException(401, "Refresh invalido ou expirado")
         sub = row.sub
         # Preserva a identidade real da sessao — NUNCA reemitir admin fixo.
